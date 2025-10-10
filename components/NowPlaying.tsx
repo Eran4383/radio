@@ -19,12 +19,14 @@ interface NowPlayingProps {
   isVisualizerEnabled: boolean;
   isVisualizerLocked: boolean;
   onCycleVisualizerStyle: () => void;
+  isVolumeControlVisible: boolean;
 }
 
 const NowPlaying: React.FC<NowPlayingProps> = ({
   isOpen, onClose, station, isPlaying, onPlayPause, onNext, onPrev, 
   volume, onVolumeChange, displayInfo, frequencyData,
-  visualizerStyle, isVisualizerEnabled, isVisualizerLocked, onCycleVisualizerStyle
+  visualizerStyle, isVisualizerEnabled, isVisualizerLocked, onCycleVisualizerStyle,
+  isVolumeControlVisible
 }) => {
     const touchStartY = useRef(0);
     const touchStartX = useRef(0);
@@ -130,19 +132,21 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
               </button>
             </div>
 
-            <div className="w-full max-w-xs flex items-center gap-3">
-              <VolumeUpIcon className="w-6 h-6 text-text-secondary flex-shrink-0" />
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={volume}
-                onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-                className="w-full accent-teal-500"
-                aria-label="עוצמת שמע"
-              />
-            </div>
+            {isVolumeControlVisible && (
+              <div className="w-full max-w-xs flex items-center gap-3">
+                <VolumeUpIcon className="w-6 h-6 text-text-secondary flex-shrink-0" />
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={volume}
+                  onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
+                  className="w-full accent-teal-500"
+                  aria-label="עוצמת שמע"
+                />
+              </div>
+            )}
         </div>
       </div>
     );

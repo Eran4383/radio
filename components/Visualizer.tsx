@@ -88,6 +88,95 @@ const drawWaveSymmetric = (ctx: CanvasRenderingContext2D, data: Uint8Array, widt
     ctx.stroke();
 };
 
+const drawSpectrum = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number) => {
+    const bufferLength = data.length;
+    const barWidth = width / bufferLength;
+
+    for (let i = 0; i < bufferLength; i++) {
+        const barHeight = (data[i] / 255) * height;
+        const hue = (i / bufferLength) * 360;
+        ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+        ctx.fillRect(i * barWidth, height - barHeight, barWidth, barHeight);
+    }
+};
+
+const drawAurora = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number) => {
+    ctx.clearRect(0, 0, width, height);
+    const bufferLength = data.length;
+    const sliceWidth = width / bufferLength;
+
+    const createGradient = (color1: string, color2: string) => {
+        const gradient = ctx.createLinearGradient(0, 0, width, height);
+        gradient.addColorStop(0, color1);
+        gradient.addColorStop(1, color2);
+        return gradient;
+    };
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = createGradient('#ff00ff', '#00ffff');
+
+    ctx.beginPath();
+    let x = 0;
+    for (let i = 0; i < bufferLength; i++) {
+        const v = data[i] / 255.0;
+        const y = v * height / 2;
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+        x += sliceWidth;
+    }
+    ctx.stroke();
+    
+    ctx.strokeStyle = createGradient('#ffff00', '#ff00ff');
+    ctx.beginPath();
+    x = 0;
+    for (let i = 0; i < bufferLength; i++) {
+        const v = data[bufferLength - 1 - i] / 255.0; // reverse
+        const y = height - (v * height / 2);
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+        x += sliceWidth;
+    }
+    ctx.stroke();
+};
+
+const drawRings = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number) => {
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const maxRadius = Math.min(centerX, centerY) * 0.9;
+    
+    const bass = data.slice(0, 5).reduce((a, b) => a + b, 0) / 5;
+    const mid = data.slice(10, 20).reduce((a, b) => a + b, 0) / 10;
+    const treble = data.slice(30, 40).reduce((a, b) => a + b, 0) / 10;
+
+    const bassRadius = (bass / 255) * maxRadius;
+    const midRadius = (mid / 255) * maxRadius;
+    const trebleRadius = (treble / 255) * maxRadius;
+
+    ctx.lineWidth = Math.max(2, (bass / 255) * 10);
+    ctx.strokeStyle = `rgba(255, 0, 80, ${bass / 255})`;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, bassRadius, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    ctx.lineWidth = Math.max(1.5, (mid / 255) * 8);
+    ctx.strokeStyle = `rgba(0, 255, 255, ${mid / 255})`;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, midRadius, 0, 2 * Math.PI);
+    ctx.stroke();
+    
+    ctx.lineWidth = Math.max(1, (treble / 255) * 6);
+    ctx.strokeStyle = `rgba(255, 255, 0, ${treble / 255})`;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, trebleRadius, 0, 2 * Math.PI);
+    ctx.stroke();
+};
+
 
 const Visualizer: React.FC<VisualizerProps> = ({ frequencyData, style, onClick, isLocked }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -111,6 +200,15 @@ const Visualizer: React.FC<VisualizerProps> = ({ frequencyData, style, onClick, 
             break;
         case 'pulse':
             drawPulse(context, frequencyData, width, height, accentColor);
+            break;
+        case 'spectrum':
+            drawSpectrum(context, frequencyData, width, height);
+            break;
+        case 'aurora':
+            drawAurora(context, frequencyData, width, height);
+            break;
+        case 'rings':
+            drawRings(context, frequencyData, width, height);
             break;
         case 'bars':
         default:

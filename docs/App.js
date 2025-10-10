@@ -20,6 +20,7 @@ const StationFilter = {
 const CUSTOM_ORDER_KEY = 'radio-station-custom-order';
 const THEME_KEY = 'radio-theme';
 const EQ_KEY = 'radio-eq';
+const CUSTOM_EQ_KEY = 'radio-custom-eq';
 const LAST_STATION_KEY = 'radio-last-station-uuid';
 const LAST_FILTER_KEY = 'radio-last-filter';
 const LAST_SORT_KEY = 'radio-last-sort';
@@ -28,6 +29,7 @@ const VISUALIZER_ENABLED_KEY = 'radio-visualizer-enabled';
 const VISUALIZER_LOCKED_KEY = 'radio-visualizer-locked';
 const VISUALIZER_STYLE_KEY = 'radio-visualizer-style';
 const STATUS_INDICATOR_ENABLED_KEY = 'radio-status-indicator-enabled';
+const VOLUME_CONTROL_VISIBLE_KEY = 'radio-volume-control-visible';
 
 const SortButton = ({ label, order, currentOrder, setOrder }) => (
   React.createElement("button", {
@@ -89,6 +91,15 @@ export default function App() {
       return (saved && EQ_PRESET_KEYS.includes(saved)) ? saved : 'flat';
   });
   
+  const [customEqSettings, setCustomEqSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CUSTOM_EQ_KEY);
+      return saved ? JSON.parse(saved) : { bass: 0, mid: 0, treble: 0 };
+    } catch {
+      return { bass: 0, mid: 0, treble: 0 };
+    }
+  });
+
   const [volume, setVolume] = useState(() => {
     const saved = localStorage.getItem(VOLUME_KEY);
     return saved ? parseFloat(saved) : 1;
@@ -112,6 +123,11 @@ export default function App() {
   const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState(() => {
     const saved = localStorage.getItem(STATUS_INDICATOR_ENABLED_KEY);
     return saved ? JSON.parse(saved) : true;
+  });
+
+  const [isVolumeControlVisible, setIsVolumeControlVisible] = useState(() => {
+      const saved = localStorage.getItem(VOLUME_CONTROL_VISIBLE_KEY);
+      return saved ? JSON.parse(saved) : true;
   });
 
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
@@ -219,6 +235,11 @@ export default function App() {
     localStorage.setItem(EQ_KEY, preset);
   };
   
+  const handleSetCustomEqSettings = (settings) => {
+    setCustomEqSettings(settings);
+    localStorage.setItem(CUSTOM_EQ_KEY, JSON.stringify(settings));
+  };
+  
   const handleSetVisualizerEnabled = (enabled) => {
     setIsVisualizerEnabled(enabled);
     localStorage.setItem(VISUALIZER_ENABLED_KEY, JSON.stringify(enabled));
@@ -232,6 +253,11 @@ export default function App() {
   const handleSetStatusIndicatorEnabled = (enabled) => {
     setIsStatusIndicatorEnabled(enabled);
     localStorage.setItem(STATUS_INDICATOR_ENABLED_KEY, JSON.stringify(enabled));
+  };
+
+  const handleSetIsVolumeControlVisible = (visible) => {
+    setIsVolumeControlVisible(visible);
+    localStorage.setItem(VOLUME_CONTROL_VISIBLE_KEY, JSON.stringify(visible));
   };
   
   const handleCycleVisualizerStyle = useCallback(() => {
@@ -425,7 +451,11 @@ export default function App() {
         isVisualizerLocked: isVisualizerLocked,
         onVisualizerLockedChange: handleSetVisualizerLocked,
         isStatusIndicatorEnabled: isStatusIndicatorEnabled,
-        onStatusIndicatorEnabledChange: handleSetStatusIndicatorEnabled
+        onStatusIndicatorEnabledChange: handleSetStatusIndicatorEnabled,
+        isVolumeControlVisible: isVolumeControlVisible,
+        onVolumeControlVisibleChange: handleSetIsVolumeControlVisible,
+        customEqSettings: customEqSettings,
+        onCustomEqChange: handleSetCustomEqSettings,
       }),
       currentStation && React.createElement(NowPlaying, {
         isOpen: isNowPlayingOpen,
@@ -442,7 +472,8 @@ export default function App() {
         visualizerStyle: visualizerStyle,
         isVisualizerEnabled: isVisualizerEnabled,
         isVisualizerLocked: isVisualizerLocked,
-        onCycleVisualizerStyle: handleCycleVisualizerStyle
+        onCycleVisualizerStyle: handleCycleVisualizerStyle,
+        isVolumeControlVisible: isVolumeControlVisible,
       }),
       React.createElement(Player, {
         station: currentStation,
@@ -451,6 +482,7 @@ export default function App() {
         onNext: handleNext,
         onPrev: handlePrev,
         eqPreset: eqPreset,
+        customEqSettings: customEqSettings,
         volume: volume,
         onVolumeChange: handleSetVolume,
         displayInfo: displayInfo,

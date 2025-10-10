@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Station, EqPreset, EQ_PRESETS } from '../types';
+import { Station, EqPreset, EQ_PRESETS, CustomEqSettings } from '../types';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons';
 import { CORS_PROXY_URL } from '../constants';
 
@@ -10,6 +10,7 @@ interface PlayerProps {
   onNext: () => void;
   onPrev: () => void;
   eqPreset: EqPreset;
+  customEqSettings: CustomEqSettings;
   volume: number;
   onVolumeChange: (volume: number) => void;
   displayInfo: string | null;
@@ -65,6 +66,7 @@ const Player: React.FC<PlayerProps> = ({
   onNext,
   onPrev,
   eqPreset,
+  customEqSettings,
   volume,
   onVolumeChange,
   displayInfo,
@@ -176,12 +178,18 @@ const Player: React.FC<PlayerProps> = ({
   
   // Apply EQ settings
   useEffect(() => {
-      if (!bassFilterRef.current || !midFilterRef.current || !trebleFilterRef.current) return;
-      const { bass, mid, treble } = EQ_PRESETS[eqPreset];
-      bassFilterRef.current.gain.value = bass;
-      midFilterRef.current.gain.value = mid;
-      trebleFilterRef.current.gain.value = treble;
-  }, [eqPreset]);
+    if (!bassFilterRef.current || !midFilterRef.current || !trebleFilterRef.current) return;
+    
+    const settings = eqPreset === 'custom' 
+      ? customEqSettings 
+      : EQ_PRESETS[eqPreset as Exclude<EqPreset, 'custom'>];
+
+    if (settings) {
+      bassFilterRef.current.gain.value = settings.bass;
+      midFilterRef.current.gain.value = settings.mid;
+      trebleFilterRef.current.gain.value = settings.treble;
+    }
+  }, [eqPreset, customEqSettings]);
 
   // Visualizer data loop
   useEffect(() => {

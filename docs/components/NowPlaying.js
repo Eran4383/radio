@@ -5,7 +5,8 @@ import Visualizer from './Visualizer.js';
 const NowPlaying = ({
   isOpen, onClose, station, isPlaying, onPlayPause, onNext, onPrev, 
   volume, onVolumeChange, displayInfo, frequencyData,
-  visualizerStyle, isVisualizerEnabled, isVisualizerLocked, onCycleVisualizerStyle
+  visualizerStyle, isVisualizerEnabled, isVisualizerLocked, onCycleVisualizerStyle,
+  isVolumeControlVisible
 }) => {
     const touchStartY = useRef(0);
     const touchStartX = useRef(0);
@@ -107,18 +108,20 @@ const NowPlaying = ({
                 React.createElement(SkipPreviousIcon, { className: "w-12 h-12" })
               )
             ),
-            React.createElement("div", { className: "w-full max-w-xs flex items-center gap-3" },
-              React.createElement(VolumeUpIcon, { className: "w-6 h-6 text-text-secondary flex-shrink-0" }),
-              React.createElement("input", {
-                type: "range",
-                min: "0",
-                max: "1",
-                step: "0.05",
-                value: volume,
-                onChange: (e) => onVolumeChange(parseFloat(e.target.value)),
-                className: "w-full accent-teal-500",
-                "aria-label": "עוצמת שמע"
-              })
+            isVolumeControlVisible && (
+              React.createElement("div", { className: "w-full max-w-xs flex items-center gap-3" },
+                React.createElement(VolumeUpIcon, { className: "w-6 h-6 text-text-secondary flex-shrink-0" }),
+                React.createElement("input", {
+                  type: "range",
+                  min: "0",
+                  max: "1",
+                  step: "0.05",
+                  value: volume,
+                  onChange: (e) => onVolumeChange(parseFloat(e.target.value)),
+                  className: "w-full accent-teal-500",
+                  "aria-label": "עוצמת שמע"
+                })
+              )
             )
         )
       )

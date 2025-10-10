@@ -1,5 +1,5 @@
 import React from 'react';
-import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types';
+import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings } from '../types';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -14,6 +14,10 @@ interface SettingsPanelProps {
   onVisualizerLockedChange: (locked: boolean) => void;
   isStatusIndicatorEnabled: boolean;
   onStatusIndicatorEnabledChange: (enabled: boolean) => void;
+  isVolumeControlVisible: boolean;
+  onVolumeControlVisibleChange: (enabled: boolean) => void;
+  customEqSettings: CustomEqSettings;
+  onCustomEqChange: (settings: CustomEqSettings) => void;
 }
 
 const SettingsButton: React.FC<{
@@ -23,7 +27,7 @@ const SettingsButton: React.FC<{
 }> = ({ label, isActive, onClick }) => (
     <button
         onClick={onClick}
-        className={`px-4 py-2 text-sm font-medium rounded-md transition-colors w-full ${
+        className={`px-4 py-2 text-xs font-medium rounded-md transition-colors w-full capitalize ${
             isActive ? 'bg-accent text-white' : 'bg-bg-primary hover:bg-accent/20'
         }`}
     >
@@ -48,10 +52,32 @@ const ToggleSwitch: React.FC<{
         >
             <span
                 className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${
-                    enabled ? 'translate-x-6' : 'translate-x-1'
+                    enabled ? 'translate-x-5' : 'translate-x-1'
                 }`}
             />
         </button>
+    </div>
+);
+
+const EqSlider: React.FC<{
+    label: string;
+    value: number;
+    onChange: (value: number) => void;
+}> = ({ label, value, onChange }) => (
+    <div className="flex flex-col gap-1">
+        <div className="flex justify-between text-xs text-text-secondary">
+            <span>{label}</span>
+            <span>{value > 0 ? '+' : ''}{value} dB</span>
+        </div>
+        <input
+            type="range"
+            min="-10"
+            max="10"
+            step="1"
+            value={value}
+            onChange={(e) => onChange(parseInt(e.target.value, 10))}
+            className="w-full accent-teal-500 h-2 bg-bg-primary rounded-lg appearance-none cursor-pointer"
+        />
     </div>
 );
 
@@ -59,7 +85,8 @@ const ToggleSwitch: React.FC<{
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
     isOpen, onClose, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
     isVisualizerEnabled, onVisualizerEnabledChange, isVisualizerLocked, onVisualizerLockedChange,
-    isStatusIndicatorEnabled, onStatusIndicatorEnabledChange
+    isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
+    customEqSettings, onCustomEqChange
  }) => {
   return (
     <>
@@ -90,17 +117,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             {/* Theme Switcher */}
             <div className="mb-6 flex-shrink-0">
                 <h3 className="text-sm font-semibold text-text-secondary mb-2">ערכת נושא</h3>
-                <div className="grid grid-cols-3 gap-2">
-                    <SettingsButton label="כהה" isActive={currentTheme === 'dark'} onClick={() => onThemeChange('dark')} />
-                    <SettingsButton label="בהיר" isActive={currentTheme === 'light'} onClick={() => onThemeChange('light')} />
-                    <SettingsButton label="כחול" isActive={currentTheme === 'blue'} onClick={() => onThemeChange('blue')} />
+                <div className="grid grid-cols-4 gap-2">
+                    {THEMES.map(theme => (
+                         <SettingsButton 
+                            key={theme}
+                            label={theme}
+                            isActive={currentTheme === theme} 
+                            onClick={() => onThemeChange(theme)} 
+                        />
+                    ))}
                 </div>
             </div>
 
              {/* Equalizer */}
             <div className="mb-6 flex-shrink-0">
                 <h3 className="text-sm font-semibold text-text-secondary mb-2">אקולייזר (EQ)</h3>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2 mb-3">
                     {EQ_PRESET_KEYS.map(preset => (
                         <SettingsButton 
                             key={preset}
@@ -110,6 +142,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         />
                     ))}
                 </div>
+                 {currentEqPreset === 'custom' && (
+                    <div className="p-3 rounded-lg bg-bg-primary space-y-3">
+                        <EqSlider 
+                            label="בס (Bass)"
+                            value={customEqSettings.bass}
+                            onChange={(val) => onCustomEqChange({ ...customEqSettings, bass: val })}
+                        />
+                        <EqSlider 
+                            label="אמצע (Mid)"
+                            value={customEqSettings.mid}
+                            onChange={(val) => onCustomEqChange({ ...customEqSettings, mid: val })}
+                        />
+                         <EqSlider 
+                            label="גבוהים (Treble)"
+                            value={customEqSettings.treble}
+                            onChange={(val) => onCustomEqChange({ ...customEqSettings, treble: val })}
+                        />
+                    </div>
+                )}
             </div>
 
             {/* Display Settings */}
@@ -131,6 +182,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         label="הצג חיווי מצב"
                         enabled={isStatusIndicatorEnabled}
                         onChange={onStatusIndicatorEnabledChange}
+                    />
+                    <ToggleSwitch 
+                        label="הצג בקרת עוצמה"
+                        enabled={isVolumeControlVisible}
+                        onChange={onVolumeControlVisibleChange}
                     />
                 </div>
             </div>

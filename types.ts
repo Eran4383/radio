@@ -9,13 +9,19 @@ export interface Station {
   bitrate: number;
 }
 
-export const THEMES = ['dark', 'light', 'blue'] as const;
+export const THEMES = ['dark', 'light', 'blue', 'sunset', 'forest', 'ocean', 'rose', 'matrix'] as const;
 export type Theme = typeof THEMES[number];
 
-export const EQ_PRESET_KEYS = ['flat', 'bassBoost', 'vocalBoost', 'rock'] as const;
+export const EQ_PRESET_KEYS = ['flat', 'bassBoost', 'vocalBoost', 'rock', 'custom'] as const;
 export type EqPreset = typeof EQ_PRESET_KEYS[number];
 
-export const EQ_PRESETS: Record<EqPreset, { bass: number; mid: number; treble: number }> = {
+export interface CustomEqSettings {
+  bass: number;
+  mid: number;
+  treble: number;
+}
+
+export const EQ_PRESETS: Record<Exclude<EqPreset, 'custom'>, { bass: number; mid: number; treble: number }> = {
   flat: { bass: 0, mid: 0, treble: 0 },
   bassBoost: { bass: 6, mid: -2, treble: -2 },
   vocalBoost: { bass: -2, mid: 4, treble: 2 },
@@ -27,13 +33,17 @@ export const EQ_PRESET_LABELS: Record<EqPreset, string> = {
   bassBoost: 'הגברת בס',
   vocalBoost: 'הגברת קולות',
   rock: 'רוק',
+  custom: 'מותאם אישית',
 };
 
-export const VISUALIZER_STYLES = ['bars', 'wave', 'pulse'] as const;
+export const VISUALIZER_STYLES = ['bars', 'wave', 'pulse', 'spectrum', 'aurora', 'rings'] as const;
 export type VisualizerStyle = typeof VISUALIZER_STYLES[number];
 
 export const VISUALIZER_STYLE_LABELS: Record<VisualizerStyle, string> = {
     bars: 'עמודות',
     wave: 'גל קול',
     pulse: 'פעימה',
+    spectrum: 'ספקטרום',
+    aurora: 'זוהר צפוני',
+    rings: 'טבעות',
 };

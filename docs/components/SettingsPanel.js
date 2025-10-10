@@ -1,10 +1,10 @@
 import React from 'react';
-import { EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
+import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
 
 const SettingsButton = ({ label, isActive, onClick }) => (
     React.createElement("button", {
         onClick: onClick,
-        className: `px-4 py-2 text-sm font-medium rounded-md transition-colors w-full ${
+        className: `px-4 py-2 text-xs font-medium rounded-md transition-colors w-full capitalize ${
             isActive ? 'bg-accent text-white' : 'bg-bg-primary hover:bg-accent/20'
         }`
     },
@@ -24,10 +24,28 @@ const ToggleSwitch = ({ label, enabled, onChange, disabled = false }) => (
         },
             React.createElement("span", {
                 className: `inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${
-                    enabled ? 'translate-x-6' : 'translate-x-1'
+                    enabled ? 'translate-x-5' : 'translate-x-1'
                 }`
             })
         )
+    )
+);
+
+const EqSlider = ({ label, value, onChange }) => (
+    React.createElement("div", { className: "flex flex-col gap-1" },
+        React.createElement("div", { className: "flex justify-between text-xs text-text-secondary" },
+            React.createElement("span", null, label),
+            React.createElement("span", null, `${value > 0 ? '+' : ''}${value} dB`)
+        ),
+        React.createElement("input", {
+            type: "range",
+            min: "-10",
+            max: "10",
+            step: "1",
+            value: value,
+            onChange: (e) => onChange(parseInt(e.target.value, 10)),
+            className: "w-full accent-teal-500 h-2 bg-bg-primary rounded-lg appearance-none cursor-pointer"
+        })
     )
 );
 
@@ -35,7 +53,8 @@ const ToggleSwitch = ({ label, enabled, onChange, disabled = false }) => (
 const SettingsPanel = ({ 
     isOpen, onClose, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
     isVisualizerEnabled, onVisualizerEnabledChange, isVisualizerLocked, onVisualizerLockedChange,
-    isStatusIndicatorEnabled, onStatusIndicatorEnabledChange
+    isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
+    customEqSettings, onCustomEqChange
  }) => {
   return (
     React.createElement(React.Fragment, null,
@@ -66,17 +85,22 @@ const SettingsPanel = ({
             /* Theme Switcher */
             React.createElement("div", { className: "mb-6 flex-shrink-0" },
                 React.createElement("h3", { className: "text-sm font-semibold text-text-secondary mb-2" }, "ערכת נושא"),
-                React.createElement("div", { className: "grid grid-cols-3 gap-2" },
-                    React.createElement(SettingsButton, { label: "כהה", isActive: currentTheme === 'dark', onClick: () => onThemeChange('dark') }),
-                    React.createElement(SettingsButton, { label: "בהיר", isActive: currentTheme === 'light', onClick: () => onThemeChange('light') }),
-                    React.createElement(SettingsButton, { label: "כחול", isActive: currentTheme === 'blue', onClick: () => onThemeChange('blue') })
+                React.createElement("div", { className: "grid grid-cols-4 gap-2" },
+                    THEMES.map(theme => (
+                         React.createElement(SettingsButton, { 
+                            key: theme,
+                            label: theme,
+                            isActive: currentTheme === theme, 
+                            onClick: () => onThemeChange(theme) 
+                        })
+                    ))
                 )
             ),
 
              /* Equalizer */
             React.createElement("div", { className: "mb-6 flex-shrink-0" },
                 React.createElement("h3", { className: "text-sm font-semibold text-text-secondary mb-2" }, "אקולייזר (EQ)"),
-                React.createElement("div", { className: "grid grid-cols-2 gap-2" },
+                React.createElement("div", { className: "grid grid-cols-3 gap-2 mb-3" },
                     EQ_PRESET_KEYS.map(preset => (
                         React.createElement(SettingsButton, { 
                             key: preset,
@@ -85,6 +109,25 @@ const SettingsPanel = ({
                             onClick: () => onEqPresetChange(preset) 
                         })
                     ))
+                ),
+                currentEqPreset === 'custom' && (
+                    React.createElement("div", { className: "p-3 rounded-lg bg-bg-primary space-y-3" },
+                        React.createElement(EqSlider, { 
+                            label: "בס (Bass)",
+                            value: customEqSettings.bass,
+                            onChange: (val) => onCustomEqChange({ ...customEqSettings, bass: val })
+                        }),
+                        React.createElement(EqSlider, { 
+                            label: "אמצע (Mid)",
+                            value: customEqSettings.mid,
+                            onChange: (val) => onCustomEqChange({ ...customEqSettings, mid: val })
+                        }),
+                         React.createElement(EqSlider, { 
+                            label: "גבוהים (Treble)",
+                            value: customEqSettings.treble,
+                            onChange: (val) => onCustomEqChange({ ...customEqSettings, treble: val })
+                        })
+                    )
                 )
             ),
 
@@ -107,6 +150,11 @@ const SettingsPanel = ({
                         label: "הצג חיווי מצב",
                         enabled: isStatusIndicatorEnabled,
                         onChange: onStatusIndicatorEnabledChange
+                    }),
+                    React.createElement(ToggleSwitch, {
+                        label: "הצג בקרת עוצמה",
+                        enabled: isVolumeControlVisible,
+                        onChange: onVolumeControlVisibleChange
                     })
                 )
             ),

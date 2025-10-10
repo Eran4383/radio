@@ -48,6 +48,7 @@ const Player = ({
   onNext,
   onPrev,
   eqPreset,
+  customEqSettings,
   volume,
   onVolumeChange,
   displayInfo,
@@ -158,12 +159,18 @@ const Player = ({
   
   // Apply EQ settings
   useEffect(() => {
-      if (!bassFilterRef.current || !midFilterRef.current || !trebleFilterRef.current) return;
-      const { bass, mid, treble } = EQ_PRESETS[eqPreset];
-      bassFilterRef.current.gain.value = bass;
-      midFilterRef.current.gain.value = mid;
-      trebleFilterRef.current.gain.value = treble;
-  }, [eqPreset]);
+    if (!bassFilterRef.current || !midFilterRef.current || !trebleFilterRef.current) return;
+    
+    const settings = eqPreset === 'custom' 
+      ? customEqSettings 
+      : EQ_PRESETS[eqPreset];
+
+    if (settings) {
+      bassFilterRef.current.gain.value = settings.bass;
+      midFilterRef.current.gain.value = settings.mid;
+      trebleFilterRef.current.gain.value = settings.treble;
+    }
+  }, [eqPreset, customEqSettings]);
 
   // Visualizer data loop
   useEffect(() => {

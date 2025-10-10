@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { fetchIsraeliStations } from './services/radioService';
-import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES } from './types';
+import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings } from './types';
 import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
@@ -23,6 +23,7 @@ type SortOrder = 'priority' | 'name' | 'tags' | 'custom';
 const CUSTOM_ORDER_KEY = 'radio-station-custom-order';
 const THEME_KEY = 'radio-theme';
 const EQ_KEY = 'radio-eq';
+const CUSTOM_EQ_KEY = 'radio-custom-eq';
 const LAST_STATION_KEY = 'radio-last-station-uuid';
 const LAST_FILTER_KEY = 'radio-last-filter';
 const LAST_SORT_KEY = 'radio-last-sort';
@@ -31,6 +32,7 @@ const VISUALIZER_ENABLED_KEY = 'radio-visualizer-enabled';
 const VISUALIZER_LOCKED_KEY = 'radio-visualizer-locked';
 const VISUALIZER_STYLE_KEY = 'radio-visualizer-style';
 const STATUS_INDICATOR_ENABLED_KEY = 'radio-status-indicator-enabled';
+const VOLUME_CONTROL_VISIBLE_KEY = 'radio-volume-control-visible';
 
 
 const SortButton: React.FC<{
@@ -100,6 +102,15 @@ export default function App() {
       return (saved && EQ_PRESET_KEYS.includes(saved)) ? saved : 'flat';
   });
 
+  const [customEqSettings, setCustomEqSettings] = useState<CustomEqSettings>(() => {
+    try {
+      const saved = localStorage.getItem(CUSTOM_EQ_KEY);
+      return saved ? JSON.parse(saved) : { bass: 0, mid: 0, treble: 0 };
+    } catch {
+      return { bass: 0, mid: 0, treble: 0 };
+    }
+  });
+
   const [volume, setVolume] = useState<number>(() => {
     const saved = localStorage.getItem(VOLUME_KEY);
     return saved ? parseFloat(saved) : 1;
@@ -123,6 +134,11 @@ export default function App() {
   const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState<boolean>(() => {
     const saved = localStorage.getItem(STATUS_INDICATOR_ENABLED_KEY);
     return saved ? JSON.parse(saved) : true;
+  });
+
+  const [isVolumeControlVisible, setIsVolumeControlVisible] = useState<boolean>(() => {
+      const saved = localStorage.getItem(VOLUME_CONTROL_VISIBLE_KEY);
+      return saved ? JSON.parse(saved) : true;
   });
 
 
@@ -243,6 +259,11 @@ export default function App() {
     setEqPreset(preset);
     localStorage.setItem(EQ_KEY, preset);
   };
+
+  const handleSetCustomEqSettings = (settings: CustomEqSettings) => {
+    setCustomEqSettings(settings);
+    localStorage.setItem(CUSTOM_EQ_KEY, JSON.stringify(settings));
+  };
   
   const handleSetVisualizerEnabled = (enabled: boolean) => {
     setIsVisualizerEnabled(enabled);
@@ -257,6 +278,11 @@ export default function App() {
   const handleSetStatusIndicatorEnabled = (enabled: boolean) => {
     setIsStatusIndicatorEnabled(enabled);
     localStorage.setItem(STATUS_INDICATOR_ENABLED_KEY, JSON.stringify(enabled));
+  };
+
+  const handleSetIsVolumeControlVisible = (visible: boolean) => {
+    setIsVolumeControlVisible(visible);
+    localStorage.setItem(VOLUME_CONTROL_VISIBLE_KEY, JSON.stringify(visible));
   };
   
   const handleCycleVisualizerStyle = useCallback(() => {
@@ -482,6 +508,10 @@ export default function App() {
         onVisualizerLockedChange={handleSetVisualizerLocked}
         isStatusIndicatorEnabled={isStatusIndicatorEnabled}
         onStatusIndicatorEnabledChange={handleSetStatusIndicatorEnabled}
+        isVolumeControlVisible={isVolumeControlVisible}
+        onVolumeControlVisibleChange={handleSetIsVolumeControlVisible}
+        customEqSettings={customEqSettings}
+        onCustomEqChange={handleSetCustomEqSettings}
       />
 
       {currentStation && (
@@ -501,6 +531,7 @@ export default function App() {
           isVisualizerEnabled={isVisualizerEnabled}
           isVisualizerLocked={isVisualizerLocked}
           onCycleVisualizerStyle={handleCycleVisualizerStyle}
+          isVolumeControlVisible={isVolumeControlVisible}
         />
       )}
      
@@ -511,6 +542,7 @@ export default function App() {
         onNext={handleNext}
         onPrev={handlePrev}
         eqPreset={eqPreset}
+        customEqSettings={customEqSettings}
         volume={volume}
         onVolumeChange={handleSetVolume}
         displayInfo={displayInfo}
