@@ -16,10 +16,12 @@ export const EQ_PRESET_LABELS = {
   rock: 'רוק',
 };
 
-export const VISUALIZER_STYLES = ['bars', 'wave', 'pulse'];
+export const VISUALIZER_STYLES = ['bars', 'wave', 'pulse', 'barsMirrored', 'waveSymmetric'];
 
 export const VISUALIZER_STYLE_LABELS = {
     bars: 'עמודות',
     wave: 'גל קול',
-    pulse: 'פעימה'
+    pulse: 'פעימה',
+    barsMirrored: 'עמודות (מראה)',
+    waveSymmetric: 'גל סימטרי'
 };

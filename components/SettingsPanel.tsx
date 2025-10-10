@@ -12,6 +12,8 @@ interface SettingsPanelProps {
   onVisualizerEnabledChange: (enabled: boolean) => void;
   isVisualizerLocked: boolean;
   onVisualizerLockedChange: (locked: boolean) => void;
+  isStatusIndicatorEnabled: boolean;
+  onStatusIndicatorEnabledChange: (enabled: boolean) => void;
 }
 
 const SettingsButton: React.FC<{
@@ -56,7 +58,8 @@ const ToggleSwitch: React.FC<{
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
     isOpen, onClose, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
-    isVisualizerEnabled, onVisualizerEnabledChange, isVisualizerLocked, onVisualizerLockedChange
+    isVisualizerEnabled, onVisualizerEnabledChange, isVisualizerLocked, onVisualizerLockedChange,
+    isStatusIndicatorEnabled, onStatusIndicatorEnabledChange
  }) => {
   return (
     <>
@@ -109,26 +112,31 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </div>
             </div>
 
-            {/* Visualizer Settings */}
+            {/* Display Settings */}
             <div className="mb-6 flex-shrink-0">
-                <h3 className="text-sm font-semibold text-text-secondary mb-2">תצוגה גרפית</h3>
+                <h3 className="text-sm font-semibold text-text-secondary mb-2">ממשק</h3>
                 <div className="space-y-2">
                     <ToggleSwitch 
-                        label="הצג תצוגה" 
+                        label="הצג תצוגה גרפית" 
                         enabled={isVisualizerEnabled} 
                         onChange={onVisualizerEnabledChange} 
                     />
                     <ToggleSwitch 
-                        label="נעל סגנון" 
+                        label="נעל סגנון תצוגה" 
                         enabled={isVisualizerLocked} 
                         onChange={onVisualizerLockedChange}
                         disabled={!isVisualizerEnabled}
+                    />
+                    <ToggleSwitch 
+                        label="הצג חיווי מצב"
+                        enabled={isStatusIndicatorEnabled}
+                        onChange={onStatusIndicatorEnabledChange}
                     />
                 </div>
             </div>
 
             <div className="mt-auto text-center text-xs text-text-secondary flex-shrink-0">
-                <p>רדיו פרימיום v1.2</p>
+                <p>רדיו פרימיום v1.3</p>
             </div>
         </div>
       </div>

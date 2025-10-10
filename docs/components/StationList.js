@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { StarIcon } from './Icons.js';
 
-const StationList = ({ stations, currentStation, onSelectStation, isFavorite, toggleFavorite, onReorder }) => {
+const StationList = ({ 
+    stations, currentStation, onSelectStation, isFavorite, toggleFavorite, onReorder,
+    isStreamActive, isStatusIndicatorEnabled 
+}) => {
   const [draggedUuid, setDraggedUuid] = useState(null);
   const [previewList, setPreviewList] = useState(null);
 
@@ -54,9 +57,10 @@ const StationList = ({ stations, currentStation, onSelectStation, isFavorite, to
     },
       listToRender.map(station => {
         const isBeingDragged = draggedUuid === station.stationuuid;
+        const isCurrentlyPlaying = currentStation?.stationuuid === station.stationuuid;
 
         const baseClasses = `relative rounded-lg p-4 flex flex-col items-center justify-center text-center cursor-pointer transform transition-transform duration-500 ease-in-out`;
-        const stateClasses = currentStation?.stationuuid === station.stationuuid 
+        const stateClasses = isCurrentlyPlaying
             ? 'bg-accent/30 ring-2 ring-accent scale-105' 
             : 'bg-bg-secondary hover:bg-accent/10 hover:scale-105';
         const dragClasses = isBeingDragged ? 'dragging' : '';
@@ -70,6 +74,14 @@ const StationList = ({ stations, currentStation, onSelectStation, isFavorite, to
             className: `${baseClasses} ${stateClasses} ${dragClasses}`,
             onClick: () => onSelectStation(station)
           },
+            isStatusIndicatorEnabled && isCurrentlyPlaying && (
+                React.createElement("div", { 
+                    className: `absolute top-2 left-2 w-2.5 h-2.5 rounded-full ring-2 ring-bg-secondary transition-colors ${
+                        isStreamActive ? 'bg-accent animate-pulse' : 'bg-text-secondary'
+                    }`,
+                    title: isStreamActive ? "התחנה משדרת" : "מתחבר..."
+                })
+            ),
             React.createElement("img", { 
               src: station.favicon, 
               alt: station.name, 

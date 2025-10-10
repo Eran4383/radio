@@ -76,6 +76,60 @@ const drawPulse = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: numbe
     ctx.fill();
 };
 
+const drawBarsMirrored = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number, color: string) => {
+    const bufferLength = data.length;
+    const halfBuffer = Math.floor(bufferLength / 2);
+    const centerX = width / 2;
+    const barWidth = (width / 2) / halfBuffer;
+    
+    const gradient = ctx.createLinearGradient(0, height, 0, 0);
+    gradient.addColorStop(0, `${color}40`);
+    gradient.addColorStop(1, color);
+    ctx.fillStyle = gradient;
+
+    for (let i = 0; i < halfBuffer; i++) {
+        const barHeight = (data[i] / 255) * height;
+        // Draw right side
+        ctx.fillRect(centerX + (i * barWidth), height - barHeight, barWidth - 1, barHeight);
+        // Draw left side (mirrored)
+        ctx.fillRect(centerX - ((i + 1) * barWidth), height - barHeight, barWidth - 1, barHeight);
+    }
+};
+
+const drawWaveSymmetric = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number, color: string) => {
+    const bufferLength = data.length;
+    const halfBuffer = Math.floor(bufferLength / 2);
+    const centerX = width / 2;
+    
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    
+    const sliceWidth = (width / 2) / halfBuffer;
+    
+    // Right side
+    let x = centerX;
+    ctx.moveTo(centerX, height - (data[0] / 255.0) * height);
+    for (let i = 0; i < halfBuffer; i++) {
+        const v = data[i] / 255.0;
+        const y = height - (v * height);
+        ctx.lineTo(x, y);
+        x += sliceWidth;
+    }
+    
+    // Left side (mirrored)
+    x = centerX;
+    ctx.moveTo(centerX, height - (data[0] / 255.0) * height);
+    for (let i = 0; i < halfBuffer; i++) {
+        const v = data[i] / 255.0;
+        const y = height - (v * height);
+        ctx.lineTo(x, y);
+        x -= sliceWidth;
+    }
+
+    ctx.stroke();
+};
+
 
 const Visualizer: React.FC<VisualizerProps> = ({ frequencyData, style, onClick, isLocked }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -99,6 +153,12 @@ const Visualizer: React.FC<VisualizerProps> = ({ frequencyData, style, onClick, 
             break;
         case 'pulse':
             drawPulse(context, frequencyData, width, height, accentColor);
+            break;
+        case 'barsMirrored':
+            drawBarsMirrored(context, frequencyData, width, height, accentColor);
+            break;
+        case 'waveSymmetric':
+            drawWaveSymmetric(context, frequencyData, width, height, accentColor);
             break;
         case 'bars':
         default:

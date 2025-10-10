@@ -34,7 +34,8 @@ const ToggleSwitch = ({ label, enabled, onChange, disabled = false }) => (
 
 const SettingsPanel = ({ 
     isOpen, onClose, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
-    isVisualizerEnabled, onVisualizerEnabledChange, isVisualizerLocked, onVisualizerLockedChange
+    isVisualizerEnabled, onVisualizerEnabledChange, isVisualizerLocked, onVisualizerLockedChange,
+    isStatusIndicatorEnabled, onStatusIndicatorEnabledChange
  }) => {
   return (
     React.createElement(React.Fragment, null,
@@ -87,26 +88,31 @@ const SettingsPanel = ({
                 )
             ),
 
-            /* Visualizer Settings */
+            /* Display Settings */
             React.createElement("div", { className: "mb-6 flex-shrink-0" },
-                React.createElement("h3", { className: "text-sm font-semibold text-text-secondary mb-2" }, "תצוגה גרפית"),
+                React.createElement("h3", { className: "text-sm font-semibold text-text-secondary mb-2" }, "ממשק"),
                 React.createElement("div", { className: "space-y-2" },
                     React.createElement(ToggleSwitch, { 
-                        label: "הצג תצוגה", 
+                        label: "הצג תצוגה גרפית", 
                         enabled: isVisualizerEnabled, 
                         onChange: onVisualizerEnabledChange 
                     }),
                     React.createElement(ToggleSwitch, { 
-                        label: "נעל סגנון", 
+                        label: "נעל סגנון תצוגה", 
                         enabled: isVisualizerLocked, 
                         onChange: onVisualizerLockedChange,
                         disabled: !isVisualizerEnabled
+                    }),
+                    React.createElement(ToggleSwitch, {
+                        label: "הצג חיווי מצב",
+                        enabled: isStatusIndicatorEnabled,
+                        onChange: onStatusIndicatorEnabledChange
                     })
                 )
             ),
 
             React.createElement("div", { className: "mt-auto text-center text-xs text-text-secondary flex-shrink-0" },
-                React.createElement("p", null, "רדיו פרימיום v1.2")
+                React.createElement("p", null, "רדיו פרימיום v1.3")
             )
         )
       )

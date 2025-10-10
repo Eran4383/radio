@@ -30,6 +30,7 @@ const VOLUME_KEY = 'radio-volume';
 const VISUALIZER_ENABLED_KEY = 'radio-visualizer-enabled';
 const VISUALIZER_LOCKED_KEY = 'radio-visualizer-locked';
 const VISUALIZER_STYLE_KEY = 'radio-visualizer-style';
+const STATUS_INDICATOR_ENABLED_KEY = 'radio-status-indicator-enabled';
 
 
 const SortButton: React.FC<{
@@ -58,6 +59,7 @@ export default function App() {
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [displayInfo, setDisplayInfo] = useState<string | null>(null);
+  const [isStreamActive, setIsStreamActive] = useState(false);
   
   // State loaded from LocalStorage
   const [customOrder, setCustomOrder] = useState<string[]>(() => {
@@ -117,6 +119,12 @@ export default function App() {
       const saved = localStorage.getItem(VISUALIZER_STYLE_KEY) as VisualizerStyle;
       return (saved && VISUALIZER_STYLES.includes(saved)) ? saved : 'bars';
   });
+  
+  const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem(STATUS_INDICATOR_ENABLED_KEY);
+    return saved ? JSON.parse(saved) : true;
+  });
+
 
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
   
@@ -246,6 +254,11 @@ export default function App() {
     localStorage.setItem(VISUALIZER_LOCKED_KEY, JSON.stringify(locked));
   };
   
+  const handleSetStatusIndicatorEnabled = (enabled: boolean) => {
+    setIsStatusIndicatorEnabled(enabled);
+    localStorage.setItem(STATUS_INDICATOR_ENABLED_KEY, JSON.stringify(enabled));
+  };
+  
   const handleCycleVisualizerStyle = useCallback(() => {
     if (isVisualizerLocked) return;
     const currentIndex = VISUALIZER_STYLES.indexOf(visualizerStyle);
@@ -340,22 +353,20 @@ export default function App() {
     if (index >= 0 && index < stations.length) {
         localStorage.setItem(LAST_STATION_KEY, stations[index].stationuuid);
         setCurrentStationIndex(index);
-        setIsPlaying(true);
+        setIsPlaying(true); // Always play when selecting a new station
     }
   }, [stations]);
 
   const handleSelectStation = useCallback((station: Station) => {
     const stationIndexInMainList = stations.findIndex(s => s.stationuuid === station.stationuuid);
     if (stationIndexInMainList !== -1) {
-        localStorage.setItem(LAST_STATION_KEY, station.stationuuid);
         if (currentStationIndex === stationIndexInMainList) {
-          setIsPlaying(prev => !prev);
+          setIsPlaying(prev => !prev); // Toggle if it's the same station
         } else {
-          setCurrentStationIndex(stationIndexInMainList);
-          setIsPlaying(true);
+          playStationAtIndex(stationIndexInMainList); // Play if it's a new station
         }
     }
-  }, [stations, currentStationIndex]);
+  }, [stations, currentStationIndex, playStationAtIndex]);
 
   const handlePlayPause = useCallback(() => {
     if (currentStation) {
@@ -442,6 +453,8 @@ export default function App() {
                     isFavorite={isFavorite}
                     toggleFavorite={toggleFavorite}
                     onReorder={handleReorder}
+                    isStreamActive={isStreamActive}
+                    isStatusIndicatorEnabled={isStatusIndicatorEnabled}
                 />
             ) : (
                 <div className="text-center p-8 text-text-secondary">
@@ -467,6 +480,8 @@ export default function App() {
         onVisualizerEnabledChange={handleSetVisualizerEnabled}
         isVisualizerLocked={isVisualizerLocked}
         onVisualizerLockedChange={handleSetVisualizerLocked}
+        isStatusIndicatorEnabled={isStatusIndicatorEnabled}
+        onStatusIndicatorEnabledChange={handleSetStatusIndicatorEnabled}
       />
 
       {currentStation && (
@@ -501,6 +516,9 @@ export default function App() {
         displayInfo={displayInfo}
         onOpenNowPlaying={() => setIsNowPlayingOpen(true)}
         setFrequencyData={setFrequencyData}
+        onStreamStatusChange={setIsStreamActive}
+        frequencyData={frequencyData}
+        isVisualizerEnabled={isVisualizerEnabled}
       />
     </div>
   );

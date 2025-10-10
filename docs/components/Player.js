@@ -3,6 +3,35 @@ import { EQ_PRESETS } from '../types.js';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons.js';
 import { CORS_PROXY_URL } from '../constants.js';
 
+const MiniVisualizer = ({ frequencyData }) => {
+    const canvasRef = useRef(null);
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const context = canvas.getContext('2d');
+        if (!context) return;
+
+        const { width, height } = canvas;
+        context.clearRect(0, 0, width, height);
+
+        const computedStyle = getComputedStyle(document.documentElement);
+        const accentColor = computedStyle.getPropertyValue('--accent').trim() || '#14b8a6';
+        
+        const bufferLength = frequencyData.length;
+        const barWidth = width / bufferLength;
+        
+        context.fillStyle = accentColor;
+
+        for (let i = 0; i < bufferLength; i++) {
+            const barHeight = (frequencyData[i] / 255) * height;
+            context.fillRect(i * (barWidth + 1), height - barHeight, barWidth, barHeight);
+        }
+    }, [frequencyData]);
+
+    return React.createElement("canvas", { ref: canvasRef, width: "48", height: "48", className: "w-12 h-12 rounded-md bg-black/20 flex-shrink-0" });
+};
+
+
 const Player = ({
   station,
   isPlaying,
@@ -15,6 +44,9 @@ const Player = ({
   displayInfo,
   onOpenNowPlaying,
   setFrequencyData,
+  onStreamStatusChange,
+  frequencyData,
+  isVisualizerEnabled,
 }) => {
   const audioRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -27,6 +59,11 @@ const Player = ({
 
   const [isActuallyPlaying, setIsActuallyPlaying] = useState(false);
   const [error, setError] = useState(null);
+
+  // Report stream status changes to parent
+  useEffect(() => {
+    onStreamStatusChange(isActuallyPlaying);
+  }, [isActuallyPlaying, onStreamStatusChange]);
 
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
@@ -79,8 +116,13 @@ const Player = ({
         if(audioContextRef.current?.state === 'suspended') {
             await audioContextRef.current.resume();
         }
-        audio.src = `${CORS_PROXY_URL}${station.url_resolved}`;
-        audio.crossOrigin = 'anonymous';
+        
+        const newSrc = `${CORS_PROXY_URL}${station.url_resolved}`;
+        if (audio.src !== newSrc) {
+            audio.src = newSrc;
+            audio.crossOrigin = 'anonymous';
+            audio.load(); // Explicitly tell the browser to load the new source
+        }
         try {
           await audio.play();
           setError(null);
@@ -167,6 +209,10 @@ const Player = ({
     setIsActuallyPlaying(true);
     setError(null);
   };
+  
+  const handlePause = () => {
+    setIsActuallyPlaying(false);
+  }
 
   const handleWaiting = () => {
     setIsActuallyPlaying(false);
@@ -192,12 +238,16 @@ const Player = ({
             role: "button",
             "aria-label": "פתח מסך ניגון"
           },
-            React.createElement("img", {
-              src: station.favicon,
-              alt: station.name,
-              className: "w-12 h-12 rounded-md bg-gray-700 object-contain flex-shrink-0",
-              onError: (e) => { e.currentTarget.src = 'https://picsum.photos/48'; }
-            }),
+            isVisualizerEnabled && isPlaying ? (
+                React.createElement(MiniVisualizer, { frequencyData: frequencyData })
+            ) : (
+                React.createElement("img", {
+                  src: station.favicon,
+                  alt: station.name,
+                  className: "w-12 h-12 rounded-md bg-gray-700 object-contain flex-shrink-0",
+                  onError: (e) => { e.currentTarget.src = 'https://picsum.photos/48'; }
+                })
+            ),
             React.createElement("div", { className: "min-w-0" },
               React.createElement("h3", { className: "font-bold text-text-primary truncate" }, station.name),
               React.createElement("p", { className: "text-sm text-text-secondary truncate" }, error || displayInfo || defaultInfo)
@@ -205,7 +255,7 @@ const Player = ({
           ),
           React.createElement("div", { className: "flex items-center gap-1 sm:gap-2" },
             React.createElement("button", { onClick: onPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הקודם" },
-              React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
+              React.createElement(SkipNextIcon, { className: "w-6 h-6" })
             ),
             React.createElement("button", {
               onClick: onPlayPause,
@@ -215,13 +265,13 @@ const Player = ({
               isPlaying ? React.createElement(PauseIcon, { className: "w-7 h-7" }) : React.createElement(PlayIcon, { className: "w-7 h-7" })
             ),
             React.createElement("button", { onClick: onNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הבא" },
-              React.createElement(SkipNextIcon, { className: "w-6 h-6" })
+              React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
             )
           ),
           React.createElement("audio", {
             ref: audioRef,
             onPlaying: handlePlaying,
-            onPause: () => setIsActuallyPlaying(false),
+            onPause: handlePause,
             onWaiting: handleWaiting,
             onError: handleError,
             crossOrigin: 'anonymous'

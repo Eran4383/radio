@@ -94,17 +94,17 @@ const NowPlaying = ({
         React.createElement("div", { className: "flex-shrink-0 flex flex-col items-center gap-4 sm:gap-6 pb-4 sm:pb-8 px-4" },
             React.createElement("div", { className: "flex items-center justify-center gap-4" },
               React.createElement("button", { onClick: onPrev, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "הקודם" },
-                React.createElement(SkipNextIcon, { className: "w-10 h-10" })
+                React.createElement(SkipNextIcon, { className: "w-12 h-12" })
               ),
               React.createElement("button", { 
                 onClick: onPlayPause, 
                 className: "p-5 bg-accent text-white rounded-full shadow-lg hover:bg-accent-hover transition-transform transform hover:scale-105",
                 "aria-label": isPlaying ? "השהה" : "נגן"
               },
-                isPlaying ? React.createElement(PauseIcon, { className: "w-12 h-12" }) : React.createElement(PlayIcon, { className: "w-12 h-12" })
+                isPlaying ? React.createElement(PauseIcon, { className: "w-14 h-14" }) : React.createElement(PlayIcon, { className: "w-14 h-14" })
               ),
               React.createElement("button", { onClick: onNext, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "הבא" },
-                React.createElement(SkipPreviousIcon, { className: "w-10 h-10" })
+                React.createElement(SkipPreviousIcon, { className: "w-12 h-12" })
               )
             ),
             React.createElement("div", { className: "w-full max-w-xs flex items-center gap-3" },

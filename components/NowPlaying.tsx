@@ -116,17 +116,17 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
         <div className="flex-shrink-0 flex flex-col items-center gap-4 sm:gap-6 pb-4 sm:pb-8 px-4">
             <div className="flex items-center justify-center gap-4">
               <button onClick={onPrev} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="הקודם">
-                <SkipNextIcon className="w-10 h-10" />
+                <SkipNextIcon className="w-12 h-12" />
               </button>
               <button 
                 onClick={onPlayPause} 
                 className="p-5 bg-accent text-white rounded-full shadow-lg hover:bg-accent-hover transition-transform transform hover:scale-105"
                 aria-label={isPlaying ? "השהה" : "נגן"}
               >
-                {isPlaying ? <PauseIcon className="w-12 h-12" /> : <PlayIcon className="w-12 h-12" />}
+                {isPlaying ? <PauseIcon className="w-14 h-14" /> : <PlayIcon className="w-14 h-14" />}
               </button>
               <button onClick={onNext} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="הבא">
-                <SkipPreviousIcon className="w-10 h-10" />
+                <SkipPreviousIcon className="w-12 h-12" />
               </button>
             </div>
 

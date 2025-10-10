@@ -9,9 +9,14 @@ interface StationListProps {
   isFavorite: (stationUuid: string) => boolean;
   toggleFavorite: (stationUuid: string) => void;
   onReorder: (newOrder: string[]) => void;
+  isStreamActive: boolean;
+  isStatusIndicatorEnabled: boolean;
 }
 
-const StationList: React.FC<StationListProps> = ({ stations, currentStation, onSelectStation, isFavorite, toggleFavorite, onReorder }) => {
+const StationList: React.FC<StationListProps> = ({ 
+    stations, currentStation, onSelectStation, isFavorite, toggleFavorite, onReorder,
+    isStreamActive, isStatusIndicatorEnabled 
+}) => {
   const [draggedUuid, setDraggedUuid] = useState<string | null>(null);
   const [previewList, setPreviewList] = useState<Station[] | null>(null);
 
@@ -64,9 +69,10 @@ const StationList: React.FC<StationListProps> = ({ stations, currentStation, onS
     >
       {listToRender.map(station => {
         const isBeingDragged = draggedUuid === station.stationuuid;
+        const isCurrentlyPlaying = currentStation?.stationuuid === station.stationuuid;
 
         const baseClasses = `relative rounded-lg p-4 flex flex-col items-center justify-center text-center cursor-pointer transform transition-transform duration-500 ease-in-out`;
-        const stateClasses = currentStation?.stationuuid === station.stationuuid 
+        const stateClasses = isCurrentlyPlaying
             ? 'bg-accent/30 ring-2 ring-accent scale-105' 
             : 'bg-bg-secondary hover:bg-accent/10 hover:scale-105';
         const dragClasses = isBeingDragged ? 'dragging' : '';
@@ -80,6 +86,14 @@ const StationList: React.FC<StationListProps> = ({ stations, currentStation, onS
             className={`${baseClasses} ${stateClasses} ${dragClasses}`}
             onClick={() => onSelectStation(station)}
           >
+            {isStatusIndicatorEnabled && isCurrentlyPlaying && (
+                <div 
+                    className={`absolute top-2 left-2 w-2.5 h-2.5 rounded-full ring-2 ring-bg-secondary transition-colors ${
+                        isStreamActive ? 'bg-accent animate-pulse' : 'bg-text-secondary'
+                    }`}
+                    title={isStreamActive ? "התחנה משדרת" : "מתחבר..."}
+                />
+            )}
             <img 
               src={station.favicon} 
               alt={station.name} 

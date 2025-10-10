@@ -27,6 +27,7 @@ const VOLUME_KEY = 'radio-volume';
 const VISUALIZER_ENABLED_KEY = 'radio-visualizer-enabled';
 const VISUALIZER_LOCKED_KEY = 'radio-visualizer-locked';
 const VISUALIZER_STYLE_KEY = 'radio-visualizer-style';
+const STATUS_INDICATOR_ENABLED_KEY = 'radio-status-indicator-enabled';
 
 const SortButton = ({ label, order, currentOrder, setOrder }) => (
   React.createElement("button", {
@@ -49,6 +50,7 @@ export default function App() {
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [displayInfo, setDisplayInfo] = useState(null);
+  const [isStreamActive, setIsStreamActive] = useState(false);
 
   const [customOrder, setCustomOrder] = useState(() => {
     try {
@@ -105,6 +107,11 @@ export default function App() {
   const [visualizerStyle, setVisualizerStyle] = useState(() => {
       const saved = localStorage.getItem(VISUALIZER_STYLE_KEY);
       return (saved && VISUALIZER_STYLES.includes(saved)) ? saved : 'bars';
+  });
+  
+  const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState(() => {
+    const saved = localStorage.getItem(STATUS_INDICATOR_ENABLED_KEY);
+    return saved ? JSON.parse(saved) : true;
   });
 
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
@@ -222,6 +229,11 @@ export default function App() {
     localStorage.setItem(VISUALIZER_LOCKED_KEY, JSON.stringify(locked));
   };
   
+  const handleSetStatusIndicatorEnabled = (enabled) => {
+    setIsStatusIndicatorEnabled(enabled);
+    localStorage.setItem(STATUS_INDICATOR_ENABLED_KEY, JSON.stringify(enabled));
+  };
+  
   const handleCycleVisualizerStyle = useCallback(() => {
     if (isVisualizerLocked) return;
     const currentIndex = VISUALIZER_STYLES.indexOf(visualizerStyle);
@@ -307,22 +319,20 @@ export default function App() {
     if (index >= 0 && index < stations.length) {
         localStorage.setItem(LAST_STATION_KEY, stations[index].stationuuid);
         setCurrentStationIndex(index);
-        setIsPlaying(true);
+        setIsPlaying(true); // Always play when selecting a new station
     }
   }, [stations]);
 
   const handleSelectStation = useCallback((station) => {
     const stationIndexInMainList = stations.findIndex(s => s.stationuuid === station.stationuuid);
     if (stationIndexInMainList !== -1) {
-        localStorage.setItem(LAST_STATION_KEY, station.stationuuid);
         if (currentStationIndex === stationIndexInMainList) {
-          setIsPlaying(prev => !prev);
+          setIsPlaying(prev => !prev); // Toggle if it's the same station
         } else {
-          setCurrentStationIndex(stationIndexInMainList);
-          setIsPlaying(true);
+          playStationAtIndex(stationIndexInMainList); // Play if it's a new station
         }
     }
-  }, [stations, currentStationIndex]);
+  }, [stations, currentStationIndex, playStationAtIndex]);
 
   const handlePlayPause = useCallback(() => {
     if (currentStation) {
@@ -391,7 +401,9 @@ export default function App() {
                     onSelectStation: handleSelectStation,
                     isFavorite: isFavorite,
                     toggleFavorite: toggleFavorite,
-                    onReorder: handleReorder
+                    onReorder: handleReorder,
+                    isStreamActive: isStreamActive,
+                    isStatusIndicatorEnabled: isStatusIndicatorEnabled
                 })
             ) : (
                 React.createElement("div", { className: "text-center p-8 text-text-secondary" },
@@ -411,7 +423,9 @@ export default function App() {
         isVisualizerEnabled: isVisualizerEnabled,
         onVisualizerEnabledChange: handleSetVisualizerEnabled,
         isVisualizerLocked: isVisualizerLocked,
-        onVisualizerLockedChange: handleSetVisualizerLocked
+        onVisualizerLockedChange: handleSetVisualizerLocked,
+        isStatusIndicatorEnabled: isStatusIndicatorEnabled,
+        onStatusIndicatorEnabledChange: handleSetStatusIndicatorEnabled
       }),
       currentStation && React.createElement(NowPlaying, {
         isOpen: isNowPlayingOpen,
@@ -441,7 +455,10 @@ export default function App() {
         onVolumeChange: handleSetVolume,
         displayInfo: displayInfo,
         onOpenNowPlaying: () => setIsNowPlayingOpen(true),
-        setFrequencyData: setFrequencyData
+        setFrequencyData: setFrequencyData,
+        onStreamStatusChange: setIsStreamActive,
+        frequencyData: frequencyData,
+        isVisualizerEnabled: isVisualizerEnabled
       })
     )
   );
