@@ -29,13 +29,11 @@ export const EQ_PRESET_LABELS: Record<EqPreset, string> = {
   rock: 'רוק',
 };
 
-export const VISUALIZER_STYLES = ['bars', 'wave', 'pulse', 'barsMirrored', 'waveSymmetric'] as const;
+export const VISUALIZER_STYLES = ['bars', 'wave', 'pulse'] as const;
 export type VisualizerStyle = typeof VISUALIZER_STYLES[number];
 
 export const VISUALIZER_STYLE_LABELS: Record<VisualizerStyle, string> = {
     bars: 'עמודות',
     wave: 'גל קול',
     pulse: 'פעימה',
-    barsMirrored: 'עמודות (מראה)',
-    waveSymmetric: 'גל סימטרי'
 };

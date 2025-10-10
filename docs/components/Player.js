@@ -3,8 +3,9 @@ import { EQ_PRESETS } from '../types.js';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons.js';
 import { CORS_PROXY_URL } from '../constants.js';
 
-const MiniVisualizer = ({ frequencyData }) => {
+const PlayerVisualizer = ({ frequencyData }) => {
     const canvasRef = useRef(null);
+
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -17,18 +18,26 @@ const MiniVisualizer = ({ frequencyData }) => {
         const computedStyle = getComputedStyle(document.documentElement);
         const accentColor = computedStyle.getPropertyValue('--accent').trim() || '#14b8a6';
         
-        const bufferLength = frequencyData.length;
-        const barWidth = width / bufferLength;
-        
-        context.fillStyle = accentColor;
+        const gradient = context.createLinearGradient(0, 0, 0, height);
+        gradient.addColorStop(0, accentColor);
+        gradient.addColorStop(1, `${accentColor}40`);
+        context.fillStyle = gradient;
 
-        for (let i = 0; i < bufferLength; i++) {
+        const bufferLength = frequencyData.length;
+        const halfBuffer = Math.floor(bufferLength / 2);
+        const centerX = width / 2;
+        const barWidth = (width / 2) / halfBuffer;
+
+        for (let i = 0; i < halfBuffer; i++) {
             const barHeight = (frequencyData[i] / 255) * height;
-            context.fillRect(i * (barWidth + 1), height - barHeight, barWidth, barHeight);
+            // Draw right side
+            context.fillRect(centerX + (i * barWidth), height - barHeight, barWidth - 1, barHeight);
+            // Draw left side (mirrored)
+            context.fillRect(centerX - ((i + 1) * barWidth), height - barHeight, barWidth - 1, barHeight);
         }
     }, [frequencyData]);
 
-    return React.createElement("canvas", { ref: canvasRef, width: "48", height: "48", className: "w-12 h-12 rounded-md bg-black/20 flex-shrink-0" });
+    return React.createElement("canvas", { ref: canvasRef, width: "300", height: "4", className: "absolute top-0 left-0 right-0 w-full h-1" });
 };
 
 
@@ -230,7 +239,8 @@ const Player = ({
   const defaultInfo = `${station.codec} @ ${station.bitrate}kbps`;
 
   return React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-30" },
-      React.createElement("div", { className: "bg-bg-secondary/80 backdrop-blur-lg shadow-t-lg" },
+      React.createElement("div", { className: "relative bg-bg-secondary/80 backdrop-blur-lg shadow-t-lg" },
+        isVisualizerEnabled && isPlaying && React.createElement(PlayerVisualizer, { frequencyData: frequencyData }),
         React.createElement("div", { className: "max-w-7xl mx-auto p-3 flex items-center justify-between gap-4" },
           React.createElement("div", {
             className: "flex items-center gap-3 flex-1 min-w-0 cursor-pointer",
@@ -238,16 +248,12 @@ const Player = ({
             role: "button",
             "aria-label": "פתח מסך ניגון"
           },
-            isVisualizerEnabled && isPlaying ? (
-                React.createElement(MiniVisualizer, { frequencyData: frequencyData })
-            ) : (
-                React.createElement("img", {
-                  src: station.favicon,
-                  alt: station.name,
-                  className: "w-12 h-12 rounded-md bg-gray-700 object-contain flex-shrink-0",
-                  onError: (e) => { e.currentTarget.src = 'https://picsum.photos/48'; }
-                })
-            ),
+            React.createElement("img", {
+              src: station.favicon,
+              alt: station.name,
+              className: "w-12 h-12 rounded-md bg-gray-700 object-contain flex-shrink-0",
+              onError: (e) => { e.currentTarget.src = 'https://picsum.photos/48'; }
+            }),
             React.createElement("div", { className: "min-w-0" },
               React.createElement("h3", { className: "font-bold text-text-primary truncate" }, station.name),
               React.createElement("p", { className: "text-sm text-text-secondary truncate" }, error || displayInfo || defaultInfo)

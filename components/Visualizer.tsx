@@ -8,48 +8,6 @@ interface VisualizerProps {
   isLocked: boolean;
 }
 
-// Helper functions for each drawing style
-const drawBars = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number, color: string) => {
-    const bufferLength = data.length;
-    const barWidth = width / bufferLength;
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, color);
-    gradient.addColorStop(1, `${color}40`); // Add some transparency at the bottom
-    ctx.fillStyle = gradient;
-
-    for (let i = 0; i < bufferLength; i++) {
-        const barHeight = (data[i] / 255) * height;
-        ctx.fillRect(i * (barWidth + 1), height - barHeight, barWidth, barHeight);
-    }
-};
-
-const drawWave = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number, color: string) => {
-    const bufferLength = data.length;
-    ctx.beginPath();
-    ctx.moveTo(0, height);
-    const sliceWidth = width * 1.0 / bufferLength;
-    let x = 0;
-    for (let i = 0; i < bufferLength; i++) {
-        const v = data[i] / 255.0;
-        const y = height - (v * height);
-        ctx.lineTo(x, y);
-        x += sliceWidth;
-    }
-    ctx.lineTo(width, height);
-    ctx.closePath();
-    
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, `${color}80`);
-    gradient.addColorStop(1, `${color}10`);
-    ctx.fillStyle = gradient;
-    ctx.fill();
-
-    // Add a stroke line on top
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-};
-
 const drawPulse = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number, color: string) => {
     const bass = (data[0] + data[1] + data[2]) / 3;
     const mid = (data[Math.floor(data.length / 2)] + data[Math.floor(data.length / 2) + 1]) / 2;
@@ -149,20 +107,14 @@ const Visualizer: React.FC<VisualizerProps> = ({ frequencyData, style, onClick, 
     
     switch(style) {
         case 'wave':
-            drawWave(context, frequencyData, width, height, accentColor);
+            drawWaveSymmetric(context, frequencyData, width, height, accentColor);
             break;
         case 'pulse':
             drawPulse(context, frequencyData, width, height, accentColor);
             break;
-        case 'barsMirrored':
-            drawBarsMirrored(context, frequencyData, width, height, accentColor);
-            break;
-        case 'waveSymmetric':
-            drawWaveSymmetric(context, frequencyData, width, height, accentColor);
-            break;
         case 'bars':
         default:
-            drawBars(context, frequencyData, width, height, accentColor);
+            drawBarsMirrored(context, frequencyData, width, height, accentColor);
             break;
     }
 
