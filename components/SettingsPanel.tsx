@@ -128,7 +128,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
 
             <div className="mt-auto text-center text-xs text-text-secondary flex-shrink-0">
-                <p>רדיו דרכים v1.2</p>
+                <p>רדיו פרימיום v1.2</p>
             </div>
         </div>
       </div>

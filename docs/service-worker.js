@@ -11,6 +11,7 @@ const urlsToCache = [
   './components/Icons.js',
   './components/Player.js',
   './components/StationList.js',
+  './components/StationListSkeleton.js',
   './components/SettingsPanel.js',
   './components/NowPlaying.js',
   './components/Visualizer.js',

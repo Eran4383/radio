@@ -9,6 +9,7 @@ import { useFavorites } from './hooks/useFavorites.js';
 import { PRIORITY_STATIONS } from './constants.js';
 import { MenuIcon } from './components/Icons.js';
 import { getCurrentProgram } from './services/scheduleService.js';
+import StationListSkeleton from './components/StationListSkeleton.js';
 
 const StationFilter = {
   All: 'הכל',
@@ -363,7 +364,7 @@ export default function App() {
               React.createElement("button", { onClick: () => setFilter(StationFilter.All), className: `px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.All ? 'bg-accent text-white' : 'text-gray-300'}`}, StationFilter.All),
               React.createElement("button", { onClick: () => setFilter(StationFilter.Favorites), className: `px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.Favorites ? 'bg-accent text-white' : 'text-gray-300'}`}, StationFilter.Favorites)
             ),
-            React.createElement("h1", { className: "text-xl sm:text-2xl font-bold text-accent" }, "רדיו דרכים")
+            React.createElement("h1", { className: "text-xl sm:text-2xl font-bold text-accent" }, "רדיו פרימיום")
         ),
         React.createElement("div", { className: "max-w-7xl mx-auto mt-4" },
             React.createElement("div", { className: "flex items-center justify-center gap-2" },
@@ -378,9 +379,11 @@ export default function App() {
         )
       ),
       React.createElement("main", { className: "flex-grow pb-48" }, 
-        isLoading && React.createElement("div", { className: "flex justify-center items-center h-64" }, React.createElement("div", { className: "animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-accent" })),
-        error && React.createElement("p", { className: "text-center text-red-400 p-4" }, error),
-        !isLoading && !error && (
+        isLoading ? (
+          React.createElement(StationListSkeleton, null)
+        ) : error ? (
+          React.createElement("p", { className: "text-center text-red-400 p-4" }, error)
+        ) : (
             displayedStations.length > 0 ? (
                 React.createElement(StationList, {
                     stations: displayedStations,

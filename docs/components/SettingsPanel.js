@@ -106,7 +106,7 @@ const SettingsPanel = ({
             ),
 
             React.createElement("div", { className: "mt-auto text-center text-xs text-text-secondary flex-shrink-0" },
-                React.createElement("p", null, "רדיו דרכים v1.2")
+                React.createElement("p", null, "רדיו פרימיום v1.2")
             )
         )
       )

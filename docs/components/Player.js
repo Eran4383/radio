@@ -1,242 +1,234 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { CORS_PROXY_URL } from '../constants.js';
-import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, OpenInNewIcon } from './Icons.js';
 import { EQ_PRESETS } from '../types.js';
+import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons.js';
+import { CORS_PROXY_URL } from '../constants.js';
 
-const Player = ({ 
-  station, isPlaying, onPlayPause, onNext, onPrev, eqPreset,
-  volume, onVolumeChange, displayInfo, onOpenNowPlaying, setFrequencyData
+const Player = ({
+  station,
+  isPlaying,
+  onPlayPause,
+  onNext,
+  onPrev,
+  eqPreset,
+  volume,
+  onVolumeChange,
+  displayInfo,
+  onOpenNowPlaying,
+  setFrequencyData,
 }) => {
   const audioRef = useRef(null);
   const audioContextRef = useRef(null);
-  const sourceNodeRef = useRef(null);
+  const analyserRef = useRef(null);
+  const sourceRef = useRef(null);
   const bassFilterRef = useRef(null);
   const midFilterRef = useRef(null);
   const trebleFilterRef = useRef(null);
-  const analyserRef = useRef(null);
+  const animationFrameRef = useRef();
 
-  const [streamUrl, setStreamUrl] = useState(null);
-  const [streamError, setStreamError] = useState(false);
+  const [isActuallyPlaying, setIsActuallyPlaying] = useState(false);
+  const [error, setError] = useState(null);
 
-  const handleError = useCallback(() => {
-    if (station && streamUrl && !streamUrl.startsWith(CORS_PROXY_URL)) {
-      console.warn(`Direct stream failed for ${station.name}, trying CORS proxy.`);
-      setStreamUrl(CORS_PROXY_URL + station.url_resolved);
-    } else {
-      console.error(`Stream failed for ${station?.name} even with CORS proxy.`);
-      setStreamError(true);
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
-    }
-  }, [station, streamUrl]);
-
-  // One-time setup for Web Audio API
-  useEffect(() => {
+  const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
-
     try {
-        const context = new (window.AudioContext || window.webkitAudioContext)();
-        audioContextRef.current = context;
+      const context = new (window.AudioContext || window.webkitAudioContext)();
+      audioContextRef.current = context;
+      
+      const source = context.createMediaElementSource(audioRef.current);
+      sourceRef.current = source;
 
-        const source = context.createMediaElementSource(audioRef.current);
-        sourceNodeRef.current = source;
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 128; // for 64 frequency bins
+      analyserRef.current = analyser;
 
-        const bassFilter = context.createBiquadFilter();
-        bassFilter.type = 'lowshelf';
-        bassFilter.frequency.value = 300;
-        bassFilterRef.current = bassFilter;
-        
-        const midFilter = context.createBiquadFilter();
-        midFilter.type = 'peaking';
-        midFilter.frequency.value = 1000;
-        midFilter.Q.value = 1;
-        midFilterRef.current = midFilter;
+      const bassFilter = context.createBiquadFilter();
+      bassFilter.type = 'lowshelf';
+      bassFilter.frequency.value = 250;
+      bassFilterRef.current = bassFilter;
+      
+      const midFilter = context.createBiquadFilter();
+      midFilter.type = 'peaking';
+      midFilter.frequency.value = 1000;
+      midFilter.Q.value = 1;
+      midFilterRef.current = midFilter;
+      
+      const trebleFilter = context.createBiquadFilter();
+      trebleFilter.type = 'highshelf';
+      trebleFilter.frequency.value = 4000;
+      trebleFilterRef.current = trebleFilter;
 
-        const trebleFilter = context.createBiquadFilter();
-        trebleFilter.type = 'highshelf';
-        trebleFilter.frequency.value = 3000;
-        trebleFilterRef.current = trebleFilter;
-
-        const analyser = context.createAnalyser();
-        analyser.fftSize = 128;
-        analyserRef.current = analyser;
-
-        source.connect(bassFilter).connect(midFilter).connect(trebleFilter).connect(analyser).connect(context.destination);
-        console.log("Audio context, EQ filters, and Analyser initialized.");
+      source
+        .connect(bassFilter)
+        .connect(midFilter)
+        .connect(trebleFilter)
+        .connect(analyser)
+        .connect(context.destination);
     } catch (e) {
-        console.error("Web Audio API is not supported or failed to initialize.", e);
+      console.error("Failed to initialize AudioContext", e);
     }
   }, []);
-
-  // Apply EQ preset changes
+  
+  // Start/Stop playback
   useEffect(() => {
-    const presetValues = EQ_PRESETS[eqPreset];
-    if (!presetValues || !bassFilterRef.current || !midFilterRef.current || !trebleFilterRef.current || !audioContextRef.current) return;
+    const audio = audioRef.current;
+    if (!audio) return;
     
-    const now = audioContextRef.current.currentTime;
-    bassFilterRef.current.gain.setTargetAtTime(presetValues.bass, now, 0.1);
-    midFilterRef.current.gain.setTargetAtTime(presetValues.mid, now, 0.1);
-    trebleFilterRef.current.gain.setTargetAtTime(presetValues.treble, now, 0.1);
-
-  }, [eqPreset]);
-
-  useEffect(() => {
-    if (station) {
-      setStreamUrl(station.url_resolved);
-      setStreamError(false);
-    }
-  }, [station]);
-
-  useEffect(() => {
-    const audioElement = audioRef.current;
-    if (!audioElement) return;
-
-    if (streamUrl && isPlaying) {
-      if (audioElement.src !== streamUrl) {
-          audioElement.src = streamUrl;
-          audioElement.load();
+    const playAudio = async () => {
+      if (station && isPlaying) {
+        setupAudioContext(); // Ensure context is setup before playing
+        if(audioContextRef.current?.state === 'suspended') {
+            await audioContextRef.current.resume();
+        }
+        audio.src = `${CORS_PROXY_URL}${station.url_resolved}`;
+        audio.crossOrigin = 'anonymous';
+        try {
+          await audio.play();
+          setError(null);
+        } catch (e) {
+          console.error("Error playing audio:", e);
+          setError("לא ניתן לנגן את התחנה.");
+          setIsActuallyPlaying(false);
+        }
+      } else {
+        audio.pause();
       }
-      audioContextRef.current?.resume();
-      audioElement.play().catch(e => {
-        console.error("Error playing audio:", e)
-        handleError();
-      });
-    } else {
-      audioElement.pause();
-    }
-  }, [streamUrl, isPlaying, handleError]);
+    };
+    
+    playAudio();
 
+  }, [station, isPlaying, setupAudioContext]);
+
+  // Handle volume changes
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
     }
   }, [volume]);
   
+  // Apply EQ settings
   useEffect(() => {
-    let animationFrameId;
+      if (!bassFilterRef.current || !midFilterRef.current || !trebleFilterRef.current) return;
+      const { bass, mid, treble } = EQ_PRESETS[eqPreset];
+      bassFilterRef.current.gain.value = bass;
+      midFilterRef.current.gain.value = mid;
+      trebleFilterRef.current.gain.value = treble;
+  }, [eqPreset]);
 
-    const renderFrame = () => {
-        if (analyserRef.current && isPlaying) {
-            const bufferLength = analyserRef.current.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
-            analyserRef.current.getByteFrequencyData(dataArray);
-            setFrequencyData(dataArray);
-        }
-        animationFrameId = requestAnimationFrame(renderFrame);
+  // Visualizer data loop
+  useEffect(() => {
+    const loop = () => {
+      if (analyserRef.current && isActuallyPlaying) {
+        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getByteFrequencyData(dataArray);
+        setFrequencyData(dataArray);
+      }
+      animationFrameRef.current = requestAnimationFrame(loop);
     };
 
-    if (isPlaying) {
-        renderFrame();
-    } else {
-      setFrequencyData(new Uint8Array(analyserRef.current?.frequencyBinCount || 64));
+    if (isActuallyPlaying) {
+      animationFrameRef.current = requestAnimationFrame(loop);
     }
 
     return () => {
-        cancelAnimationFrame(animationFrameId);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     };
-  }, [isPlaying, setFrequencyData]);
+  }, [isActuallyPlaying, setFrequencyData]);
 
+  // Update Media Session API
   useEffect(() => {
     if ('mediaSession' in navigator) {
-      if (station && isPlaying) {
+      if (station) {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: station.name,
-          artist: displayInfo || `${station.codec} @ ${station.bitrate}kbps`,
-          album: 'רדיו דרכים',
-          artwork: [ { src: station.favicon, sizes: '512x512', type: 'image/png' } ]
+          artist: displayInfo || 'רדיו פרימיום',
+          artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
         });
-        navigator.mediaSession.playbackState = 'playing';
+
         navigator.mediaSession.setActionHandler('play', onPlayPause);
         navigator.mediaSession.setActionHandler('pause', onPlayPause);
         navigator.mediaSession.setActionHandler('nexttrack', onNext);
         navigator.mediaSession.setActionHandler('previoustrack', onPrev);
+        
+        if (isPlaying) {
+            navigator.mediaSession.playbackState = 'playing';
+        } else {
+            navigator.mediaSession.playbackState = 'paused';
+        }
       } else {
-        navigator.mediaSession.playbackState = 'paused';
         navigator.mediaSession.metadata = null;
-        navigator.mediaSession.setActionHandler('play', null);
-        navigator.mediaSession.setActionHandler('pause', null);
-        navigator.mediaSession.setActionHandler('nexttrack', null);
-        navigator.mediaSession.setActionHandler('previoustrack', null);
+        navigator.mediaSession.playbackState = 'none';
       }
     }
   }, [station, isPlaying, displayInfo, onPlayPause, onNext, onPrev]);
 
-  const handleVolumeChange = (e) => {
-    onVolumeChange(parseFloat(e.target.value));
+  const handlePlaying = () => {
+    setIsActuallyPlaying(true);
+    setError(null);
   };
 
-  const defaultInfo = station ? `${station.codec} @ ${station.bitrate}kbps` : '...';
+  const handleWaiting = () => {
+    setIsActuallyPlaying(false);
+  };
 
-  return (
-    React.createElement("div", { className: "fixed bottom-0 right-0 left-0 bg-bg-secondary/80 backdrop-blur-md shadow-lg p-2 sm:p-4 z-10" },
-      React.createElement("audio", { ref: audioRef, onError: handleError, onCanPlay: () => setStreamError(false), crossOrigin: "anonymous" }),
-      React.createElement("div", { className: "max-w-4xl mx-auto flex items-center justify-between gap-2 sm:gap-4" },
-        React.createElement("div", { 
-          className: "flex items-center gap-2 sm:gap-4 flex-1 min-w-0 cursor-pointer",
-          onClick: onOpenNowPlaying,
-          role: "button",
-          tabIndex: 0,
-          "aria-label": "פתח נגן ראשי"
-        },
-          React.createElement("img", { 
-            src: station?.favicon || 'https://picsum.photos/64', 
-            alt: station?.name || 'תחנה', 
-            className: "w-12 h-12 sm:w-16 sm:h-16 rounded-md bg-gray-700 object-cover flex-shrink-0",
-            onError: (e) => { e.currentTarget.src = 'https://picsum.photos/64'; }
-          }),
-          React.createElement("div", { className: "truncate" },
-            React.createElement("h3", { className: "font-bold text-base sm:text-lg truncate text-text-primary" }, station?.name || 'בחר תחנה'),
-            React.createElement("p", { className: "text-xs sm:text-sm text-text-secondary truncate" },
-              displayInfo || defaultInfo
-            )
-          )
-        ),
-        React.createElement("div", { className: "flex items-center justify-center gap-1 sm:gap-2 flex-shrink-0" },
-          React.createElement("button", { onClick: onPrev, className: "p-2 sm:p-3 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "הקודם" },
-            React.createElement(SkipNextIcon, { className: "w-7 h-7 sm:w-8 sm:h-8" })
-          ),
-          React.createElement("button", { 
-            onClick: onPlayPause, 
-            className: "p-3 sm:p-4 bg-accent text-white rounded-full shadow-lg hover:bg-accent-hover transition-transform transform hover:scale-105",
-            "aria-label": isPlaying ? "השהה" : "נגן"
+  const handleError = () => {
+    setError("שגיאה בניגון התחנה.");
+    setIsActuallyPlaying(false);
+  };
+  
+  if (!station) {
+    return null; // Don't render the player if no station is selected
+  }
+
+  const defaultInfo = `${station.codec} @ ${station.bitrate}kbps`;
+
+  return React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-30" },
+      React.createElement("div", { className: "bg-bg-secondary/80 backdrop-blur-lg shadow-t-lg" },
+        React.createElement("div", { className: "max-w-7xl mx-auto p-3 flex items-center justify-between gap-4" },
+          React.createElement("div", {
+            className: "flex items-center gap-3 flex-1 min-w-0 cursor-pointer",
+            onClick: onOpenNowPlaying,
+            role: "button",
+            "aria-label": "פתח מסך ניגון"
           },
-            isPlaying ? React.createElement(PauseIcon, { className: "w-8 h-8 sm:w-10 sm:h-10" }) : React.createElement(PlayIcon, { className: "w-8 h-8 sm:w-10 sm:h-10" })
+            React.createElement("img", {
+              src: station.favicon,
+              alt: station.name,
+              className: "w-12 h-12 rounded-md bg-gray-700 object-contain flex-shrink-0",
+              onError: (e) => { e.currentTarget.src = 'https://picsum.photos/48'; }
+            }),
+            React.createElement("div", { className: "min-w-0" },
+              React.createElement("h3", { className: "font-bold text-text-primary truncate" }, station.name),
+              React.createElement("p", { className: "text-sm text-text-secondary truncate" }, error || displayInfo || defaultInfo)
+            )
           ),
-          React.createElement("button", { onClick: onNext, className: "p-2 sm:p-3 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "הבא" },
-            React.createElement(SkipPreviousIcon, { className: "w-7 h-7 sm:w-8 sm:h-8" })
-          )
-        ),
-        React.createElement("div", { className: "hidden sm:flex items-center gap-2 justify-end flex-shrink-0" },
-          React.createElement(VolumeUpIcon, { className: "w-6 h-6 text-text-secondary" }),
-          React.createElement("input", {
-            type: "range",
-            min: "0",
-            max: "1",
-            step: "0.05",
-            value: volume,
-            onChange: handleVolumeChange,
-            className: "w-24 accent-teal-500",
-            "aria-label": "עוצמת שמע"
+          React.createElement("div", { className: "flex items-center gap-1 sm:gap-2" },
+            React.createElement("button", { onClick: onPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הקודם" },
+              React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
+            ),
+            React.createElement("button", {
+              onClick: onPlayPause,
+              className: "p-3 bg-accent text-white rounded-full shadow-md",
+              "aria-label": isPlaying ? "השהה" : "נגן"
+            },
+              isPlaying ? React.createElement(PauseIcon, { className: "w-7 h-7" }) : React.createElement(PlayIcon, { className: "w-7 h-7" })
+            ),
+            React.createElement("button", { onClick: onNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הבא" },
+              React.createElement(SkipNextIcon, { className: "w-6 h-6" })
+            )
+          ),
+          React.createElement("audio", {
+            ref: audioRef,
+            onPlaying: handlePlaying,
+            onPause: () => setIsActuallyPlaying(false),
+            onWaiting: handleWaiting,
+            onError: handleError,
+            crossOrigin: 'anonymous'
           })
         )
-      ),
-      streamError && station && (
-        React.createElement("div", { className: "max-w-4xl mx-auto mt-2 text-center bg-red-800/50 p-2 rounded-md flex items-center justify-center gap-4" },
-          React.createElement("p", { className: "text-sm" }, "שגיאה בניגון התחנה. ייתכן שהשידור חסום."),
-          React.createElement("a", {
-            href: station.url_resolved,
-            target: "_blank",
-            rel: "noopener noreferrer",
-            className: "flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-bold py-1 px-3 rounded"
-          },
-            React.createElement(OpenInNewIcon, { className: "w-4 h-4" }),
-            "פתח בחלון חדש"
-          )
-        )
       )
-    )
-  );
+    );
 };
 
 export default Player;

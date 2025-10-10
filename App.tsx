@@ -9,6 +9,7 @@ import { useFavorites } from './hooks/useFavorites';
 import { PRIORITY_STATIONS } from './constants';
 import { MenuIcon } from './components/Icons';
 import { getCurrentProgram } from './services/scheduleService';
+import StationListSkeleton from './components/StationListSkeleton';
 
 
 enum StationFilter {
@@ -412,7 +413,7 @@ export default function App() {
               </button>
             </div>
             
-            <h1 className="text-xl sm:text-2xl font-bold text-accent">רדיו דרכים</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-accent">רדיו פרימיום</h1>
         </div>
         <div className="max-w-7xl mx-auto mt-4">
             <div className="flex items-center justify-center gap-2">
@@ -427,14 +428,12 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-grow pb-48"> {/* Padding bottom to clear player */}
-        {isLoading && (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-accent"></div>
-          </div>
-        )}
-        {error && <p className="text-center text-red-400 p-4">{error}</p>}
-        {!isLoading && !error && (
+      <main className="flex-grow pb-48">
+        {isLoading ? (
+          <StationListSkeleton />
+        ) : error ? (
+          <p className="text-center text-red-400 p-4">{error}</p>
+        ) : (
             displayedStations.length > 0 ? (
                 <StationList
                     stations={displayedStations}
