@@ -1,0 +1,19 @@
+
+{
+  "name": "road-radio-he",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.4.5"
+  },
+  "scripts": {
+    "start": "echo 'To run this project, use a development server like Vite or Create React App.'",
+    "build": "echo 'To build this project, use a bundler like Vite or Create React App.'"
+  }
+}

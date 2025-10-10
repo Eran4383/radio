@@ -1,0 +1,49 @@
+import { useState, useEffect, useCallback } from 'react';
+
+const FAVORITES_KEY = 'radio-favorites';
+
+export const useFavorites = () => {
+  const [favorites, setFavorites] = useState([]);
+
+  useEffect(() => {
+    try {
+      const storedFavorites = localStorage.getItem(FAVORITES_KEY);
+      if (storedFavorites) {
+        setFavorites(JSON.parse(storedFavorites));
+      }
+    } catch (error) {
+      console.error("Failed to load favorites from localStorage", error);
+    }
+  }, []);
+
+  const saveFavorites = (newFavorites) => {
+    try {
+      setFavorites(newFavorites);
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(newFavorites));
+    } catch (error) {
+      console.error("Failed to save favorites to localStorage", error);
+    }
+  };
+
+  const addFavorite = useCallback((stationUuid) => {
+    saveFavorites([...favorites, stationUuid]);
+  }, [favorites]);
+
+  const removeFavorite = useCallback((stationUuid) => {
+    saveFavorites(favorites.filter(uuid => uuid !== stationUuid));
+  }, [favorites]);
+
+  const isFavorite = useCallback((stationUuid) => {
+    return favorites.includes(stationUuid);
+  }, [favorites]);
+
+  const toggleFavorite = useCallback((stationUuid) => {
+    if (isFavorite(stationUuid)) {
+      removeFavorite(stationUuid);
+    } else {
+      addFavorite(stationUuid);
+    }
+  }, [isFavorite, addFavorite, removeFavorite]);
+
+  return { favorites, toggleFavorite, isFavorite };
+};

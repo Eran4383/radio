@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>רדיו דרכים</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Rubik', 'sans-serif'],
+            },
+            colors: {
+              'bg-primary': 'var(--bg-primary)',
+              'bg-secondary': 'var(--bg-secondary)',
+              'text-primary': 'var(--text-primary)',
+              'text-secondary': 'var(--text-secondary)',
+              'accent': 'var(--accent)',
+              'accent-hover': 'var(--accent-hover)',
+              'accent-focus': 'var(--accent-focus)',
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      :root {
+        --bg-primary: #111827; /* gray-900 */
+        --bg-secondary: #1f2937; /* gray-800 */
+        --text-primary: #f9fafb; /* gray-50 */
+        --text-secondary: #9ca3af; /* gray-400 */
+        --accent: #14b8a6; /* teal-500 */
+        --accent-hover: #0d9488; /* teal-600 */
+        --accent-focus: #0f766e; /* teal-700 */
+      }
+      html.light {
+        --bg-primary: #f9fafb; /* gray-50 */
+        --bg-secondary: #f3f4f6; /* gray-100 */
+        --text-primary: #1f2937; /* gray-800 */
+        --text-secondary: #6b7280; /* gray-500 */
+        --accent: #0d9488; /* teal-600 */
+        --accent-hover: #0f766e; /* teal-700 */
+        --accent-focus: #115e59; /* teal-800 */
+      }
+       html.blue {
+        --bg-primary: #0c1427;
+        --bg-secondary: #1a2a4a;
+        --text-primary: #e0e7ff;
+        --text-secondary: #9fb3d9;
+        --accent: #38bdf8; /* sky-400 */
+        --accent-hover: #0ea5e9; /* sky-500 */
+        --accent-focus: #0284c7; /* sky-600 */
+      }
+
+      body {
+        -webkit-tap-highlight-color: transparent;
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+      }
+      .accent-teal-500 {
+          accent-color: var(--accent);
+      }
+      .dragging {
+        opacity: 0.9;
+        transform: scale(1.08) rotate(3deg);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.2), 0 6px 6px rgba(0,0,0,0.25);
+        z-index: 10;
+        cursor: grabbing;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^18.3.0/",
+    "react": "https://aistudiocdn.com/react@^18.3.0",
+    "react-dom/client": "https://aistudiocdn.com/react-dom@^18.3.0/client",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+  }
+}
+</script>
+</head>
+  <body class="bg-primary text-primary font-sans">
+    <div id="root"></div>
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>
