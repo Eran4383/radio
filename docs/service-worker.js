@@ -15,6 +15,7 @@ const urlsToCache = [
   './components/SettingsPanel.js',
   './components/NowPlaying.js',
   './components/Visualizer.js',
+  './components/InteractiveText.js',
   './services/scheduleService.js',
   './manifest.webmanifest',
   'https://cdn.tailwindcss.com',

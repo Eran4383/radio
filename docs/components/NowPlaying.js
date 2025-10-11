@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon } from './Icons.js';
 import Visualizer from './Visualizer.js';
+import InteractiveText from './InteractiveText.js';
 
 const NowPlaying = ({
   isOpen, onClose, station, isPlaying, onPlayPause, onNext, onPrev, 
@@ -53,7 +54,6 @@ const NowPlaying = ({
     };
 
     const defaultInfo = station ? `${station.codec} @ ${station.bitrate}kbps` : '...';
-    const primaryInfo = [trackInfo?.program, trackInfo?.current].filter(Boolean).join(' | ');
 
     return (
       React.createElement("div", { 
@@ -77,12 +77,28 @@ const NowPlaying = ({
               className: "w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-2xl bg-gray-700 object-cover shadow-2xl flex-shrink-0",
               onError: (e) => { e.currentTarget.src = 'https://picsum.photos/256'; }
             }),
-            React.createElement("div", { className: "flex-shrink-0" },
-                React.createElement("h2", { className: "text-2xl sm:text-3xl font-bold text-text-primary" }, station?.name || 'טוען...'),
-                React.createElement("div", { className: "mt-2" },
-                    React.createElement("p", { className: "text-lg text-text-primary" }, primaryInfo || defaultInfo),
+            React.createElement("div", { className: "flex-shrink-0 w-full" },
+                React.createElement("h2", { className: "text-2xl sm:text-3xl font-bold text-text-primary truncate px-4" }, station?.name || 'טוען...'),
+                React.createElement("div", { className: "mt-2 min-h-[4rem] flex flex-col justify-center" },
+                    React.createElement("div", { className: "text-lg text-text-primary px-4" },
+                        trackInfo?.current || trackInfo?.program ? (
+                            React.createElement(React.Fragment, null,
+                                trackInfo.program && !trackInfo.current && React.createElement("p", { className: "truncate opacity-80" }, trackInfo.program),
+                                trackInfo.current && (
+                                    React.createElement(React.Fragment, null,
+                                        trackInfo.program && React.createElement("p", { className: "truncate text-base opacity-70" }, trackInfo.program),
+                                        React.createElement("div", { className: "mt-1" },
+                                            React.createElement(InteractiveText, { text: trackInfo.current, className: "font-bold text-xl" })
+                                        )
+                                    )
+                                )
+                            )
+                        ) : (
+                            React.createElement("p", null, defaultInfo)
+                        )
+                    ),
                     showNextSong && trackInfo?.next && (
-                        React.createElement("p", { className: "text-base text-text-secondary mt-1 opacity-90" },
+                        React.createElement("p", { className: "text-base text-text-secondary mt-2 opacity-90 truncate px-4" },
                             React.createElement("span", { className: "font-semibold" }, "הבא:"), " ", trackInfo.next
                         )
                     )

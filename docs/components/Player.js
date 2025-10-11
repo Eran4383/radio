@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { EQ_PRESETS } from '../types.js';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons.js';
 import { CORS_PROXY_URL } from '../constants.js';
+import InteractiveText from './InteractiveText.js';
 
 const PlayerVisualizer = ({ frequencyData }) => {
     const canvasRef = useRef(null);
@@ -247,7 +248,6 @@ const Player = ({
   }
 
   const defaultInfo = `${station.codec} @ ${station.bitrate}kbps`;
-  const primaryInfo = [trackInfo?.program, trackInfo?.current].filter(Boolean).join(' | ');
 
   return (
     React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-30" },
@@ -270,7 +270,19 @@ const Player = ({
             React.createElement("div", { className: "min-w-0" },
               React.createElement("h3", { className: "font-bold text-text-primary truncate" }, station.name),
               React.createElement("div", { className: "text-sm text-text-secondary leading-tight" },
-                React.createElement("p", { className: "truncate" }, error || primaryInfo || defaultInfo),
+                React.createElement("div", { className: "truncate" },
+                  error ? (
+                    React.createElement("span", { className: "text-red-400" }, error)
+                  ) : trackInfo?.current || trackInfo?.program ? (
+                    React.createElement(React.Fragment, null,
+                      trackInfo.program && React.createElement("span", null, trackInfo.program),
+                      trackInfo.program && trackInfo.current && React.createElement("span", { className: "mx-1 opacity-60" }, "|"),
+                      trackInfo.current && React.createElement(InteractiveText, { text: trackInfo.current })
+                    )
+                  ) : (
+                    React.createElement("span", null, defaultInfo)
+                  )
+                ),
                 !error && showNextSong && trackInfo?.next && (
                   React.createElement("p", { className: "truncate text-xs opacity-80" },
                     React.createElement("span", { className: "font-semibold" }, "הבא:"), " ", trackInfo.next

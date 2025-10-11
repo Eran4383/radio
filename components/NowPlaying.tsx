@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { Station, VisualizerStyle, StationTrackInfo } from '../types';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon } from './Icons';
 import Visualizer from './Visualizer';
+import InteractiveText from './InteractiveText';
 
 interface NowPlayingProps {
   isOpen: boolean;
@@ -73,7 +74,6 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
     };
 
     const defaultInfo = station ? `${station.codec} @ ${station.bitrate}kbps` : '...';
-    const primaryInfo = [trackInfo?.program, trackInfo?.current].filter(Boolean).join(' | ');
 
     return (
       <div 
@@ -98,12 +98,28 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
               className="w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-2xl bg-gray-700 object-cover shadow-2xl flex-shrink-0"
               onError={(e) => { e.currentTarget.src = 'https://picsum.photos/256'; }}
             />
-            <div className="flex-shrink-0">
-                <h2 className="text-2xl sm:text-3xl font-bold text-text-primary">{station?.name || 'טוען...'}</h2>
-                <div className="mt-2">
-                    <p className="text-lg text-text-primary">{primaryInfo || defaultInfo}</p>
+            <div className="flex-shrink-0 w-full">
+                <h2 className="text-2xl sm:text-3xl font-bold text-text-primary truncate px-4">{station?.name || 'טוען...'}</h2>
+                <div className="mt-2 min-h-[4rem] flex flex-col justify-center">
+                    <div className="text-lg text-text-primary px-4">
+                        {trackInfo?.current || trackInfo?.program ? (
+                            <>
+                                {trackInfo.program && !trackInfo.current && <p className="truncate opacity-80">{trackInfo.program}</p>}
+                                {trackInfo.current && (
+                                    <>
+                                        {trackInfo.program && <p className="truncate text-base opacity-70">{trackInfo.program}</p>}
+                                        <div className="mt-1">
+                                            <InteractiveText text={trackInfo.current} className="font-bold text-xl"/>
+                                        </div>
+                                    </>
+                                )}
+                            </>
+                        ) : (
+                            <p>{defaultInfo}</p>
+                        )}
+                    </div>
                     {showNextSong && trackInfo?.next && (
-                        <p className="text-base text-text-secondary mt-1 opacity-90">
+                        <p className="text-base text-text-secondary mt-2 opacity-90 truncate px-4">
                             <span className="font-semibold">הבא:</span> {trackInfo.next}
                         </p>
                     )}

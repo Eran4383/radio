@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Station, EqPreset, EQ_PRESETS, CustomEqSettings, StationTrackInfo } from '../types';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons';
 import { CORS_PROXY_URL } from '../constants';
+import InteractiveText from './InteractiveText';
 
 interface PlayerProps {
   station: Station | null;
@@ -266,7 +267,6 @@ const Player: React.FC<PlayerProps> = ({
   }
 
   const defaultInfo = `${station.codec} @ ${station.bitrate}kbps`;
-  const primaryInfo = [trackInfo?.program, trackInfo?.current].filter(Boolean).join(' | ');
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-30">
@@ -289,7 +289,19 @@ const Player: React.FC<PlayerProps> = ({
             <div className="min-w-0">
               <h3 className="font-bold text-text-primary truncate">{station.name}</h3>
               <div className="text-sm text-text-secondary leading-tight">
-                <p className="truncate">{error || primaryInfo || defaultInfo}</p>
+                <div className="truncate">
+                  {error ? (
+                    <span className="text-red-400">{error}</span>
+                  ) : trackInfo?.current || trackInfo?.program ? (
+                    <>
+                      {trackInfo.program && <span>{trackInfo.program}</span>}
+                      {trackInfo.program && trackInfo.current && <span className="mx-1 opacity-60">|</span>}
+                      {trackInfo.current && <InteractiveText text={trackInfo.current} />}
+                    </>
+                  ) : (
+                    <span>{defaultInfo}</span>
+                  )}
+                </div>
                 {!error && showNextSong && trackInfo?.next && (
                   <p className="truncate text-xs opacity-80">
                     <span className="font-semibold">הבא:</span> {trackInfo.next}
