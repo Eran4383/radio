@@ -51,7 +51,8 @@ const Player = ({
   customEqSettings,
   volume,
   onVolumeChange,
-  displayInfo,
+  trackInfo,
+  showNextSong,
   onOpenNowPlaying,
   setFrequencyData,
   onStreamStatusChange,
@@ -69,11 +70,12 @@ const Player = ({
 
   const [isActuallyPlaying, setIsActuallyPlaying] = useState(false);
   const [error, setError] = useState(null);
-
+  
   // Report stream status changes to parent
   useEffect(() => {
     onStreamStatusChange(isActuallyPlaying);
   }, [isActuallyPlaying, onStreamStatusChange]);
+
 
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
@@ -198,9 +200,10 @@ const Player = ({
   useEffect(() => {
     if ('mediaSession' in navigator) {
       if (station) {
+        const primaryInfo = [trackInfo?.program, trackInfo?.current].filter(Boolean).join(' | ');
         navigator.mediaSession.metadata = new MediaMetadata({
           title: station.name,
-          artist: displayInfo || 'רדיו פרימיום',
+          artist: primaryInfo || 'רדיו פרימיום',
           artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
         });
 
@@ -208,7 +211,7 @@ const Player = ({
         navigator.mediaSession.setActionHandler('pause', onPlayPause);
         navigator.mediaSession.setActionHandler('nexttrack', onNext);
         navigator.mediaSession.setActionHandler('previoustrack', onPrev);
-        
+
         if (isPlaying) {
             navigator.mediaSession.playbackState = 'playing';
         } else {
@@ -219,7 +222,7 @@ const Player = ({
         navigator.mediaSession.playbackState = 'none';
       }
     }
-  }, [station, isPlaying, displayInfo, onPlayPause, onNext, onPrev]);
+  }, [station, isPlaying, trackInfo, onPlayPause, onNext, onPrev]);
 
   const handlePlaying = () => {
     setIsActuallyPlaying(true);
@@ -244,54 +247,67 @@ const Player = ({
   }
 
   const defaultInfo = `${station.codec} @ ${station.bitrate}kbps`;
+  const primaryInfo = [trackInfo?.program, trackInfo?.current].filter(Boolean).join(' | ');
 
-  return React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-30" },
+  return (
+    React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-30" },
       React.createElement("div", { className: "relative bg-bg-secondary/80 backdrop-blur-lg shadow-t-lg" },
         isVisualizerEnabled && isPlaying && React.createElement(PlayerVisualizer, { frequencyData: frequencyData }),
-        React.createElement("div", { className: "max-w-7xl mx-auto p-3 flex items-center justify-between gap-4" },
-          React.createElement("div", {
+        React.createElement("div", { className: "max-w-7xl mx-auto p-4 flex items-center justify-between gap-4" },
+          
+          React.createElement("div", { 
             className: "flex items-center gap-3 flex-1 min-w-0 cursor-pointer",
             onClick: onOpenNowPlaying,
             role: "button",
             "aria-label": "פתח מסך ניגון"
           },
-            React.createElement("img", {
-              src: station.favicon,
-              alt: station.name,
-              className: "w-12 h-12 rounded-md bg-gray-700 object-contain flex-shrink-0",
+            React.createElement("img", { 
+              src: station.favicon, 
+              alt: station.name, 
+              className: "w-14 h-14 rounded-md bg-gray-700 object-contain flex-shrink-0",
               onError: (e) => { e.currentTarget.src = 'https://picsum.photos/48'; }
             }),
             React.createElement("div", { className: "min-w-0" },
               React.createElement("h3", { className: "font-bold text-text-primary truncate" }, station.name),
-              React.createElement("p", { className: "text-sm text-text-secondary truncate" }, error || displayInfo || defaultInfo)
+              React.createElement("div", { className: "text-sm text-text-secondary leading-tight" },
+                React.createElement("p", { className: "truncate" }, error || primaryInfo || defaultInfo),
+                !error && showNextSong && trackInfo?.next && (
+                  React.createElement("p", { className: "truncate text-xs opacity-80" },
+                    React.createElement("span", { className: "font-semibold" }, "הבא:"), " ", trackInfo.next
+                  )
+                )
+              )
             )
           ),
+          
           React.createElement("div", { className: "flex items-center gap-1 sm:gap-2" },
-            React.createElement("button", { onClick: onPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הקודם" },
-              React.createElement(SkipNextIcon, { className: "w-6 h-6" })
+             React.createElement("button", { onClick: onPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הקודם" },
+                React.createElement(SkipNextIcon, { className: "w-6 h-6" })
             ),
-            React.createElement("button", {
-              onClick: onPlayPause,
+            React.createElement("button", { 
+              onClick: onPlayPause, 
               className: "p-3 bg-accent text-white rounded-full shadow-md",
               "aria-label": isPlaying ? "השהה" : "נגן"
             },
               isPlaying ? React.createElement(PauseIcon, { className: "w-7 h-7" }) : React.createElement(PlayIcon, { className: "w-7 h-7" })
             ),
             React.createElement("button", { onClick: onNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הבא" },
-              React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
+                React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
             )
           ),
-          React.createElement("audio", {
+
+          React.createElement("audio", { 
             ref: audioRef,
             onPlaying: handlePlaying,
             onPause: handlePause,
             onWaiting: handleWaiting,
             onError: handleError,
-            crossOrigin: 'anonymous'
+            crossOrigin: "anonymous"
           })
         )
       )
-    );
+    )
+  );
 };
 
 export default Player;

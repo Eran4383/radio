@@ -4,8 +4,8 @@ import Visualizer from './Visualizer.js';
 
 const NowPlaying = ({
   isOpen, onClose, station, isPlaying, onPlayPause, onNext, onPrev, 
-  volume, onVolumeChange, displayInfo, frequencyData,
-  visualizerStyle, isVisualizerEnabled, isVisualizerLocked, onCycleVisualizerStyle,
+  volume, onVolumeChange, trackInfo, showNextSong, frequencyData,
+  visualizerStyle, isVisualizerEnabled, onCycleVisualizerStyle,
   isVolumeControlVisible
 }) => {
     const touchStartY = useRef(0);
@@ -53,6 +53,7 @@ const NowPlaying = ({
     };
 
     const defaultInfo = station ? `${station.codec} @ ${station.bitrate}kbps` : '...';
+    const primaryInfo = [trackInfo?.program, trackInfo?.current].filter(Boolean).join(' | ');
 
     return (
       React.createElement("div", { 
@@ -78,19 +79,27 @@ const NowPlaying = ({
             }),
             React.createElement("div", { className: "flex-shrink-0" },
                 React.createElement("h2", { className: "text-2xl sm:text-3xl font-bold text-text-primary" }, station?.name || 'טוען...'),
-                React.createElement("p", { className: "text-base text-text-secondary mt-1" }, displayInfo || defaultInfo)
+                React.createElement("div", { className: "mt-2" },
+                    React.createElement("p", { className: "text-lg text-text-primary" }, primaryInfo || defaultInfo),
+                    showNextSong && trackInfo?.next && (
+                        React.createElement("p", { className: "text-base text-text-secondary mt-1 opacity-90" },
+                            React.createElement("span", { className: "font-semibold" }, "הבא:"), " ", trackInfo.next
+                        )
+                    )
+                )
             ),
+            
             React.createElement("div", { className: "w-full max-w-sm px-4 flex-shrink-0" },
                 isVisualizerEnabled && (
                     React.createElement(Visualizer, { 
                         frequencyData: frequencyData,
                         style: visualizerStyle,
-                        onClick: onCycleVisualizerStyle,
-                        isLocked: isVisualizerLocked
+                        onClick: onCycleVisualizerStyle
                     })
                 )
             )
         ),
+        
         // Controls
         React.createElement("div", { className: "flex-shrink-0 flex flex-col items-center gap-4 sm:gap-6 pb-4 sm:pb-8 px-4" },
             React.createElement("div", { className: "flex items-center justify-center gap-4" },
@@ -108,6 +117,7 @@ const NowPlaying = ({
                 React.createElement(SkipPreviousIcon, { className: "w-12 h-12" })
               )
             ),
+
             isVolumeControlVisible && (
               React.createElement("div", { className: "w-full max-w-xs flex items-center gap-3" },
                 React.createElement(VolumeUpIcon, { className: "w-6 h-6 text-text-secondary flex-shrink-0" }),

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Station, EqPreset, EQ_PRESETS, CustomEqSettings } from '../types';
+import { Station, EqPreset, EQ_PRESETS, CustomEqSettings, StationTrackInfo } from '../types';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons';
 import { CORS_PROXY_URL } from '../constants';
 
@@ -13,7 +13,8 @@ interface PlayerProps {
   customEqSettings: CustomEqSettings;
   volume: number;
   onVolumeChange: (volume: number) => void;
-  displayInfo: string | null;
+  trackInfo: StationTrackInfo | null;
+  showNextSong: boolean;
   onOpenNowPlaying: () => void;
   setFrequencyData: (data: Uint8Array) => void;
   onStreamStatusChange: (isActive: boolean) => void;
@@ -69,7 +70,8 @@ const Player: React.FC<PlayerProps> = ({
   customEqSettings,
   volume,
   onVolumeChange,
-  displayInfo,
+  trackInfo,
+  showNextSong,
   onOpenNowPlaying,
   setFrequencyData,
   onStreamStatusChange,
@@ -217,9 +219,10 @@ const Player: React.FC<PlayerProps> = ({
   useEffect(() => {
     if ('mediaSession' in navigator) {
       if (station) {
+        const primaryInfo = [trackInfo?.program, trackInfo?.current].filter(Boolean).join(' | ');
         navigator.mediaSession.metadata = new MediaMetadata({
           title: station.name,
-          artist: displayInfo || 'רדיו פרימיום',
+          artist: primaryInfo || 'רדיו פרימיום',
           artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
         });
 
@@ -238,7 +241,7 @@ const Player: React.FC<PlayerProps> = ({
         navigator.mediaSession.playbackState = 'none';
       }
     }
-  }, [station, isPlaying, displayInfo, onPlayPause, onNext, onPrev]);
+  }, [station, isPlaying, trackInfo, onPlayPause, onNext, onPrev]);
 
   const handlePlaying = () => {
     setIsActuallyPlaying(true);
@@ -263,12 +266,13 @@ const Player: React.FC<PlayerProps> = ({
   }
 
   const defaultInfo = `${station.codec} @ ${station.bitrate}kbps`;
+  const primaryInfo = [trackInfo?.program, trackInfo?.current].filter(Boolean).join(' | ');
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-30">
       <div className="relative bg-bg-secondary/80 backdrop-blur-lg shadow-t-lg">
         {isVisualizerEnabled && isPlaying && <PlayerVisualizer frequencyData={frequencyData} />}
-        <div className="max-w-7xl mx-auto p-3 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto p-4 flex items-center justify-between gap-4">
           
           <div 
             className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
@@ -279,12 +283,19 @@ const Player: React.FC<PlayerProps> = ({
             <img 
               src={station.favicon} 
               alt={station.name} 
-              className="w-12 h-12 rounded-md bg-gray-700 object-contain flex-shrink-0"
+              className="w-14 h-14 rounded-md bg-gray-700 object-contain flex-shrink-0"
               onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://picsum.photos/48'; }}
             />
             <div className="min-w-0">
               <h3 className="font-bold text-text-primary truncate">{station.name}</h3>
-              <p className="text-sm text-text-secondary truncate">{error || displayInfo || defaultInfo}</p>
+              <div className="text-sm text-text-secondary leading-tight">
+                <p className="truncate">{error || primaryInfo || defaultInfo}</p>
+                {!error && showNextSong && trackInfo?.next && (
+                  <p className="truncate text-xs opacity-80">
+                    <span className="font-semibold">הבא:</span> {trackInfo.next}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
           

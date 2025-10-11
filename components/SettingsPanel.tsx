@@ -8,14 +8,16 @@ interface SettingsPanelProps {
   onThemeChange: (theme: Theme) => void;
   currentEqPreset: EqPreset;
   onEqPresetChange: (preset: EqPreset) => void;
-  isVisualizerEnabled: boolean;
-  onVisualizerEnabledChange: (enabled: boolean) => void;
-  isVisualizerLocked: boolean;
-  onVisualizerLockedChange: (locked: boolean) => void;
+  isNowPlayingVisualizerEnabled: boolean;
+  onNowPlayingVisualizerEnabledChange: (enabled: boolean) => void;
+  isPlayerBarVisualizerEnabled: boolean;
+  onPlayerBarVisualizerEnabledChange: (enabled: boolean) => void;
   isStatusIndicatorEnabled: boolean;
   onStatusIndicatorEnabledChange: (enabled: boolean) => void;
   isVolumeControlVisible: boolean;
   onVolumeControlVisibleChange: (enabled: boolean) => void;
+  showNextSong: boolean;
+  onShowNextSongChange: (enabled: boolean) => void;
   customEqSettings: CustomEqSettings;
   onCustomEqChange: (settings: CustomEqSettings) => void;
 }
@@ -41,22 +43,20 @@ const ToggleSwitch: React.FC<{
     onChange: (enabled: boolean) => void;
     disabled?: boolean;
 }> = ({ label, enabled, onChange, disabled = false }) => (
-    <div className={`flex items-center justify-between p-3 rounded-lg bg-bg-primary ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+     <label className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors duration-200 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-accent/10'} bg-bg-primary`}>
         <span className="font-medium text-text-primary">{label}</span>
-        <button
-            onClick={() => !disabled && onChange(!enabled)}
-            disabled={disabled}
-            className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bg-secondary focus:ring-accent ${
-                enabled ? 'bg-accent' : 'bg-gray-600'
-            }`}
-        >
-            <span
-                className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${
-                    enabled ? 'translate-x-5' : 'translate-x-1'
-                }`}
+        <div className="relative inline-flex items-center cursor-pointer">
+            <input 
+                type="checkbox" 
+                checked={enabled} 
+                onChange={(e) => !disabled && onChange(e.target.checked)} 
+                disabled={disabled}
+                className="sr-only peer"
+                aria-label={label}
             />
-        </button>
-    </div>
+            <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-focus:ring-2 peer-focus:ring-accent-focus peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+        </div>
+    </label>
 );
 
 const EqSlider: React.FC<{
@@ -84,8 +84,10 @@ const EqSlider: React.FC<{
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
     isOpen, onClose, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
-    isVisualizerEnabled, onVisualizerEnabledChange, isVisualizerLocked, onVisualizerLockedChange,
+    isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange,
+    isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange,
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
+    showNextSong, onShowNextSongChange,
     customEqSettings, onCustomEqChange
  }) => {
   return (
@@ -99,18 +101,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       {/* Panel */}
       <div className={`fixed top-0 right-0 h-full w-72 bg-bg-secondary shadow-2xl z-40 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="p-4 flex flex-col h-full overflow-y-auto">
-            <h2 className="text-xl font-bold mb-6 text-text-primary flex-shrink-0">הגדרות</h2>
-
-            {/* Account Section */}
-            <div className="mb-6 flex-shrink-0">
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-bg-primary opacity-60 cursor-not-allowed">
-                    <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center">
-                        <svg className="w-6 h-6 text-gray-300" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"></path></svg>
+            <div className="flex justify-between items-center mb-6 flex-shrink-0">
+                <h2 className="text-xl font-bold text-text-primary">הגדרות</h2>
+                <div className="text-center opacity-60 cursor-not-allowed">
+                    <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center ring-2 ring-gray-600">
+                        <span className="text-xl font-bold text-gray-300">G</span>
                     </div>
-                    <div>
-                        <p className="font-semibold text-text-primary">התחבר עם גוגל</p>
-                        <p className="text-xs text-text-secondary">(בקרוב)</p>
-                    </div>
+                    <p className="text-xs text-text-secondary mt-1">התחברות</p>
                 </div>
             </div>
 
@@ -168,15 +165,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <h3 className="text-sm font-semibold text-text-secondary mb-2">ממשק</h3>
                 <div className="space-y-2">
                     <ToggleSwitch 
-                        label="הצג תצוגה גרפית" 
-                        enabled={isVisualizerEnabled} 
-                        onChange={onVisualizerEnabledChange} 
+                        label="תצוגה גרפית (מסך מלא)" 
+                        enabled={isNowPlayingVisualizerEnabled} 
+                        onChange={onNowPlayingVisualizerEnabledChange} 
                     />
                     <ToggleSwitch 
-                        label="נעל סגנון תצוגה" 
-                        enabled={isVisualizerLocked} 
-                        onChange={onVisualizerLockedChange}
-                        disabled={!isVisualizerEnabled}
+                        label="תצוגה גרפית (נגן תחתון)" 
+                        enabled={isPlayerBarVisualizerEnabled} 
+                        onChange={onPlayerBarVisualizerEnabledChange} 
                     />
                     <ToggleSwitch 
                         label="הצג חיווי מצב"
@@ -187,6 +183,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         label="הצג בקרת עוצמה"
                         enabled={isVolumeControlVisible}
                         onChange={onVolumeControlVisibleChange}
+                    />
+                    <ToggleSwitch 
+                        label="הצג שיר הבא"
+                        enabled={showNextSong}
+                        onChange={onShowNextSongChange}
                     />
                 </div>
             </div>

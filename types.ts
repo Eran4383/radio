@@ -9,10 +9,16 @@ export interface Station {
   bitrate: number;
 }
 
+export interface StationTrackInfo {
+    program: string | null;
+    current: string | null;
+    next: string | null;
+}
+
 export const THEMES = ['dark', 'light', 'blue', 'sunset', 'forest', 'ocean', 'rose', 'matrix'] as const;
 export type Theme = typeof THEMES[number];
 
-export const EQ_PRESET_KEYS = ['flat', 'bassBoost', 'vocalBoost', 'rock', 'custom'] as const;
+export const EQ_PRESET_KEYS = ['flat', 'bassBoost', 'vocalBoost', 'rock', 'movie', 'custom'] as const;
 export type EqPreset = typeof EQ_PRESET_KEYS[number];
 
 export interface CustomEqSettings {
@@ -26,6 +32,7 @@ export const EQ_PRESETS: Record<Exclude<EqPreset, 'custom'>, { bass: number; mid
   bassBoost: { bass: 6, mid: -2, treble: -2 },
   vocalBoost: { bass: -2, mid: 4, treble: 2 },
   rock: { bass: 4, mid: -3, treble: 4 },
+  movie: { bass: 3, mid: 2, treble: 1 },
 };
 
 export const EQ_PRESET_LABELS: Record<EqPreset, string> = {
@@ -33,6 +40,7 @@ export const EQ_PRESET_LABELS: Record<EqPreset, string> = {
   bassBoost: 'הגברת בס',
   vocalBoost: 'הגברת קולות',
   rock: 'רוק',
+  movie: 'סרט',
   custom: 'מותאם אישית',
 };
 

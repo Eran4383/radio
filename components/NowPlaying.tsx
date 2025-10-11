@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Station, VisualizerStyle } from '../types';
+import { Station, VisualizerStyle, StationTrackInfo } from '../types';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon } from './Icons';
 import Visualizer from './Visualizer';
 
@@ -13,19 +13,19 @@ interface NowPlayingProps {
   onPrev: () => void;
   volume: number;
   onVolumeChange: (volume: number) => void;
-  displayInfo: string | null;
+  trackInfo: StationTrackInfo | null;
+  showNextSong: boolean;
   frequencyData: Uint8Array;
   visualizerStyle: VisualizerStyle;
   isVisualizerEnabled: boolean;
-  isVisualizerLocked: boolean;
   onCycleVisualizerStyle: () => void;
   isVolumeControlVisible: boolean;
 }
 
 const NowPlaying: React.FC<NowPlayingProps> = ({
   isOpen, onClose, station, isPlaying, onPlayPause, onNext, onPrev, 
-  volume, onVolumeChange, displayInfo, frequencyData,
-  visualizerStyle, isVisualizerEnabled, isVisualizerLocked, onCycleVisualizerStyle,
+  volume, onVolumeChange, trackInfo, showNextSong, frequencyData,
+  visualizerStyle, isVisualizerEnabled, onCycleVisualizerStyle,
   isVolumeControlVisible
 }) => {
     const touchStartY = useRef(0);
@@ -73,6 +73,7 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
     };
 
     const defaultInfo = station ? `${station.codec} @ ${station.bitrate}kbps` : '...';
+    const primaryInfo = [trackInfo?.program, trackInfo?.current].filter(Boolean).join(' | ');
 
     return (
       <div 
@@ -99,7 +100,14 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
             />
             <div className="flex-shrink-0">
                 <h2 className="text-2xl sm:text-3xl font-bold text-text-primary">{station?.name || 'טוען...'}</h2>
-                <p className="text-base text-text-secondary mt-1">{displayInfo || defaultInfo}</p>
+                <div className="mt-2">
+                    <p className="text-lg text-text-primary">{primaryInfo || defaultInfo}</p>
+                    {showNextSong && trackInfo?.next && (
+                        <p className="text-base text-text-secondary mt-1 opacity-90">
+                            <span className="font-semibold">הבא:</span> {trackInfo.next}
+                        </p>
+                    )}
+                </div>
             </div>
             
             <div className="w-full max-w-sm px-4 flex-shrink-0">
@@ -108,7 +116,6 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
                         frequencyData={frequencyData}
                         style={visualizerStyle}
                         onClick={onCycleVisualizerStyle}
-                        isLocked={isVisualizerLocked}
                     />
                 )}
             </div>

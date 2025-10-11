@@ -1,4 +1,5 @@
 import { PRIORITY_STATIONS } from '../constants.js';
+import { CORS_PROXY_URL } from '../constants.js';
 
 // Function to shuffle an array for load distribution
 const shuffleArray = (array) => {
@@ -30,7 +31,8 @@ export const fetchIsraeliStations = async () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000); // 8-second timeout
 
-      const response = await fetch(`${serverUrl}/stations/bycountrycodeexact/IL?limit=300&hidebroken=true`, {
+      const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/bycountrycodeexact/IL?limit=300&hidebroken=true`;
+      const response = await fetch(proxiedUrl, {
           signal: controller.signal
       });
       
@@ -59,15 +61,11 @@ export const fetchIsraeliStations = async () => {
           if (station.url_resolved && station.favicon && station.bitrate > 32 && station.name) {
               const canonicalName = getCanonicalName(station.name);
               
-              // The key for de-duplication is the canonical name if it exists,
-              // otherwise, it's a simplified version of the original name for other stations.
               const key = canonicalName || station.name.toLowerCase().trim().replace(/\s*fm\s*$/, '').replace(/[^a-z0-9\u0590-\u05FF]/g, '');
               
               const existingStation = uniqueStations.get(key);
               
-              // If we haven't seen this station, or the new one has a better bitrate, we add/replace it.
               if (!existingStation || station.bitrate > existingStation.bitrate) {
-                  // Unify the name to the canonical name for consistency in the UI
                   if (canonicalName) {
                       station.name = canonicalName;
                   }
@@ -80,7 +78,6 @@ export const fetchIsraeliStations = async () => {
           console.log(`Successfully fetched and de-duplicated ${uniqueStations.size} stations from ${serverUrl}`);
           return Array.from(uniqueStations.values());
       }
-      // If data is empty, it might be a server issue, so try the next one.
       console.warn(`Server ${serverUrl} returned empty or invalid station data, trying next.`);
 
     } catch (error) {
@@ -89,11 +86,48 @@ export const fetchIsraeliStations = async () => {
       } else {
         console.warn(`Error connecting to server ${serverUrl}:`, error);
       }
-      // Continue to the next server
     }
   }
 
-  // If all servers failed
   console.error('Error fetching stations: All API servers failed.');
   return [];
+};
+
+export const fetchLiveTrackInfo = async (stationuuid) => {
+    if (!stationuuid) return null;
+
+    const servers = shuffleArray([...API_SERVERS]);
+
+    for (const serverUrl of servers) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second timeout
+
+            const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/check?uuids=${stationuuid}`;
+            const response = await fetch(proxiedUrl, {
+                signal: controller.signal,
+                cache: 'no-cache'
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                continue; 
+            }
+
+            const data = await response.json();
+            if (data && data.length > 0) {
+                const nowPlaying = data[0].now_playing;
+                const title = nowPlaying?.song?.title || data[0].title;
+                if (title) {
+                    return title;
+                }
+            }
+        } catch (error) {
+            // Silent on errors, just try the next server
+        }
+    }
+
+    console.warn(`Could not fetch live track info for ${stationuuid} from any server.`);
+    return null;
 };

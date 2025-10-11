@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { fetchIsraeliStations } from './services/radioService';
-import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings } from './types';
+import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService';
+import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo } from './types';
 import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
@@ -9,6 +9,7 @@ import { useFavorites } from './hooks/useFavorites';
 import { PRIORITY_STATIONS } from './constants';
 import { MenuIcon } from './components/Icons';
 import { getCurrentProgram } from './services/scheduleService';
+import { fetchStationSpecificTrackInfo } from './services/stationSpecificService';
 import StationListSkeleton from './components/StationListSkeleton';
 
 
@@ -28,11 +29,12 @@ const LAST_STATION_KEY = 'radio-last-station-uuid';
 const LAST_FILTER_KEY = 'radio-last-filter';
 const LAST_SORT_KEY = 'radio-last-sort';
 const VOLUME_KEY = 'radio-volume';
-const VISUALIZER_ENABLED_KEY = 'radio-visualizer-enabled';
-const VISUALIZER_LOCKED_KEY = 'radio-visualizer-locked';
+const NOW_PLAYING_VISUALIZER_ENABLED_KEY = 'radio-nowplaying-visualizer-enabled';
+const PLAYER_BAR_VISUALIZER_ENABLED_KEY = 'radio-playerbar-visualizer-enabled';
 const VISUALIZER_STYLE_KEY = 'radio-visualizer-style';
 const STATUS_INDICATOR_ENABLED_KEY = 'radio-status-indicator-enabled';
 const VOLUME_CONTROL_VISIBLE_KEY = 'radio-volume-control-visible';
+const SHOW_NEXT_SONG_KEY = 'radio-show-next-song';
 
 
 const SortButton: React.FC<{
@@ -60,7 +62,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
-  const [displayInfo, setDisplayInfo] = useState<string | null>(null);
+  const [trackInfo, setTrackInfo] = useState<StationTrackInfo | null>(null);
   const [isStreamActive, setIsStreamActive] = useState(false);
   
   // State loaded from LocalStorage
@@ -116,14 +118,14 @@ export default function App() {
     return saved ? parseFloat(saved) : 1;
   });
 
-  const [isVisualizerEnabled, setIsVisualizerEnabled] = useState<boolean>(() => {
-      const saved = localStorage.getItem(VISUALIZER_ENABLED_KEY);
+  const [isNowPlayingVisualizerEnabled, setIsNowPlayingVisualizerEnabled] = useState<boolean>(() => {
+      const saved = localStorage.getItem(NOW_PLAYING_VISUALIZER_ENABLED_KEY);
       return saved ? JSON.parse(saved) : true;
   });
 
-  const [isVisualizerLocked, setIsVisualizerLocked] = useState<boolean>(() => {
-      const saved = localStorage.getItem(VISUALIZER_LOCKED_KEY);
-      return saved ? JSON.parse(saved) : false;
+  const [isPlayerBarVisualizerEnabled, setIsPlayerBarVisualizerEnabled] = useState<boolean>(() => {
+      const saved = localStorage.getItem(PLAYER_BAR_VISUALIZER_ENABLED_KEY);
+      return saved ? JSON.parse(saved) : true;
   });
 
   const [visualizerStyle, setVisualizerStyle] = useState<VisualizerStyle>(() => {
@@ -138,6 +140,11 @@ export default function App() {
 
   const [isVolumeControlVisible, setIsVolumeControlVisible] = useState<boolean>(() => {
       const saved = localStorage.getItem(VOLUME_CONTROL_VISIBLE_KEY);
+      return saved ? JSON.parse(saved) : true;
+  });
+  
+  const [showNextSong, setShowNextSong] = useState<boolean>(() => {
+      const saved = localStorage.getItem(SHOW_NEXT_SONG_KEY);
       return saved ? JSON.parse(saved) : true;
   });
 
@@ -191,42 +198,38 @@ export default function App() {
   useEffect(() => {
     let intervalId: number | undefined;
 
-    const fetchAndSetDisplayInfo = async () => {
+    const fetchAndSetInfo = async () => {
       if (!currentStation) return;
       
-      let info: string | null = null;
-      let isLiveInfoUseful = false;
+      let finalInfo: StationTrackInfo | null = null;
+      
+      // 1. Try station-specific, direct API first for highest accuracy.
+      const specificInfo = await fetchStationSpecificTrackInfo(currentStation.name);
 
-      try {
-        const response = await fetch(`https://de1.api.radio-browser.info/json/stations/check?uuids=${currentStation.stationuuid}`);
-        if (response.ok) {
-          const data = await response.json();
-          const songTitle = data?.[0]?.now_playing?.song?.title || data?.[0]?.title;
-          
+      if (specificInfo) {
+          finalInfo = specificInfo;
+      } else {
+          // 2. If specific API fails, fall back to the general Radio-Browser API.
+          const songTitle = await fetchLiveTrackInfo(currentStation.stationuuid);
           if (songTitle && songTitle.toLowerCase() !== currentStation.name.toLowerCase()) {
-            info = songTitle;
-            isLiveInfoUseful = true;
+              finalInfo = { program: null, current: songTitle, next: null };
+          } else {
+              // 3. If that also fails, fall back to the hardcoded schedule.
+              const scheduledProgram = getCurrentProgram(currentStation.name);
+              if (scheduledProgram) {
+                  finalInfo = { program: scheduledProgram, current: null, next: null };
+              }
           }
-        }
-      } catch (error) {
-        console.warn("Could not fetch live track info:", error);
-      }
-
-      if (!isLiveInfoUseful) {
-        const scheduledProgram = getCurrentProgram(currentStation.name);
-        if (scheduledProgram) {
-            info = scheduledProgram;
-        }
       }
       
-      setDisplayInfo(info);
+      setTrackInfo(finalInfo);
     };
 
-    if (isPlaying && currentStation) {
-      fetchAndSetDisplayInfo(); 
-      intervalId = window.setInterval(fetchAndSetDisplayInfo, 20000);
+    if (currentStation) {
+      fetchAndSetInfo(); 
+      intervalId = window.setInterval(fetchAndSetInfo, 20000);
     } else {
-      setDisplayInfo(null);
+      setTrackInfo(null);
     }
 
     return () => {
@@ -234,7 +237,7 @@ export default function App() {
         clearInterval(intervalId);
       }
     };
-  }, [isPlaying, currentStation]);
+  }, [currentStation]);
 
   // Effects to save state changes to localStorage
   useEffect(() => {
@@ -265,14 +268,14 @@ export default function App() {
     localStorage.setItem(CUSTOM_EQ_KEY, JSON.stringify(settings));
   };
   
-  const handleSetVisualizerEnabled = (enabled: boolean) => {
-    setIsVisualizerEnabled(enabled);
-    localStorage.setItem(VISUALIZER_ENABLED_KEY, JSON.stringify(enabled));
+  const handleSetIsNowPlayingVisualizerEnabled = (enabled: boolean) => {
+    setIsNowPlayingVisualizerEnabled(enabled);
+    localStorage.setItem(NOW_PLAYING_VISUALIZER_ENABLED_KEY, JSON.stringify(enabled));
   };
 
-  const handleSetVisualizerLocked = (locked: boolean) => {
-    setIsVisualizerLocked(locked);
-    localStorage.setItem(VISUALIZER_LOCKED_KEY, JSON.stringify(locked));
+  const handleSetIsPlayerBarVisualizerEnabled = (enabled: boolean) => {
+    setIsPlayerBarVisualizerEnabled(enabled);
+    localStorage.setItem(PLAYER_BAR_VISUALIZER_ENABLED_KEY, JSON.stringify(enabled));
   };
   
   const handleSetStatusIndicatorEnabled = (enabled: boolean) => {
@@ -285,14 +288,18 @@ export default function App() {
     localStorage.setItem(VOLUME_CONTROL_VISIBLE_KEY, JSON.stringify(visible));
   };
   
+  const handleSetShowNextSong = (enabled: boolean) => {
+    setShowNextSong(enabled);
+    localStorage.setItem(SHOW_NEXT_SONG_KEY, JSON.stringify(enabled));
+  };
+  
   const handleCycleVisualizerStyle = useCallback(() => {
-    if (isVisualizerLocked) return;
     const currentIndex = VISUALIZER_STYLES.indexOf(visualizerStyle);
     const nextIndex = (currentIndex + 1) % VISUALIZER_STYLES.length;
     const newStyle = VISUALIZER_STYLES[nextIndex];
     setVisualizerStyle(newStyle);
     localStorage.setItem(VISUALIZER_STYLE_KEY, newStyle);
-  }, [visualizerStyle, isVisualizerLocked]);
+  }, [visualizerStyle]);
 
   const saveCustomOrder = (newOrder: string[]) => {
       setCustomOrder(newOrder);
@@ -502,14 +509,16 @@ export default function App() {
         onThemeChange={setTheme}
         currentEqPreset={eqPreset}
         onEqPresetChange={handleSetEqPreset}
-        isVisualizerEnabled={isVisualizerEnabled}
-        onVisualizerEnabledChange={handleSetVisualizerEnabled}
-        isVisualizerLocked={isVisualizerLocked}
-        onVisualizerLockedChange={handleSetVisualizerLocked}
+        isNowPlayingVisualizerEnabled={isNowPlayingVisualizerEnabled}
+        onNowPlayingVisualizerEnabledChange={handleSetIsNowPlayingVisualizerEnabled}
+        isPlayerBarVisualizerEnabled={isPlayerBarVisualizerEnabled}
+        onPlayerBarVisualizerEnabledChange={handleSetIsPlayerBarVisualizerEnabled}
         isStatusIndicatorEnabled={isStatusIndicatorEnabled}
         onStatusIndicatorEnabledChange={handleSetStatusIndicatorEnabled}
         isVolumeControlVisible={isVolumeControlVisible}
         onVolumeControlVisibleChange={handleSetIsVolumeControlVisible}
+        showNextSong={showNextSong}
+        onShowNextSongChange={handleSetShowNextSong}
         customEqSettings={customEqSettings}
         onCustomEqChange={handleSetCustomEqSettings}
       />
@@ -525,11 +534,11 @@ export default function App() {
           onPrev={handlePrev}
           volume={volume}
           onVolumeChange={handleSetVolume}
-          displayInfo={displayInfo}
+          trackInfo={trackInfo}
+          showNextSong={showNextSong}
           frequencyData={frequencyData}
           visualizerStyle={visualizerStyle}
-          isVisualizerEnabled={isVisualizerEnabled}
-          isVisualizerLocked={isVisualizerLocked}
+          isVisualizerEnabled={isNowPlayingVisualizerEnabled}
           onCycleVisualizerStyle={handleCycleVisualizerStyle}
           isVolumeControlVisible={isVolumeControlVisible}
         />
@@ -545,12 +554,13 @@ export default function App() {
         customEqSettings={customEqSettings}
         volume={volume}
         onVolumeChange={handleSetVolume}
-        displayInfo={displayInfo}
+        trackInfo={trackInfo}
+        showNextSong={showNextSong}
         onOpenNowPlaying={() => setIsNowPlayingOpen(true)}
         setFrequencyData={setFrequencyData}
         onStreamStatusChange={setIsStreamActive}
         frequencyData={frequencyData}
-        isVisualizerEnabled={isVisualizerEnabled}
+        isVisualizerEnabled={isPlayerBarVisualizerEnabled}
       />
     </div>
   );

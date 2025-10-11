@@ -171,7 +171,7 @@ const drawRings = (ctx, data, width, height) => {
 };
 
 
-const Visualizer = ({ frequencyData, style, onClick, isLocked }) => {
+const Visualizer = ({ frequencyData, style, onClick }) => {
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -213,11 +213,11 @@ const Visualizer = ({ frequencyData, style, onClick, isLocked }) => {
 
   return (
     React.createElement("div", { 
-        onClick: !isLocked ? onClick : undefined,
+        onClick: onClick,
         role: "button",
-        tabIndex: !isLocked ? 0 : -1,
-        "aria-label": isLocked ? "סגנון אקולייזר נעול" : "שנה סגנון אקולייזר",
-        className: `w-full h-20 ${!isLocked ? 'cursor-pointer' : ''}`
+        tabIndex: 0,
+        "aria-label": "שנה סגנון אקולייזר",
+        className: "w-full h-20 cursor-pointer"
     },
         React.createElement("canvas", { ref: canvasRef, width: "300", height: "80", className: "w-full h-full" })
     )
