@@ -29,3 +29,5 @@ export const VISUALIZER_STYLE_LABELS = {
     aurora: 'זוהר צפוני',
     rings: 'טבעות',
 };
+
+export const GRID_SIZES = [1, 2, 3, 4, 5]; // 1=Smallest, 5=Largest

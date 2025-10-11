@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService';
-import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo } from './types';
+import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize } from './types';
 import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
@@ -35,6 +35,7 @@ const VISUALIZER_STYLE_KEY = 'radio-visualizer-style';
 const STATUS_INDICATOR_ENABLED_KEY = 'radio-status-indicator-enabled';
 const VOLUME_CONTROL_VISIBLE_KEY = 'radio-volume-control-visible';
 const SHOW_NEXT_SONG_KEY = 'radio-show-next-song';
+const GRID_SIZE_KEY = 'radio-grid-size';
 
 
 const SortButton: React.FC<{
@@ -64,6 +65,8 @@ export default function App() {
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [trackInfo, setTrackInfo] = useState<StationTrackInfo | null>(null);
   const [isStreamActive, setIsStreamActive] = useState(false);
+  const pinchDistRef = useRef<number>(0);
+  const PINCH_THRESHOLD = 40; // pixels
   
   // State loaded from LocalStorage
   const [customOrder, setCustomOrder] = useState<string[]>(() => {
@@ -146,6 +149,12 @@ export default function App() {
   const [showNextSong, setShowNextSong] = useState<boolean>(() => {
       const saved = localStorage.getItem(SHOW_NEXT_SONG_KEY);
       return saved ? JSON.parse(saved) : true;
+  });
+
+  const [gridSize, setGridSize] = useState<GridSize>(() => {
+    const saved = localStorage.getItem(GRID_SIZE_KEY);
+    // 1 is smallest, 5 is largest. Let's default to 3.
+    return saved ? (JSON.parse(saved) as GridSize) : 3;
   });
 
 
@@ -292,7 +301,12 @@ export default function App() {
     setShowNextSong(enabled);
     localStorage.setItem(SHOW_NEXT_SONG_KEY, JSON.stringify(enabled));
   };
-  
+    
+  const handleSetGridSize = useCallback((size: GridSize) => {
+    setGridSize(size);
+    localStorage.setItem(GRID_SIZE_KEY, JSON.stringify(size));
+  }, []);
+
   const handleCycleVisualizerStyle = useCallback(() => {
     const currentIndex = VISUALIZER_STYLES.indexOf(visualizerStyle);
     const nextIndex = (currentIndex + 1) % VISUALIZER_STYLES.length;
@@ -434,6 +448,43 @@ export default function App() {
       playStationAtIndex(globalIndex);
   }, [currentStationIndex, displayedStations, stations, playStationAtIndex]);
 
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+      if (e.touches.length === 2) {
+          e.preventDefault();
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
+      }
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+      if (e.touches.length === 2 && pinchDistRef.current > 0) {
+          e.preventDefault();
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          const currentDist = Math.sqrt(dx * dx + dy * dy);
+          const delta = currentDist - pinchDistRef.current;
+
+          if (Math.abs(delta) > PINCH_THRESHOLD) {
+              if (delta > 0) { // Pinch out -> bigger items
+                  const newSize = Math.min(5, gridSize + 1) as GridSize;
+                  handleSetGridSize(newSize);
+              } else { // Pinch in -> smaller items
+                  const newSize = Math.max(1, gridSize - 1) as GridSize;
+                  handleSetGridSize(newSize);
+              }
+              pinchDistRef.current = currentDist;
+          }
+      }
+  }, [gridSize, handleSetGridSize]);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+      if (e.touches.length < 2) {
+          pinchDistRef.current = 0;
+      }
+  }, []);
+
+
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col">
       <header className="p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md">
@@ -472,7 +523,12 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-grow pb-48">
+      <main 
+        className="flex-grow pb-48"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         {isLoading ? (
           <StationListSkeleton />
         ) : error ? (
@@ -488,6 +544,7 @@ export default function App() {
                     onReorder={handleReorder}
                     isStreamActive={isStreamActive}
                     isStatusIndicatorEnabled={isStatusIndicatorEnabled}
+                    gridSize={gridSize}
                 />
             ) : (
                 <div className="text-center p-8 text-text-secondary">
@@ -521,6 +578,8 @@ export default function App() {
         onShowNextSongChange={handleSetShowNextSong}
         customEqSettings={customEqSettings}
         onCustomEqChange={handleSetCustomEqSettings}
+        gridSize={gridSize}
+        onGridSizeChange={handleSetGridSize}
       />
 
       {currentStation && (

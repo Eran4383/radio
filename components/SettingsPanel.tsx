@@ -1,5 +1,5 @@
 import React from 'react';
-import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings } from '../types';
+import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize } from '../types';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -20,6 +20,8 @@ interface SettingsPanelProps {
   onShowNextSongChange: (enabled: boolean) => void;
   customEqSettings: CustomEqSettings;
   onCustomEqChange: (settings: CustomEqSettings) => void;
+  gridSize: GridSize;
+  onGridSizeChange: (size: GridSize) => void;
 }
 
 const SettingsButton: React.FC<{
@@ -88,7 +90,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange,
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
     showNextSong, onShowNextSongChange,
-    customEqSettings, onCustomEqChange
+    customEqSettings, onCustomEqChange,
+    gridSize, onGridSizeChange,
  }) => {
   return (
     <>
@@ -164,6 +167,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <div className="mb-6 flex-shrink-0">
                 <h3 className="text-sm font-semibold text-text-secondary mb-2">ממשק</h3>
                 <div className="space-y-2">
+                    <div className="p-3 rounded-lg bg-bg-primary space-y-3">
+                       <div className="flex flex-col gap-1">
+                          <div className="flex justify-between text-sm font-medium text-text-primary">
+                              <span>גודל תצוגה</span>
+                          </div>
+                          <div className="flex justify-between text-xs text-text-secondary px-1">
+                            <span>קטן</span>
+                            <span>גדול</span>
+                          </div>
+                          <input
+                              type="range"
+                              min="1"
+                              max="5"
+                              step="1"
+                              value={gridSize}
+                              onChange={(e) => onGridSizeChange(parseInt(e.target.value, 10) as GridSize)}
+                              className="w-full accent-teal-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                      </div>
+                    </div>
                     <ToggleSwitch 
                         label="תצוגה גרפית (מסך מלא)" 
                         enabled={isNowPlayingVisualizerEnabled} 

@@ -1,9 +1,32 @@
 import React, { useState } from 'react';
 import { StarIcon } from './Icons.js';
 
+const getGridClasses = (size) => {
+  switch (size) {
+    case 1: return 'grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8'; // Smallest
+    case 2: return 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7';
+    case 3: return 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'; // Default
+    case 4: return 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
+    case 5: return 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'; // Largest
+    default: return 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6';
+  }
+};
+
+const getCardContentClasses = (size) => {
+    switch (size) {
+        case 1: return { img: 'w-16 h-16', text: 'text-xs h-8', padding: 'p-2' }; // Smallest
+        case 2: return { img: 'w-20 h-20', text: 'text-sm h-10', padding: 'p-3' };
+        case 3: return { img: 'w-24 h-24', text: 'text-sm h-10', padding: 'p-4' }; // Default
+        case 4: return { img: 'w-28 h-28', text: 'text-base h-12', padding: 'p-4' };
+        case 5: return { img: 'w-36 h-36', text: 'text-lg h-12', padding: 'p-4' }; // Largest
+        default: return { img: 'w-24 h-24', text: 'text-sm h-10', padding: 'p-4' };
+    }
+};
+
+
 const StationList = ({ 
     stations, currentStation, onSelectStation, isFavorite, toggleFavorite, onReorder,
-    isStreamActive, isStatusIndicatorEnabled 
+    isStreamActive, isStatusIndicatorEnabled, gridSize
 }) => {
   const [draggedUuid, setDraggedUuid] = useState(null);
   const [previewList, setPreviewList] = useState(null);
@@ -47,10 +70,12 @@ const StationList = ({
   };
 
   const listToRender = previewList || stations;
+  const gridClasses = getGridClasses(gridSize);
+  const cardContentClasses = getCardContentClasses(gridSize);
 
   return (
     React.createElement("div", { 
-      className: "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 p-4",
+      className: `grid ${gridClasses} gap-4 p-4`,
       onDragOver: (e) => e.preventDefault(),
       onDrop: handleDrop,
       onDragEnd: handleDragEnd
@@ -59,7 +84,7 @@ const StationList = ({
         const isBeingDragged = draggedUuid === station.stationuuid;
         const isCurrentlyPlaying = currentStation?.stationuuid === station.stationuuid;
 
-        const baseClasses = `relative rounded-lg p-4 flex flex-col items-center justify-center text-center cursor-pointer transform transition-transform duration-500 ease-in-out`;
+        const baseClasses = `relative rounded-lg flex flex-col items-center justify-center text-center cursor-pointer transform transition-all duration-300 ease-in-out`;
         const stateClasses = isCurrentlyPlaying
             ? 'bg-accent/30 ring-2 ring-accent scale-105' 
             : 'bg-bg-secondary hover:bg-accent/10 hover:scale-105';
@@ -71,7 +96,7 @@ const StationList = ({
             draggable: true,
             onDragStart: (e) => handleDragStart(e, station),
             onDragOver: (e) => handleDragOver(e, station),
-            className: `${baseClasses} ${stateClasses} ${dragClasses}`,
+            className: `${baseClasses} ${stateClasses} ${dragClasses} ${cardContentClasses.padding}`,
             onClick: () => onSelectStation(station)
           },
             isStatusIndicatorEnabled && isCurrentlyPlaying && (
@@ -85,10 +110,10 @@ const StationList = ({
             React.createElement("img", { 
               src: station.favicon, 
               alt: station.name, 
-              className: "w-24 h-24 rounded-md mb-3 bg-gray-700 object-contain pointer-events-none", // prevent img drag
+              className: `${cardContentClasses.img} rounded-md mb-2 bg-gray-700 object-contain pointer-events-none transition-all duration-300`,
               onError: (e) => { e.currentTarget.src = 'https://picsum.photos/96'; }
             }),
-            React.createElement("h4", { className: "font-semibold text-sm h-10 flex items-center pointer-events-none text-text-primary" }, station.name),
+            React.createElement("h4", { className: `font-semibold pointer-events-none text-text-primary transition-all duration-300 flex items-center ${cardContentClasses.text}` }, station.name),
             React.createElement("button", {
               onClick: (e) => {
                 e.stopPropagation();

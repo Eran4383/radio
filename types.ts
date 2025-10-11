@@ -55,3 +55,6 @@ export const VISUALIZER_STYLE_LABELS: Record<VisualizerStyle, string> = {
     aurora: 'זוהר צפוני',
     rings: 'טבעות',
 };
+
+export const GRID_SIZES = [1, 2, 3, 4, 5] as const;
+export type GridSize = typeof GRID_SIZES[number]; // 1=Smallest, 5=Largest

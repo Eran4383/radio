@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService.js';
 import { THEMES, EQ_PRESET_KEYS, VISUALIZER_STYLES } from './types.js';
 import Player from './components/Player.js';
@@ -32,6 +32,7 @@ const VISUALIZER_STYLE_KEY = 'radio-visualizer-style';
 const STATUS_INDICATOR_ENABLED_KEY = 'radio-status-indicator-enabled';
 const VOLUME_CONTROL_VISIBLE_KEY = 'radio-volume-control-visible';
 const SHOW_NEXT_SONG_KEY = 'radio-show-next-song';
+const GRID_SIZE_KEY = 'radio-grid-size';
 
 const SortButton = ({ label, order, currentOrder, setOrder }) => (
   React.createElement("button", {
@@ -55,6 +56,8 @@ export default function App() {
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [trackInfo, setTrackInfo] = useState(null);
   const [isStreamActive, setIsStreamActive] = useState(false);
+  const pinchDistRef = useRef(0);
+  const PINCH_THRESHOLD = 40; // pixels
 
   const [customOrder, setCustomOrder] = useState(() => {
     try {
@@ -136,6 +139,13 @@ export default function App() {
       const saved = localStorage.getItem(SHOW_NEXT_SONG_KEY);
       return saved ? JSON.parse(saved) : true;
   });
+    
+  const [gridSize, setGridSize] = useState(() => {
+    const saved = localStorage.getItem(GRID_SIZE_KEY);
+    // 1 is smallest, 5 is largest. Let's default to 3.
+    return saved ? JSON.parse(saved) : 3;
+  });
+
 
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
   
@@ -186,18 +196,15 @@ export default function App() {
       
       let finalInfo = null;
       
-      // 1. Try station-specific, direct API first for highest accuracy.
       const specificInfo = await fetchStationSpecificTrackInfo(currentStation.name);
 
       if (specificInfo) {
           finalInfo = specificInfo;
       } else {
-          // 2. If specific API fails, fall back to the general Radio-Browser API.
           const songTitle = await fetchLiveTrackInfo(currentStation.stationuuid);
           if (songTitle && songTitle.toLowerCase() !== currentStation.name.toLowerCase()) {
               finalInfo = { program: null, current: songTitle, next: null };
           } else {
-              // 3. If that also fails, fall back to the hardcoded schedule.
               const scheduledProgram = getCurrentProgram(currentStation.name);
               if (scheduledProgram) {
                   finalInfo = { program: scheduledProgram, current: null, next: null };
@@ -274,7 +281,12 @@ export default function App() {
     setShowNextSong(enabled);
     localStorage.setItem(SHOW_NEXT_SONG_KEY, JSON.stringify(enabled));
   };
-  
+    
+  const handleSetGridSize = useCallback((size) => {
+    setGridSize(size);
+    localStorage.setItem(GRID_SIZE_KEY, JSON.stringify(size));
+  }, []);
+
   const handleCycleVisualizerStyle = useCallback(() => {
     const currentIndex = VISUALIZER_STYLES.indexOf(visualizerStyle);
     const nextIndex = (currentIndex + 1) % VISUALIZER_STYLES.length;
@@ -359,7 +371,7 @@ export default function App() {
     if (index >= 0 && index < stations.length) {
         localStorage.setItem(LAST_STATION_KEY, stations[index].stationuuid);
         setCurrentStationIndex(index);
-        setIsPlaying(true); // Always play when selecting a new station
+        setIsPlaying(true);
     }
   }, [stations]);
 
@@ -367,9 +379,9 @@ export default function App() {
     const stationIndexInMainList = stations.findIndex(s => s.stationuuid === station.stationuuid);
     if (stationIndexInMainList !== -1) {
         if (currentStationIndex === stationIndexInMainList) {
-          setIsPlaying(prev => !prev); // Toggle if it's the same station
+          setIsPlaying(prev => !prev);
         } else {
-          playStationAtIndex(stationIndexInMainList); // Play if it's a new station
+          playStationAtIndex(stationIndexInMainList);
         }
     }
   }, [stations, currentStationIndex, playStationAtIndex]);
@@ -402,6 +414,42 @@ export default function App() {
       const globalIndex = stations.findIndex(s => s.stationuuid === prevStation.stationuuid);
       playStationAtIndex(globalIndex);
   }, [currentStationIndex, displayedStations, stations, playStationAtIndex]);
+    
+  const handleTouchStart = useCallback((e) => {
+      if (e.touches.length === 2) {
+          e.preventDefault();
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
+      }
+  }, []);
+
+  const handleTouchMove = useCallback((e) => {
+      if (e.touches.length === 2 && pinchDistRef.current > 0) {
+          e.preventDefault();
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          const currentDist = Math.sqrt(dx * dx + dy * dy);
+          const delta = currentDist - pinchDistRef.current;
+
+          if (Math.abs(delta) > PINCH_THRESHOLD) {
+              if (delta > 0) { // Pinch out -> bigger items
+                  const newSize = Math.min(5, gridSize + 1);
+                  handleSetGridSize(newSize);
+              } else { // Pinch in -> smaller items
+                  const newSize = Math.max(1, gridSize - 1);
+                  handleSetGridSize(newSize);
+              }
+              pinchDistRef.current = currentDist;
+          }
+      }
+  }, [gridSize, handleSetGridSize]);
+
+  const handleTouchEnd = useCallback((e) => {
+      if (e.touches.length < 2) {
+          pinchDistRef.current = 0;
+      }
+  }, []);
 
   return (
     React.createElement("div", { className: "min-h-screen bg-bg-primary text-text-primary flex flex-col" },
@@ -428,7 +476,7 @@ export default function App() {
             )
         )
       ),
-      React.createElement("main", { className: "flex-grow pb-48" }, 
+      React.createElement("main", { className: "flex-grow pb-48", onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd }, 
         isLoading ? (
           React.createElement(StationListSkeleton, null)
         ) : error ? (
@@ -443,7 +491,8 @@ export default function App() {
                     toggleFavorite: toggleFavorite,
                     onReorder: handleReorder,
                     isStreamActive: isStreamActive,
-                    isStatusIndicatorEnabled: isStatusIndicatorEnabled
+                    isStatusIndicatorEnabled: isStatusIndicatorEnabled,
+                    gridSize: gridSize
                 })
             ) : (
                 React.createElement("div", { className: "text-center p-8 text-text-secondary" },
@@ -472,6 +521,8 @@ export default function App() {
         onShowNextSongChange: handleSetShowNextSong,
         customEqSettings: customEqSettings,
         onCustomEqChange: handleSetCustomEqSettings,
+        gridSize: gridSize,
+        onGridSizeChange: handleSetGridSize
       }),
       currentStation && React.createElement(NowPlaying, {
         isOpen: isNowPlayingOpen,

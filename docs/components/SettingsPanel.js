@@ -54,7 +54,8 @@ const SettingsPanel = ({
     isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange,
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
     showNextSong, onShowNextSongChange,
-    customEqSettings, onCustomEqChange
+    customEqSettings, onCustomEqChange,
+    gridSize, onGridSizeChange
  }) => {
   return (
     React.createElement(React.Fragment, null,
@@ -130,6 +131,26 @@ const SettingsPanel = ({
             React.createElement("div", { className: "mb-6 flex-shrink-0" },
                 React.createElement("h3", { className: "text-sm font-semibold text-text-secondary mb-2" }, "ממשק"),
                 React.createElement("div", { className: "space-y-2" },
+                    React.createElement("div", { className: "p-3 rounded-lg bg-bg-primary space-y-3" },
+                       React.createElement("div", { className: "flex flex-col gap-1" },
+                          React.createElement("div", { className: "flex justify-between text-sm font-medium text-text-primary" },
+                              React.createElement("span", null, "גודל תצוגה")
+                          ),
+                           React.createElement("div", { className: "flex justify-between text-xs text-text-secondary px-1" },
+                            React.createElement("span", null, "קטן"),
+                            React.createElement("span", null, "גדול")
+                          ),
+                          React.createElement("input", {
+                              type: "range",
+                              min: "1",
+                              max: "5",
+                              step: "1",
+                              value: gridSize,
+                              onChange: (e) => onGridSizeChange(parseInt(e.target.value, 10)),
+                              className: "w-full accent-teal-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                          })
+                      )
+                    ),
                     React.createElement(ToggleSwitch, { 
                         label: "תצוגה גרפית (מסך מלא)", 
                         enabled: isNowPlayingVisualizerEnabled, 
