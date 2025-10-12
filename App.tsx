@@ -65,8 +65,6 @@ export default function App() {
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [trackInfo, setTrackInfo] = useState<StationTrackInfo | null>(null);
   const [isStreamActive, setIsStreamActive] = useState(false);
-  const [installPrompt, setInstallPrompt] = useState<Event | null>(null);
-  const [isStandalone, setIsStandalone] = useState(false);
   const pinchDistRef = useRef<number>(0);
   const PINCH_THRESHOLD = 40; // pixels
   
@@ -168,22 +166,6 @@ export default function App() {
      }
      return null;
   }, [stations, currentStationIndex]);
-
-  // Listen for PWA installation prompt
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setInstallPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    
-    // Check if app is already installed
-    setIsStandalone(window.matchMedia('(display-mode: standalone)').matches);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    };
-  }, []);
 
   // Fetch stations on initial load
   useEffect(() => {
@@ -502,16 +484,6 @@ export default function App() {
       }
   }, []);
 
-  const handleInstall = async () => {
-    if (!installPrompt) return;
-    (installPrompt as any).prompt();
-    const { outcome } = await (installPrompt as any).userChoice;
-    if (outcome === 'accepted') {
-      console.log('User accepted the install prompt');
-    }
-    setInstallPrompt(null);
-  };
-
 
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col">
@@ -608,9 +580,6 @@ export default function App() {
         onCustomEqChange={handleSetCustomEqSettings}
         gridSize={gridSize}
         onGridSizeChange={handleSetGridSize}
-        installPrompt={installPrompt}
-        onInstall={handleInstall}
-        isStandalone={isStandalone}
       />
 
       {currentStation && (
