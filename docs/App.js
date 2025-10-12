@@ -56,6 +56,8 @@ export default function App() {
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [trackInfo, setTrackInfo] = useState(null);
   const [isStreamActive, setIsStreamActive] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isStandalone, setIsStandalone] = useState(false);
   const pinchDistRef = useRef(0);
   const PINCH_THRESHOLD = 40; // pixels
 
@@ -155,6 +157,20 @@ export default function App() {
      }
      return null;
   }, [stations, currentStationIndex]);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    
+    setIsStandalone(window.matchMedia('(display-mode: standalone)').matches);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -451,6 +467,16 @@ export default function App() {
       }
   }, []);
 
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      console.log('User accepted the install prompt');
+    }
+    setInstallPrompt(null);
+  };
+
   return (
     React.createElement("div", { className: "min-h-screen bg-bg-primary text-text-primary flex flex-col" },
       React.createElement("header", { className: "p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md" },
@@ -522,7 +548,10 @@ export default function App() {
         customEqSettings: customEqSettings,
         onCustomEqChange: handleSetCustomEqSettings,
         gridSize: gridSize,
-        onGridSizeChange: handleSetGridSize
+        onGridSizeChange: handleSetGridSize,
+        installPrompt: installPrompt,
+        onInstall: handleInstall,
+        isStandalone: isStandalone,
       }),
       currentStation && React.createElement(NowPlaying, {
         isOpen: isNowPlayingOpen,

@@ -22,6 +22,9 @@ interface SettingsPanelProps {
   onCustomEqChange: (settings: CustomEqSettings) => void;
   gridSize: GridSize;
   onGridSizeChange: (size: GridSize) => void;
+  installPrompt: Event | null;
+  onInstall: () => void;
+  isStandalone: boolean;
 }
 
 const SettingsButton: React.FC<{
@@ -92,6 +95,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     showNextSong, onShowNextSongChange,
     customEqSettings, onCustomEqChange,
     gridSize, onGridSizeChange,
+    installPrompt, onInstall, isStandalone
  }) => {
   return (
     <>
@@ -113,6 +117,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     <p className="text-xs text-text-secondary mt-1">התחברות</p>
                 </div>
             </div>
+
+            {/* App Installation */}
+            {installPrompt && !isStandalone && (
+                <div className="mb-6 flex-shrink-0">
+                    <h3 className="text-sm font-semibold text-text-secondary mb-2">אפליקציה</h3>
+                     <div className="p-3 rounded-lg bg-bg-primary">
+                        <button
+                          onClick={onInstall}
+                          className="w-full bg-accent text-white font-bold py-3 px-4 rounded-lg hover:bg-accent-hover transition-colors"
+                        >
+                          הוספה לדף הבית
+                        </button>
+                      </div>
+                </div>
+            )}
+
 
             {/* Theme Switcher */}
             <div className="mb-6 flex-shrink-0">

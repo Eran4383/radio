@@ -55,7 +55,8 @@ const SettingsPanel = ({
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
     showNextSong, onShowNextSongChange,
     customEqSettings, onCustomEqChange,
-    gridSize, onGridSizeChange
+    gridSize, onGridSizeChange,
+    installPrompt, onInstall, isStandalone
  }) => {
   return (
     React.createElement(React.Fragment, null,
@@ -75,6 +76,21 @@ const SettingsPanel = ({
                         React.createElement("span", { className: "text-xl font-bold text-gray-300" }, "G")
                     ),
                     React.createElement("p", { className: "text-xs text-text-secondary mt-1" }, "התחברות")
+                )
+            ),
+
+            /* App Installation */
+            installPrompt && !isStandalone && (
+                React.createElement("div", { className: "mb-6 flex-shrink-0" },
+                    React.createElement("h3", { className: "text-sm font-semibold text-text-secondary mb-2" }, "אפליקציה"),
+                     React.createElement("div", { className: "p-3 rounded-lg bg-bg-primary" },
+                        React.createElement("button", {
+                          onClick: onInstall,
+                          className: "w-full bg-accent text-white font-bold py-3 px-4 rounded-lg hover:bg-accent-hover transition-colors"
+                        },
+                          "הוספה לדף הבית"
+                        )
+                      )
                 )
             ),
 
