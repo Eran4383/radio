@@ -12,8 +12,6 @@ const shuffleArray = <T>(array: T[]): T[] => {
 };
 
 // A larger, hardcoded list of reliable API servers.
-// We shuffle this list and try them one by one. This avoids a single point of failure
-// from a dynamic server discovery URL and is more resilient to individual server outages.
 const API_SERVERS = [
     'https://de1.api.radio-browser.info/json',
     'https://nl1.api.radio-browser.info/json',
@@ -23,12 +21,11 @@ const API_SERVERS = [
     'https://de2.api.radio-browser.info/json',
 ];
 
-export const fetchIsraeliStations = async (): Promise<Station[]> => {
+const fetchRadioBrowserStations = async (): Promise<Station[]> => {
   const servers = shuffleArray([...API_SERVERS]);
 
   for (const serverUrl of servers) {
     try {
-      // Use a timeout to prevent getting stuck on a non-responsive server
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000); // 8-second timeout
 
@@ -40,58 +37,144 @@ export const fetchIsraeliStations = async (): Promise<Station[]> => {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        console.warn(`Failed to fetch from server ${serverUrl} (status: ${response.status}), trying next.`);
+        console.warn(`Failed to fetch from Radio-Browser server ${serverUrl} (status: ${response.status}), trying next.`);
         continue; // Try next server
       }
       const data: Station[] = await response.json();
-
-      // --- Enhanced De-duplication Logic ---
-      const uniqueStations = new Map<string, Station>();
-
-      const getCanonicalName = (name: string): string | null => {
-          const lowerCaseName = name.toLowerCase();
-          for (const priorityStation of PRIORITY_STATIONS) {
-              if (priorityStation.aliases.some(alias => lowerCaseName.includes(alias.toLowerCase()))) {
-                  return priorityStation.name;
-              }
-          }
-          return null;
-      };
-
-      data.forEach(station => {
-          if (station.url_resolved && station.favicon && station.bitrate > 32 && station.name) {
-              const canonicalName = getCanonicalName(station.name);
-              
-              const key = canonicalName || station.name.toLowerCase().trim().replace(/\s*fm\s*$/, '').replace(/[^a-z0-9\u0590-\u05FF]/g, '');
-              
-              const existingStation = uniqueStations.get(key);
-              
-              if (!existingStation || station.bitrate > existingStation.bitrate) {
-                  if (canonicalName) {
-                      station.name = canonicalName;
-                  }
-                  uniqueStations.set(key, station);
-              }
-          }
-      });
-      
-      if (uniqueStations.size > 0) {
-          console.log(`Successfully fetched and de-duplicated ${uniqueStations.size} stations from ${serverUrl}`);
-          return Array.from(uniqueStations.values());
+      if (data && data.length > 0) {
+        console.log(`Successfully fetched ${data.length} raw stations from ${serverUrl}`);
+        return data;
       }
-      console.warn(`Server ${serverUrl} returned empty or invalid station data, trying next.`);
+      
+      console.warn(`Radio-Browser server ${serverUrl} returned empty or invalid station data, trying next.`);
 
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        console.warn(`Request to server ${serverUrl} timed out, trying next.`);
+        console.warn(`Request to Radio-Browser server ${serverUrl} timed out, trying next.`);
       } else {
-        console.warn(`Error connecting to server ${serverUrl}:`, error);
+        console.warn(`Error connecting to Radio-Browser server ${serverUrl}:`, error);
       }
     }
   }
 
-  console.error('Error fetching stations: All API servers failed.');
+  console.error('Error fetching stations from Radio-Browser: All API servers failed.');
   return [];
+};
+
+
+const fetch100fmStations = async (): Promise<Station[]> => {
+  const url = 'https://digital.100fm.co.il/app/';
+  try {
+    const proxiedUrl = `${CORS_PROXY_URL}${url}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    const response = await fetch(proxiedUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      console.warn(`Failed to fetch from 100fm API (status: ${response.status})`);
+      return [];
+    }
+    const data = await response.json();
+    if (!data || !Array.isArray(data.stations)) {
+      console.warn('100fm API returned invalid data format');
+      return [];
+    }
+
+    const newStations: Station[] = data.stations.map((s: any) => ({
+      stationuuid: `100fm-${s.slug}`,
+      name: s.name,
+      url_resolved: s.audioA || s.audio,
+      favicon: s.cover || s.logo,
+      tags: s.description?.split('\n')[0] || s.name,
+      countrycode: 'IL',
+      codec: 'AAC', // Assume AAC for HLS streams
+      bitrate: 128, // Default bitrate
+    }));
+
+    console.log(`Successfully fetched ${newStations.length} stations from 100fm API`);
+    return newStations.filter(s => s.url_resolved); // Ensure stations have a stream URL
+
+  } catch (error) {
+    console.error('Error fetching stations from 100fm API:', error);
+    return [];
+  }
+};
+
+
+export const fetchIsraeliStations = async (): Promise<Station[]> => {
+  const [radioBrowserResult, fm100Result] = await Promise.allSettled([
+    fetchRadioBrowserStations(),
+    fetch100fmStations(),
+  ]);
+
+  let allStations: Station[] = [];
+
+  if (radioBrowserResult.status === 'fulfilled') {
+    allStations = allStations.concat(radioBrowserResult.value);
+  } else {
+    console.error('Radio-Browser fetch failed:', radioBrowserResult.reason);
+  }
+
+  if (fm100Result.status === 'fulfilled') {
+    allStations = allStations.concat(fm100Result.value);
+  } else {
+    console.error('100fm fetch failed:', fm100Result.reason);
+  }
+
+  if (allStations.length === 0) {
+    console.error('Failed to fetch stations from any source.');
+    return [];
+  }
+
+  // --- Enhanced De-duplication Logic ---
+  const uniqueStations = new Map<string, Station>();
+
+  const getCanonicalName = (name: string): string | null => {
+      const lowerCaseName = name.toLowerCase();
+      for (const priorityStation of PRIORITY_STATIONS) {
+          if (priorityStation.aliases.some(alias => lowerCaseName.includes(alias.toLowerCase()))) {
+              return priorityStation.name;
+          }
+      }
+      return null;
+  };
+
+  allStations.forEach(station => {
+      if (station.url_resolved && station.favicon && station.name) {
+          const canonicalName = getCanonicalName(station.name);
+          
+          const key = canonicalName || station.name.toLowerCase().trim().replace(/\s*fm\s*$/, '').replace(/[^a-z0-9\u0590-\u05FF]/g, '');
+          
+          const existingStation = uniqueStations.get(key);
+          
+          let shouldReplace = false;
+          if (!existingStation) {
+              shouldReplace = true;
+          } else {
+              // Prefer higher bitrate
+              if (station.bitrate > existingStation.bitrate) {
+                  shouldReplace = true;
+              } 
+              // If bitrates are equal, prefer 100fm source over radio-browser as it's curated
+              else if (station.bitrate === existingStation.bitrate && station.stationuuid.startsWith('100fm-') && !existingStation.stationuuid.startsWith('100fm-')) {
+                  shouldReplace = true;
+              }
+          }
+
+          if (shouldReplace) {
+              if (canonicalName) {
+                  station.name = canonicalName;
+              }
+              uniqueStations.set(key, station);
+          }
+      }
+  });
+  
+  const finalStations = Array.from(uniqueStations.values());
+  console.log(`Successfully combined and de-duplicated ${finalStations.length} stations from all sources.`);
+  return finalStations;
 };
 
 export const fetchLiveTrackInfo = async (stationuuid: string): Promise<string | null> => {
