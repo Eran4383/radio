@@ -9,7 +9,7 @@ import { useFavorites } from './hooks/useFavorites.js';
 import { PRIORITY_STATIONS } from './constants.js';
 import { MenuIcon } from './components/Icons.js';
 import { getCurrentProgram } from './services/scheduleService.js';
-import { fetchStationSpecificTrackInfo } from './services/stationSpecificService.js';
+import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/stationSpecificService.js';
 import StationListSkeleton from './components/StationListSkeleton.js';
 
 const StationFilter = {
@@ -195,21 +195,33 @@ export default function App() {
       if (!currentStation) return;
       
       let finalInfo = null;
-      
-      const specificInfo = await fetchStationSpecificTrackInfo(currentStation.name);
+      const stationName = currentStation.name;
 
-      if (specificInfo) {
+      // New logic: Check if there's a specific, high-accuracy API for this station.
+      if (hasSpecificHandler(stationName)) {
+        // This station has a dedicated API. Use it exclusively for live data.
+        const specificInfo = await fetchStationSpecificTrackInfo(stationName);
+        if (specificInfo) {
           finalInfo = specificInfo;
-      } else {
-          const songTitle = await fetchLiveTrackInfo(currentStation.stationuuid);
-          if (songTitle && songTitle.toLowerCase() !== currentStation.name.toLowerCase()) {
-              finalInfo = { program: null, current: songTitle, next: null };
-          } else {
-              const scheduledProgram = getCurrentProgram(currentStation.name);
-              if (scheduledProgram) {
-                  finalInfo = { program: scheduledProgram, current: null, next: null };
-              }
+        } else {
+          // If the specific API fails, only fall back to the schedule, not the generic API.
+          const scheduledProgram = getCurrentProgram(stationName);
+          if (scheduledProgram) {
+            finalInfo = { program: scheduledProgram, current: null, next: null };
           }
+        }
+      } else {
+        // This station has NO dedicated API. Use the generic Radio-Browser API.
+        const songTitle = await fetchLiveTrackInfo(currentStation.stationuuid);
+        if (songTitle && songTitle.toLowerCase() !== stationName.toLowerCase()) {
+          finalInfo = { program: null, current: songTitle, next: null };
+        } else {
+          // If the generic API fails, fall back to the schedule.
+          const scheduledProgram = getCurrentProgram(stationName);
+          if (scheduledProgram) {
+            finalInfo = { program: scheduledProgram, current: null, next: null };
+          }
+        }
       }
       
       setTrackInfo(finalInfo);

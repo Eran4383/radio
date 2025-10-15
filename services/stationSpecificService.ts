@@ -19,6 +19,22 @@ const GLZ_SLUGS: { [key: string]: string } = {
     'גלי צה"ל': 'glz',
 };
 
+/**
+ * Checks if a station has a dedicated, high-accuracy API handler.
+ * @param stationName The name of the station.
+ * @returns True if a specific handler exists, false otherwise.
+ */
+export const hasSpecificHandler = (stationName: string): boolean => {
+    if (Object.keys(GLZ_SLUGS).some(glzName => stationName.includes(glzName))) {
+        return true;
+    }
+    if (Object.keys(KAN_STATION_IDS).some(kanName => stationName.includes(kanName))) {
+        return true;
+    }
+    
+    return false;
+};
+
 
 /**
  * Fetches "now playing" info specifically for Kan stations from their direct API.
@@ -71,10 +87,49 @@ const fetchKanTrackInfo = async (stationName: string): Promise<StationTrackInfo 
     }
 };
 
+const GLZ_SCHEDULE_ROOT_ID = '1051';
+
+const fetchGaleiTzahalScheduleInfo = async (): Promise<{ program: string | null; presenters: string | null }> => {
+    const url = `${CORS_PROXY_URL}https://glz.co.il/umbraco/api/header/GetCommonData?rootId=${GLZ_SCHEDULE_ROOT_ID}`;
+    try {
+        const response = await fetch(url, { cache: 'no-cache' });
+        if (!response.ok) return { program: null, presenters: null };
+        
+        const data = await response.json();
+        // The API returns schedule for multiple days. Find today.
+        const todaySchedule = data?.timeTable?.glzTimeTable?.find((day: any) => day.isToday);
+        
+        if (!todaySchedule || !todaySchedule.programmes) {
+            return { program: null, presenters: null };
+        }
+        
+        const now = new Date();
+        const currentProgramme = todaySchedule.programmes.find((p: any) => {
+            const start = new Date(p.start);
+            const end = new Date(p.end);
+            return now >= start && now < end;
+        });
+
+        if (currentProgramme) {
+            return {
+                program: currentProgramme.topText?.trim() || null,
+                presenters: currentProgramme.bottomText?.trim() || null,
+            };
+        }
+        
+        return { program: null, presenters: null };
+
+    } catch (error) {
+        console.warn(`Error fetching or parsing GLZ Schedule for rootId ${GLZ_SCHEDULE_ROOT_ID}:`, error);
+        return { program: null, presenters: null };
+    }
+};
+
 /**
  * Fetches "now playing" info for Galei Tzahal stations from two sources:
  * 1. An XML feed for the current and next playing song.
  * 2. A JSON API for the current program name.
+ * For גלי צה"ל, it uses a more detailed schedule API.
  * It then combines them into a structured object.
  * @param stationName The name of the station.
  * @returns A structured object with program and track info, or null if not found.
@@ -94,8 +149,7 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
     }
 
     const xmlUrl = `${CORS_PROXY_URL}https://glzxml.blob.core.windows.net/dalet/${slug}-onair/onair.xml`;
-    const jsonUrl = `${CORS_PROXY_URL}https://glz.co.il/umbraco/api/player/UpdatePlayer?stationid=${slug}`;
-
+    
     const fetchSongsFromXml = async (): Promise<{ current: string | null; next: string | null }> => {
         try {
             const response = await fetch(xmlUrl, { cache: 'no-cache' });
@@ -115,16 +169,38 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
                     return null;
                 }
 
-                if (artist) {
-                    return `${title} - ${artist}`;
+                const lowerCaseTitle = title.toLowerCase();
+
+                // Blocklist for commercials, jingles, and other non-song items
+                const commercialKeywords = [
+                    'פרסומת', 
+                    'אוטודיפו', // from user feedback
+                    'תדרים',     // from user feedback
+                    'מבצע',
+                    'חסות',
+                    'תשדיר',
+                ];
+
+                if (commercialKeywords.some(keyword => lowerCaseTitle.includes(keyword))) {
+                    return null;
                 }
 
-                // If it's the current song and has no artist, it might be program info with junk. Clean it.
-                if (selectorPrefix === 'Current') {
-                    return title.replace(/\s+[a-z]{4}\s+[\d.]+$/, '').trim();
+                // Filter out titles that look like system messages or are very short
+                if (lowerCaseTitle.includes('start -') || title.length < 3) {
+                    return null;
+                }
+
+                let result = title;
+
+                if (artist) {
+                    result = `${title} - ${artist}`;
+                } else {
+                    // If there's no artist, it might be a program name with junk.
+                    // Clean junk suffixes like ' anou febr 25.2' or other date-like suffixes.
+                    result = result.replace(/\s+[a-z]{2,}\s+[\d\s\.]+$/i, '').trim();
                 }
                 
-                return title;
+                return result;
             };
     
             return {
@@ -139,6 +215,7 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
     };
 
     const fetchProgramFromJson = async (): Promise<string | null> => {
+        const jsonUrl = `${CORS_PROXY_URL}https://glz.co.il/umbraco/api/player/UpdatePlayer?stationid=${slug}`;
         try {
             const response = await fetch(jsonUrl, { cache: 'no-cache' });
             if (!response.ok) return null;
@@ -150,31 +227,46 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
         }
     };
 
+    const programPromise = slug === 'glz' 
+        ? fetchGaleiTzahalScheduleInfo()
+        : fetchProgramFromJson();
+
     // Run fetches in parallel for speed
-    const [songData, programInfo] = await Promise.all([
+    const [songData, programData] = await Promise.all([
         fetchSongsFromXml(),
-        fetchProgramFromJson()
+        programPromise
     ]);
+
+    let programString: string | null = null;
+    if (slug === 'glz' && typeof programData === 'object' && programData !== null) {
+        const { program, presenters } = programData as { program: string | null, presenters: string | null };
+        if (program && presenters && program.toLowerCase() !== presenters.toLowerCase()) {
+            programString = `${program} | ${presenters}`;
+        } else {
+            programString = program || presenters;
+        }
+    } else if (typeof programData === 'string') {
+        programString = programData;
+    }
 
     let finalCurrentSong = songData.current;
 
     // De-duplication: If the "song" from XML is just the program name, or the program name
     // followed by more text (like hosts), it's not a real song. Nullify it to avoid redundancy.
-    if (programInfo && finalCurrentSong) {
-        const trimmedProgram = programInfo.trim();
-        const trimmedSong = finalCurrentSong.trim();
-        if (trimmedSong.startsWith(trimmedProgram)) {
+    if (programString && finalCurrentSong) {
+        const programNameOnly = programString.split('|')[0].trim();
+        if (finalCurrentSong.trim().startsWith(programNameOnly)) {
             finalCurrentSong = null;
         }
     }
     
     // If all info fields are empty, don't return an empty object
-    if (!programInfo && !finalCurrentSong && !songData.next) {
+    if (!programString && !finalCurrentSong && !songData.next) {
         return null; 
     }
 
     return {
-        program: programInfo,
+        program: programString,
         current: finalCurrentSong,
         next: songData.next
     };
