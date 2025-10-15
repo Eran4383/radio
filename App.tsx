@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService';
-import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize } from './types';
+import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder } from './types';
 import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
@@ -11,14 +11,13 @@ import { MenuIcon } from './components/Icons';
 import { getCurrentProgram } from './services/scheduleService';
 import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/stationSpecificService';
 import StationListSkeleton from './components/StationListSkeleton';
+import { getCategory, CategoryType } from './services/categoryService';
 
 
 enum StationFilter {
   All = 'הכל',
   Favorites = 'מועדפים',
 }
-
-type SortOrder = 'priority' | 'name_asc' | 'name_desc' | 'tags' | 'custom';
 
 // LocalStorage Keys
 const CUSTOM_ORDER_KEY = 'radio-station-custom-order';
@@ -54,6 +53,13 @@ const SortButton: React.FC<{
   </button>
 );
 
+const CATEGORY_SORTS: { order: SortOrder; label: string }[] = [
+    { order: 'category_style', label: 'סגנון' },
+    { order: 'category_identity', label: 'אופי' },
+    { order: 'category_region', label: 'אזור' },
+    { order: 'category_nameStructure', label: 'שם' },
+];
+
 export default function App() {
   const [stations, setStations] = useState<Station[]>([]);
   const [currentStationIndex, setCurrentStationIndex] = useState<number | null>(null);
@@ -84,10 +90,14 @@ export default function App() {
   });
 
   const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
-    let savedSort = localStorage.getItem(LAST_SORT_KEY) as SortOrder | 'name';
+    let savedSort = localStorage.getItem(LAST_SORT_KEY) as SortOrder | 'name' | 'tags';
     // Handle legacy 'name' value from older versions
     if (savedSort === 'name') {
         savedSort = 'name_asc';
+    }
+    // Handle legacy 'tags' value
+    if (savedSort === 'tags') {
+        savedSort = 'category_style';
     }
     const customOrderExists = !!localStorage.getItem(CUSTOM_ORDER_KEY);
 
@@ -380,8 +390,18 @@ export default function App() {
       case 'name_desc':
         stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he'));
         break;
-      case 'tags':
-        stationsToSort.sort((a, b) => a.tags.localeCompare(b.tags, 'he'));
+      case 'category_style':
+      case 'category_identity':
+      case 'category_region':
+      case 'category_nameStructure':
+        const categoryType = sortOrder.replace('category_', '') as CategoryType;
+        stationsToSort.sort((a, b) => {
+            const categoryA = getCategory(a, categoryType);
+            const categoryB = getCategory(b, categoryType);
+            if (categoryA < categoryB) return -1;
+            if (categoryA > categoryB) return 1;
+            return a.name.localeCompare(b.name, 'he'); // secondary sort by name
+        });
         break;
       case 'priority':
       default:
@@ -500,6 +520,23 @@ export default function App() {
       }
   }, []);
 
+  const handleCategorySortClick = () => {
+    const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
+    const isCategorySortActive = currentCategoryIndex !== -1;
+
+    if (isCategorySortActive) {
+        const nextIndex = (currentCategoryIndex + 1) % CATEGORY_SORTS.length;
+        setSortOrder(CATEGORY_SORTS[nextIndex].order);
+    } else {
+        // If it's not a category sort, start from the first one
+        setSortOrder(CATEGORY_SORTS[0].order);
+    }
+  };
+
+  const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
+  const isCategorySortActive = currentCategoryIndex !== -1;
+  const categoryButtonLabel = isCategorySortActive ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
+
 
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col">
@@ -546,7 +583,14 @@ export default function App() {
                     >
                       {sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'}
                     </button>
-                    <SortButton label="ז'אנר" order="tags" currentOrder={sortOrder} setOrder={setSortOrder} />
+                    <button
+                      onClick={handleCategorySortClick}
+                      className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                        isCategorySortActive ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                      }`}
+                    >
+                      {categoryButtonLabel}
+                    </button>
                 </div>
             </div>
         </div>
@@ -574,6 +618,7 @@ export default function App() {
                     isStreamActive={isStreamActive}
                     isStatusIndicatorEnabled={isStatusIndicatorEnabled}
                     gridSize={gridSize}
+                    sortOrder={sortOrder}
                 />
             ) : (
                 <div className="text-center p-8 text-text-secondary">

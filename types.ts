@@ -58,3 +58,5 @@ export const VISUALIZER_STYLE_LABELS: Record<VisualizerStyle, string> = {
 
 export const GRID_SIZES = [1, 2, 3, 4, 5] as const;
 export type GridSize = typeof GRID_SIZES[number]; // 1=Smallest, 5=Largest
+
+export type SortOrder = 'priority' | 'name_asc' | 'name_desc' | 'custom' | 'category_style' | 'category_identity' | 'category_region' | 'category_nameStructure';
