@@ -128,6 +128,16 @@ export const fetchIsraeliStations = async (): Promise<Station[]> => {
     return [];
   }
 
+  // Clean up station names for specific providers like "JOINT RADIO"
+  allStations.forEach(station => {
+    if (station.name.toUpperCase().includes('JOINT RADIO')) {
+        station.name = station.name
+            .replace(/joint radio/i, '')
+            .replace(/#/g, '')
+            .trim();
+    }
+  });
+
   // --- Enhanced De-duplication Logic ---
   const uniqueStations = new Map<string, Station>();
 

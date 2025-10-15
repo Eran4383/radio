@@ -18,7 +18,7 @@ enum StationFilter {
   Favorites = 'מועדפים',
 }
 
-type SortOrder = 'priority' | 'name' | 'tags' | 'custom';
+type SortOrder = 'priority' | 'name_asc' | 'name_desc' | 'tags' | 'custom';
 
 // LocalStorage Keys
 const CUSTOM_ORDER_KEY = 'radio-station-custom-order';
@@ -84,14 +84,18 @@ export default function App() {
   });
 
   const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
-    const savedSort = localStorage.getItem(LAST_SORT_KEY) as SortOrder;
+    let savedSort = localStorage.getItem(LAST_SORT_KEY) as SortOrder | 'name';
+    // Handle legacy 'name' value from older versions
+    if (savedSort === 'name') {
+        savedSort = 'name_asc';
+    }
     const customOrderExists = !!localStorage.getItem(CUSTOM_ORDER_KEY);
 
     if (savedSort) {
       if (savedSort === 'custom' && !customOrderExists) {
         // Fallback if 'custom' is saved but no custom order exists
       } else {
-        return savedSort;
+        return savedSort as SortOrder;
       }
     }
     return customOrderExists ? 'custom' : 'priority';
@@ -370,8 +374,11 @@ export default function App() {
             return a.name.localeCompare(b.name, 'he');
         });
         break;
-      case 'name':
+      case 'name_asc':
         stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he'));
+        break;
+      case 'name_desc':
+        stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he'));
         break;
       case 'tags':
         stationsToSort.sort((a, b) => a.tags.localeCompare(b.tags, 'he'));
@@ -525,7 +532,20 @@ export default function App() {
                 <div className="flex items-center bg-gray-700 rounded-full p-1 gap-1 flex-wrap justify-center">
                     <SortButton label="אישי" order="custom" currentOrder={sortOrder} setOrder={setSortOrder} />
                     <SortButton label="פופולריות" order="priority" currentOrder={sortOrder} setOrder={setSortOrder} />
-                    <SortButton label="שם" order="name" currentOrder={sortOrder} setOrder={setSortOrder} />
+                    <button
+                      onClick={() => {
+                        if (sortOrder === 'name_asc') {
+                          setSortOrder('name_desc');
+                        } else {
+                          setSortOrder('name_asc');
+                        }
+                      }}
+                      className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                        sortOrder.startsWith('name_') ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                      }`}
+                    >
+                      {sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'}
+                    </button>
                     <SortButton label="ז'אנר" order="tags" currentOrder={sortOrder} setOrder={setSortOrder} />
                 </div>
             </div>

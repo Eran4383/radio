@@ -74,8 +74,13 @@ export default function App() {
   });
 
   const [sortOrder, setSortOrder] = useState(() => {
-    const savedSort = localStorage.getItem(LAST_SORT_KEY);
+    let savedSort = localStorage.getItem(LAST_SORT_KEY);
+    // Handle legacy 'name' value from older versions
+    if (savedSort === 'name') {
+        savedSort = 'name_asc';
+    }
     const customOrderExists = !!localStorage.getItem(CUSTOM_ORDER_KEY);
+
     if (savedSort) {
       if (savedSort === 'custom' && !customOrderExists) {
         // Fallback
@@ -348,8 +353,11 @@ export default function App() {
             return a.name.localeCompare(b.name, 'he');
         });
         break;
-      case 'name':
+      case 'name_asc':
         stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he'));
+        break;
+      case 'name_desc':
+        stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he'));
         break;
       case 'tags':
         stationsToSort.sort((a, b) => a.tags.localeCompare(b.tags, 'he'));
@@ -482,7 +490,18 @@ export default function App() {
                 React.createElement("div", { className: "flex items-center bg-gray-700 rounded-full p-1 gap-1 flex-wrap justify-center" },
                     React.createElement(SortButton, { label: "אישי", order: "custom", currentOrder: sortOrder, setOrder: setSortOrder }),
                     React.createElement(SortButton, { label: "פופולריות", order: "priority", currentOrder: sortOrder, setOrder: setSortOrder }),
-                    React.createElement(SortButton, { label: "שם", order: "name", currentOrder: sortOrder, setOrder: setSortOrder }),
+                    React.createElement("button", {
+                      onClick: () => {
+                        if (sortOrder === 'name_asc') {
+                          setSortOrder('name_desc');
+                        } else {
+                          setSortOrder('name_asc');
+                        }
+                      },
+                      className: `px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                        sortOrder.startsWith('name_') ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                      }`
+                    }, sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'),
                     React.createElement(SortButton, { label: "ז'אנר", order: "tags", currentOrder: sortOrder, setOrder: setSortOrder })
                 )
             )
