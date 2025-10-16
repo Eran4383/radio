@@ -1,17 +1,67 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon } from './Icons.js';
 import Visualizer from './Visualizer.js';
 import InteractiveText from './InteractiveText.js';
+import MarqueeText from './MarqueeText.js';
 
 const NowPlaying = ({
   isOpen, onClose, station, isPlaying, onPlayPause, onNext, onPrev, 
   volume, onVolumeChange, trackInfo, showNextSong, frequencyData,
   visualizerStyle, isVisualizerEnabled, onCycleVisualizerStyle,
-  isVolumeControlVisible
+  isVolumeControlVisible, marqueeDelay,
+  isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled, marqueeSpeed
 }) => {
     const touchStartY = useRef(0);
     const touchStartX = useRef(0);
     const dragRef = useRef(null);
+    const [startAnimation, setStartAnimation] = useState(false);
+    
+    // Refs for marquee synchronization
+    const stationNameRef = useRef(null);
+    const programNameRef = useRef(null);
+    const currentTrackRef = useRef(null);
+    const nextTrackRef = useRef(null);
+    const [marqueeConfig, setMarqueeConfig] = useState({ duration: 0, isOverflowing: [false, false, false, false] });
+
+
+    useEffect(() => {
+      setStartAnimation(false);
+      const timer = setTimeout(() => {
+          setStartAnimation(true);
+      }, 3000); 
+  
+      return () => clearTimeout(timer);
+    }, [station?.stationuuid]);
+    
+    // Effect for marquee synchronization
+    useEffect(() => {
+        const calculateMarquee = () => {
+            const refs = [stationNameRef, programNameRef, currentTrackRef, nextTrackRef];
+            let maxContentWidth = 0;
+            const newIsOverflowing = refs.map(ref => {
+                const content = ref.current;
+                if (!content) return false;
+                
+                const container = content.closest('.marquee-wrapper, .truncate');
+                
+                if (container && content.scrollWidth > container.clientWidth) {
+                    maxContentWidth = Math.max(maxContentWidth, content.scrollWidth);
+                    return true;
+                }
+                return false;
+            });
+
+            const anyOverflowing = newIsOverflowing.some(Boolean);
+            // New exponential scale for speed (1-10). Gives finer control over slower speeds.
+            const pixelsPerSecond = 3.668 * Math.pow(1.363, marqueeSpeed);
+            const newDuration = anyOverflowing ? Math.max(5, maxContentWidth / pixelsPerSecond) : 0;
+            
+            setMarqueeConfig({ duration: newDuration, isOverflowing: newIsOverflowing });
+        };
+
+        const timeoutId = setTimeout(calculateMarquee, 50);
+        return () => clearTimeout(timeoutId);
+    }, [station, trackInfo, showNextSong, marqueeSpeed, isOpen]); // Rerun when panel opens too
 
     const handleTouchStart = (e) => {
         touchStartX.current = e.targetTouches[0].clientX;
@@ -53,8 +103,6 @@ const NowPlaying = ({
         touchStartY.current = 0;
     };
 
-    const defaultInfo = station ? `${station.codec} @ ${station.bitrate}kbps` : '...';
-
     return (
       React.createElement("div", { 
         ref: dragRef,
@@ -77,29 +125,72 @@ const NowPlaying = ({
               className: "w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-2xl bg-gray-700 object-cover shadow-2xl flex-shrink-0",
               onError: (e) => { e.currentTarget.src = 'https://picsum.photos/256'; }
             }),
-            React.createElement("div", { className: "flex-shrink-0 w-full" },
-                React.createElement("h2", { className: "text-2xl sm:text-3xl font-bold text-text-primary truncate px-4" }, station?.name || 'טוען...'),
-                React.createElement("div", { className: "mt-2 min-h-[4rem] flex flex-col justify-center" },
-                    React.createElement("div", { className: "text-lg text-text-primary px-4" },
-                        trackInfo?.current || trackInfo?.program ? (
+            React.createElement("div", { className: "flex-shrink-0 w-full", key: station?.stationuuid },
+                React.createElement("div", { className: "w-full px-4" },
+                    React.createElement(MarqueeText, { 
+                        loopDelay: marqueeDelay,
+                        duration: marqueeConfig.duration,
+                        startAnimation: startAnimation,
+                        isOverflowing: marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled,
+                        contentRef: stationNameRef,
+                        className: "text-2xl sm:text-3xl font-bold text-text-primary" },
+                        React.createElement("span", null, station?.name || 'טוען...')
+                    )
+                ),
+                React.createElement("div", { className: "mt-2 min-h-[4rem] flex flex-col justify-center items-center" },
+                    React.createElement("div", { className: "w-full px-4 text-center" },
+                        trackInfo?.program && !trackInfo.current && (
+                            React.createElement(MarqueeText, { 
+                                loopDelay: marqueeDelay,
+                                duration: marqueeConfig.duration,
+                                startAnimation: startAnimation,
+                                isOverflowing: marqueeConfig.isOverflowing[1] && isMarqueeProgramEnabled,
+                                contentRef: programNameRef,
+                                className: "text-lg text-text-primary opacity-80" },
+                                React.createElement("span", null, trackInfo.program)
+                            )
+                        ),
+                        trackInfo?.current && (
                             React.createElement(React.Fragment, null,
-                                trackInfo.program && !trackInfo.current && React.createElement("p", { className: "truncate opacity-80" }, trackInfo.program),
-                                trackInfo.current && (
-                                    React.createElement(React.Fragment, null,
-                                        trackInfo.program && React.createElement("p", { className: "truncate text-base opacity-70" }, trackInfo.program),
-                                        React.createElement("div", { className: "mt-1" },
-                                            React.createElement(InteractiveText, { text: trackInfo.current, className: "font-bold text-xl" })
-                                        )
+                                trackInfo.program && (
+                                    React.createElement(MarqueeText, { 
+                                        loopDelay: marqueeDelay,
+                                        duration: marqueeConfig.duration,
+                                        startAnimation: startAnimation,
+                                        isOverflowing: marqueeConfig.isOverflowing[1] && isMarqueeProgramEnabled,
+                                        contentRef: programNameRef,
+                                        className: "text-base text-text-primary opacity-70" },
+                                        React.createElement("span", null, trackInfo.program)
+                                    )
+                                ),
+                                React.createElement("div", { className: "mt-1" },
+                                    React.createElement(MarqueeText, { 
+                                        loopDelay: marqueeDelay,
+                                        duration: marqueeConfig.duration,
+                                        startAnimation: startAnimation,
+                                        isOverflowing: marqueeConfig.isOverflowing[2] && isMarqueeCurrentTrackEnabled,
+                                        contentRef: currentTrackRef
+                                    },
+                                        React.createElement(InteractiveText, { text: trackInfo.current, className: "font-bold text-xl" })
                                     )
                                 )
                             )
-                        ) : (
-                            React.createElement("p", null, defaultInfo)
                         )
                     ),
                     showNextSong && trackInfo?.next && (
-                        React.createElement("p", { className: "text-base text-text-secondary mt-2 opacity-90 truncate px-4" },
-                            React.createElement("span", { className: "font-semibold" }, "הבא:"), " ", trackInfo.next
+                        React.createElement("div", { className: "w-full px-4 mt-2 flex items-center justify-center text-base text-text-secondary opacity-90" },
+                            React.createElement("span", { className: "font-semibold flex-shrink-0" }, "הבא:\u00A0"),
+                            React.createElement("div", { className: "min-w-0" },
+                                React.createElement(MarqueeText, { 
+                                    loopDelay: marqueeDelay,
+                                    duration: marqueeConfig.duration,
+                                    startAnimation: startAnimation,
+                                    isOverflowing: marqueeConfig.isOverflowing[3] && isMarqueeNextTrackEnabled,
+                                    contentRef: nextTrackRef
+                                },
+                                    React.createElement("span", null, trackInfo.next)
+                                )
+                            )
                         )
                     )
                 )

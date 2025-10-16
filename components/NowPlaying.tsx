@@ -1,8 +1,9 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Station, VisualizerStyle, StationTrackInfo } from '../types';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon } from './Icons';
 import Visualizer from './Visualizer';
 import InteractiveText from './InteractiveText';
+import MarqueeText from './MarqueeText';
 
 interface NowPlayingProps {
   isOpen: boolean;
@@ -21,17 +22,71 @@ interface NowPlayingProps {
   isVisualizerEnabled: boolean;
   onCycleVisualizerStyle: () => void;
   isVolumeControlVisible: boolean;
+  marqueeDelay: number;
+  isMarqueeProgramEnabled: boolean;
+  isMarqueeCurrentTrackEnabled: boolean;
+  isMarqueeNextTrackEnabled: boolean;
+  marqueeSpeed: number;
 }
 
 const NowPlaying: React.FC<NowPlayingProps> = ({
   isOpen, onClose, station, isPlaying, onPlayPause, onNext, onPrev, 
   volume, onVolumeChange, trackInfo, showNextSong, frequencyData,
   visualizerStyle, isVisualizerEnabled, onCycleVisualizerStyle,
-  isVolumeControlVisible
+  isVolumeControlVisible, marqueeDelay,
+  isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled, marqueeSpeed
 }) => {
     const touchStartY = useRef(0);
     const touchStartX = useRef(0);
     const dragRef = useRef<HTMLDivElement>(null);
+    const [startAnimation, setStartAnimation] = useState(false);
+    
+    // Refs for marquee synchronization
+    const stationNameRef = useRef<HTMLSpanElement>(null);
+    const programNameRef = useRef<HTMLSpanElement>(null);
+    const currentTrackRef = useRef<HTMLSpanElement>(null);
+    const nextTrackRef = useRef<HTMLSpanElement>(null);
+    const [marqueeConfig, setMarqueeConfig] = useState<{ duration: number; isOverflowing: boolean[] }>({ duration: 0, isOverflowing: [false, false, false, false] });
+
+
+    useEffect(() => {
+      setStartAnimation(false);
+      const timer = setTimeout(() => {
+          setStartAnimation(true);
+      }, 3000); 
+  
+      return () => clearTimeout(timer);
+    }, [station?.stationuuid]);
+    
+    // Effect for marquee synchronization
+    useEffect(() => {
+        const calculateMarquee = () => {
+            const refs = [stationNameRef, programNameRef, currentTrackRef, nextTrackRef];
+            let maxContentWidth = 0;
+            const newIsOverflowing = refs.map(ref => {
+                const content = ref.current;
+                if (!content) return false;
+                
+                const container = content.closest('.marquee-wrapper, .truncate');
+                
+                if (container && content.scrollWidth > container.clientWidth) {
+                    maxContentWidth = Math.max(maxContentWidth, content.scrollWidth);
+                    return true;
+                }
+                return false;
+            });
+
+            const anyOverflowing = newIsOverflowing.some(Boolean);
+            // New exponential scale for speed (1-10). Gives finer control over slower speeds.
+            const pixelsPerSecond = 3.668 * Math.pow(1.363, marqueeSpeed);
+            const newDuration = anyOverflowing ? Math.max(5, maxContentWidth / pixelsPerSecond) : 0;
+            
+            setMarqueeConfig({ duration: newDuration, isOverflowing: newIsOverflowing });
+        };
+
+        const timeoutId = setTimeout(calculateMarquee, 50);
+        return () => clearTimeout(timeoutId);
+    }, [station, trackInfo, showNextSong, marqueeSpeed, isOpen]); // Rerun when panel opens too
 
     const handleTouchStart = (e: React.TouchEvent) => {
         touchStartX.current = e.targetTouches[0].clientX;
@@ -73,8 +128,6 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
         touchStartY.current = 0;
     };
 
-    const defaultInfo = station ? `${station.codec} @ ${station.bitrate}kbps` : '...';
-
     return (
       <div 
         ref={dragRef}
@@ -98,30 +151,74 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
               className="w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-2xl bg-gray-700 object-cover shadow-2xl flex-shrink-0"
               onError={(e) => { e.currentTarget.src = 'https://picsum.photos/256'; }}
             />
-            <div className="flex-shrink-0 w-full">
-                <h2 className="text-2xl sm:text-3xl font-bold text-text-primary truncate px-4">{station?.name || 'טוען...'}</h2>
-                <div className="mt-2 min-h-[4rem] flex flex-col justify-center">
-                    <div className="text-lg text-text-primary px-4">
-                        {trackInfo?.current || trackInfo?.program ? (
+            <div className="flex-shrink-0 w-full" key={station?.stationuuid}>
+                <div className="w-full px-4">
+                    <MarqueeText 
+                        loopDelay={marqueeDelay}
+                        duration={marqueeConfig.duration}
+                        startAnimation={startAnimation}
+                        isOverflowing={marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled}
+                        contentRef={stationNameRef}
+                        className="text-2xl sm:text-3xl font-bold text-text-primary">
+                        <span>{station?.name || 'טוען...'}</span>
+                    </MarqueeText>
+                </div>
+                
+                <div className="mt-2 min-h-[4rem] flex flex-col justify-center items-center">
+                    <div className="w-full px-4 text-center">
+                        {trackInfo?.program && !trackInfo.current && (
+                            <MarqueeText 
+                                loopDelay={marqueeDelay}
+                                duration={marqueeConfig.duration}
+                                startAnimation={startAnimation}
+                                isOverflowing={marqueeConfig.isOverflowing[1] && isMarqueeProgramEnabled}
+                                contentRef={programNameRef}
+                                className="text-lg text-text-primary opacity-80">
+                                <span>{trackInfo.program}</span>
+                            </MarqueeText>
+                        )}
+                        {trackInfo?.current && (
                             <>
-                                {trackInfo.program && !trackInfo.current && <p className="truncate opacity-80">{trackInfo.program}</p>}
-                                {trackInfo.current && (
-                                    <>
-                                        {trackInfo.program && <p className="truncate text-base opacity-70">{trackInfo.program}</p>}
-                                        <div className="mt-1">
-                                            <InteractiveText text={trackInfo.current} className="font-bold text-xl"/>
-                                        </div>
-                                    </>
+                                {trackInfo.program && (
+                                    <MarqueeText 
+                                        loopDelay={marqueeDelay}
+                                        duration={marqueeConfig.duration}
+                                        startAnimation={startAnimation}
+                                        isOverflowing={marqueeConfig.isOverflowing[1] && isMarqueeProgramEnabled}
+                                        contentRef={programNameRef}
+                                        className="text-base text-text-primary opacity-70">
+                                        <span>{trackInfo.program}</span>
+                                    </MarqueeText>
                                 )}
+                                <div className="mt-1">
+                                    <MarqueeText 
+                                        loopDelay={marqueeDelay}
+                                        duration={marqueeConfig.duration}
+                                        startAnimation={startAnimation}
+                                        isOverflowing={marqueeConfig.isOverflowing[2] && isMarqueeCurrentTrackEnabled}
+                                        contentRef={currentTrackRef}
+                                    >
+                                        <InteractiveText text={trackInfo.current} className="font-bold text-xl"/>
+                                    </MarqueeText>
+                                </div>
                             </>
-                        ) : (
-                            <p>{defaultInfo}</p>
                         )}
                     </div>
                     {showNextSong && trackInfo?.next && (
-                        <p className="text-base text-text-secondary mt-2 opacity-90 truncate px-4">
-                            <span className="font-semibold">הבא:</span> {trackInfo.next}
-                        </p>
+                        <div className="w-full px-4 mt-2 flex items-center justify-center text-base text-text-secondary opacity-90">
+                            <span className="font-semibold flex-shrink-0">הבא:&nbsp;</span>
+                            <div className="min-w-0">
+                                <MarqueeText 
+                                    loopDelay={marqueeDelay}
+                                    duration={marqueeConfig.duration}
+                                    startAnimation={startAnimation}
+                                    isOverflowing={marqueeConfig.isOverflowing[3] && isMarqueeNextTrackEnabled}
+                                    contentRef={nextTrackRef}
+                                >
+                                    <span>{trackInfo.next}</span>
+                                </MarqueeText>
+                            </div>
+                        </div>
                     )}
                 </div>
             </div>

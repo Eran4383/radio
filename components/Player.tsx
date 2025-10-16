@@ -3,6 +3,7 @@ import { Station, EqPreset, EQ_PRESETS, CustomEqSettings, StationTrackInfo } fro
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons';
 import { CORS_PROXY_URL } from '../constants';
 import InteractiveText from './InteractiveText';
+import MarqueeText from './MarqueeText';
 
 interface PlayerProps {
   station: Station | null;
@@ -21,6 +22,11 @@ interface PlayerProps {
   onStreamStatusChange: (isActive: boolean) => void;
   frequencyData: Uint8Array;
   isVisualizerEnabled: boolean;
+  marqueeDelay: number;
+  isMarqueeProgramEnabled: boolean;
+  isMarqueeCurrentTrackEnabled: boolean;
+  isMarqueeNextTrackEnabled: boolean;
+  marqueeSpeed: number;
 }
 
 const PlayerVisualizer: React.FC<{ frequencyData: Uint8Array }> = ({ frequencyData }) => {
@@ -78,6 +84,11 @@ const Player: React.FC<PlayerProps> = ({
   onStreamStatusChange,
   frequencyData,
   isVisualizerEnabled,
+  marqueeDelay,
+  isMarqueeProgramEnabled,
+  isMarqueeCurrentTrackEnabled,
+  isMarqueeNextTrackEnabled,
+  marqueeSpeed,
 }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -90,7 +101,56 @@ const Player: React.FC<PlayerProps> = ({
 
   const [isActuallyPlaying, setIsActuallyPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [startAnimation, setStartAnimation] = useState(false);
   
+  // Refs for marquee synchronization
+  const stationNameRef = useRef<HTMLSpanElement>(null);
+  const currentTrackRef = useRef<HTMLSpanElement>(null);
+  const nextTrackRef = useRef<HTMLSpanElement>(null);
+  const [marqueeConfig, setMarqueeConfig] = useState<{ duration: number; isOverflowing: boolean[] }>({ duration: 0, isOverflowing: [false, false, false] });
+
+
+  // Effect for initial animation delay
+  useEffect(() => {
+    setStartAnimation(false);
+    const timer = setTimeout(() => {
+        setStartAnimation(true);
+    }, 3000); // 3-second initial delay
+
+    return () => clearTimeout(timer);
+  }, [station?.stationuuid]);
+  
+  // Effect for marquee synchronization
+  useEffect(() => {
+      const calculateMarquee = () => {
+          const refs = [stationNameRef, currentTrackRef, nextTrackRef];
+          let maxContentWidth = 0;
+          const newIsOverflowing = refs.map(ref => {
+              const content = ref.current;
+              if (!content) return false;
+              
+              const container = content.closest('.marquee-wrapper, .truncate');
+              
+              if (container && content.scrollWidth > container.clientWidth) {
+                  maxContentWidth = Math.max(maxContentWidth, content.scrollWidth);
+                  return true;
+              }
+              return false;
+          });
+
+          const anyOverflowing = newIsOverflowing.some(Boolean);
+          // New exponential scale for speed (1-10). Gives finer control over slower speeds.
+          const pixelsPerSecond = 3.668 * Math.pow(1.363, marqueeSpeed);
+          const newDuration = anyOverflowing ? Math.max(5, maxContentWidth / pixelsPerSecond) : 0;
+          
+          setMarqueeConfig({ duration: newDuration, isOverflowing: newIsOverflowing });
+      };
+
+      const timeoutId = setTimeout(calculateMarquee, 50);
+
+      return () => clearTimeout(timeoutId);
+  }, [station, trackInfo, showNextSong, marqueeSpeed]);
+
   // Report stream status changes to parent
   useEffect(() => {
     onStreamStatusChange(isActuallyPlaying);
@@ -158,10 +218,12 @@ const Player: React.FC<PlayerProps> = ({
         try {
           await audio.play();
           setError(null);
-        } catch (e) {
+        } catch (e: any) {
           console.error("Error playing audio:", e);
-          setError("לא ניתן לנגן את התחנה.");
-          setIsActuallyPlaying(false);
+          if (e.name !== 'AbortError') {
+            setError("לא ניתן לנגן את התחנה.");
+            setIsActuallyPlaying(false);
+          }
         }
       } else {
         audio.pause();
@@ -220,10 +282,9 @@ const Player: React.FC<PlayerProps> = ({
   useEffect(() => {
     if ('mediaSession' in navigator) {
       if (station) {
-        const primaryInfo = [trackInfo?.program, trackInfo?.current].filter(Boolean).join(' | ');
         navigator.mediaSession.metadata = new MediaMetadata({
-          title: station.name,
-          artist: primaryInfo || 'רדיו פרימיום',
+          title: `${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`,
+          artist: trackInfo?.current || 'רדיו פרימיום',
           artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
         });
 
@@ -266,8 +327,6 @@ const Player: React.FC<PlayerProps> = ({
     return null; // Don't render the player if no station is selected
   }
 
-  const defaultInfo = `${station.codec} @ ${station.bitrate}kbps`;
-
   return (
     <div className="fixed bottom-0 left-0 right-0 z-30">
       <div className="relative bg-bg-secondary/80 backdrop-blur-lg shadow-t-lg">
@@ -286,28 +345,47 @@ const Player: React.FC<PlayerProps> = ({
               className="w-14 h-14 rounded-md bg-gray-700 object-contain flex-shrink-0"
               onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://picsum.photos/48'; }}
             />
-            <div className="min-w-0">
-              <h3 className="font-bold text-text-primary truncate">{station.name}</h3>
-              <div className="text-sm text-text-secondary leading-tight">
-                <div className="truncate">
-                  {error ? (
-                    <span className="text-red-400">{error}</span>
-                  ) : trackInfo?.current || trackInfo?.program ? (
-                    <>
-                      {trackInfo.program && <span>{trackInfo.program}</span>}
-                      {trackInfo.program && trackInfo.current && <span className="mx-1 opacity-60">|</span>}
-                      {trackInfo.current && <InteractiveText text={trackInfo.current} />}
-                    </>
-                  ) : (
-                    <span>{defaultInfo}</span>
-                  )}
-                </div>
-                {!error && showNextSong && trackInfo?.next && (
-                  <p className="truncate text-xs opacity-80">
-                    <span className="font-semibold">הבא:</span> {trackInfo.next}
-                  </p>
-                )}
+            <div className="min-w-0" key={station.stationuuid}>
+               <MarqueeText
+                  loopDelay={marqueeDelay}
+                  duration={marqueeConfig.duration}
+                  startAnimation={startAnimation}
+                  isOverflowing={marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled}
+                  contentRef={stationNameRef}
+                  className="font-bold text-text-primary"
+              >
+                  <span>{station.name}{trackInfo?.program && ` | ${trackInfo.program}`}</span>
+              </MarqueeText>
+
+              <div className="text-sm text-text-secondary leading-tight h-[1.25rem] flex items-center">
+                {error ? (
+                  <span className="text-red-400">{error}</span>
+                ) : trackInfo?.current ? (
+                  <MarqueeText
+                      loopDelay={marqueeDelay}
+                      duration={marqueeConfig.duration}
+                      startAnimation={startAnimation}
+                      isOverflowing={marqueeConfig.isOverflowing[1] && isMarqueeCurrentTrackEnabled}
+                      contentRef={currentTrackRef}
+                  >
+                      <InteractiveText text={trackInfo.current} />
+                  </MarqueeText>
+                ) : null}
               </div>
+               {!error && showNextSong && trackInfo?.next && (
+                  <div className="text-xs opacity-80 h-[1.125rem] flex items-center">
+                    <span className="font-semibold flex-shrink-0">הבא:&nbsp;</span>
+                    <MarqueeText 
+                        loopDelay={marqueeDelay} 
+                        duration={marqueeConfig.duration}
+                        startAnimation={startAnimation}
+                        isOverflowing={marqueeConfig.isOverflowing[2] && isMarqueeNextTrackEnabled}
+                        contentRef={nextTrackRef}
+                    >
+                      <span>{trackInfo.next}</span>
+                    </MarqueeText>
+                  </div>
+                )}
             </div>
           </div>
           

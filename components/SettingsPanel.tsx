@@ -22,6 +22,16 @@ interface SettingsPanelProps {
   onCustomEqChange: (settings: CustomEqSettings) => void;
   gridSize: GridSize;
   onGridSizeChange: (size: GridSize) => void;
+  isMarqueeProgramEnabled: boolean;
+  onMarqueeProgramEnabledChange: (enabled: boolean) => void;
+  isMarqueeCurrentTrackEnabled: boolean;
+  onMarqueeCurrentTrackEnabledChange: (enabled: boolean) => void;
+  isMarqueeNextTrackEnabled: boolean;
+  onMarqueeNextTrackEnabledChange: (enabled: boolean) => void;
+  marqueeSpeed: number;
+  onMarqueeSpeedChange: (speed: number) => void;
+  marqueeDelay: number;
+  onMarqueeDelayChange: (delay: number) => void;
 }
 
 const SettingsButton: React.FC<{
@@ -92,6 +102,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     showNextSong, onShowNextSongChange,
     customEqSettings, onCustomEqChange,
     gridSize, onGridSizeChange,
+    isMarqueeProgramEnabled, onMarqueeProgramEnabledChange,
+    isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange,
+    isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange,
+    marqueeSpeed, onMarqueeSpeedChange,
+    marqueeDelay, onMarqueeDelayChange
  }) => {
   return (
     <>
@@ -187,6 +202,60 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                           />
                       </div>
                     </div>
+                    
+                    <h4 className="text-xs font-semibold text-text-secondary pt-2 px-3">טקסט נע</h4>
+                    <ToggleSwitch 
+                        label="שם תחנה / תוכנית"
+                        enabled={isMarqueeProgramEnabled}
+                        onChange={onMarqueeProgramEnabledChange}
+                    />
+                     <ToggleSwitch 
+                        label="שם שיר נוכחי"
+                        enabled={isMarqueeCurrentTrackEnabled}
+                        onChange={onMarqueeCurrentTrackEnabledChange}
+                    />
+                     <ToggleSwitch 
+                        label="שיר הבא"
+                        enabled={isMarqueeNextTrackEnabled}
+                        onChange={onMarqueeNextTrackEnabledChange}
+                    />
+                    <div className="p-3 rounded-lg bg-bg-primary space-y-3">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex justify-between text-sm font-medium text-text-primary">
+                              <span>מהירות גלילה</span>
+                          </div>
+                           <div className="flex justify-between text-xs text-text-secondary px-1">
+                            <span>איטי</span>
+                            <span>מהיר</span>
+                          </div>
+                          <input
+                              type="range"
+                              min="1"
+                              max="10"
+                              step="1"
+                              value={marqueeSpeed}
+                              onChange={(e) => onMarqueeSpeedChange(parseInt(e.target.value, 10))}
+                              className="w-full accent-teal-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <div className="flex justify-between text-sm font-medium text-text-primary">
+                              <span>השהיה בין גלילות</span>
+                              <span>{marqueeDelay} ש'</span>
+                          </div>
+                          <input
+                              type="range"
+                              min="1"
+                              max="10"
+                              step="1"
+                              value={marqueeDelay}
+                              onChange={(e) => onMarqueeDelayChange(parseInt(e.target.value, 10))}
+                              className="w-full accent-teal-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                    </div>
+
+                    <h4 className="text-xs font-semibold text-text-secondary pt-2 px-3">כללי</h4>
                     <ToggleSwitch 
                         label="תצוגה גרפית (מסך מלא)" 
                         enabled={isNowPlayingVisualizerEnabled} 

@@ -121,6 +121,19 @@
         z-index: 10;
         cursor: grabbing;
       }
+      .marquee-wrapper {
+        overflow: hidden;
+        white-space: nowrap;
+        width: 100%;
+      }
+      .animate-marquee {
+        animation: marquee-animation var(--marquee-duration, 10s) ease-in-out infinite;
+        will-change: transform;
+      }
+      @keyframes marquee-animation {
+        from { transform: translateX(0); }
+        to { transform: translateX(50%); }
+      }
     </style>
   <script type="importmap">
 {
@@ -128,7 +141,7 @@
     "react/": "https://aistudiocdn.com/react@^18.3.0/",
     "react": "https://aistudiocdn.com/react@^18.3.0",
     "react-dom/client": "https://aistudiocdn.com/react-dom@^18.3.0/client",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+    "react-dom/": "https://aistudiocdn.com/react-dom@^18.3.0/"
   }
 }
 </script>

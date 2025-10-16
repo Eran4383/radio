@@ -55,7 +55,12 @@ const SettingsPanel = ({
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
     showNextSong, onShowNextSongChange,
     customEqSettings, onCustomEqChange,
-    gridSize, onGridSizeChange
+    gridSize, onGridSizeChange,
+    isMarqueeProgramEnabled, onMarqueeProgramEnabledChange,
+    isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange,
+    isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange,
+    marqueeSpeed, onMarqueeSpeedChange,
+    marqueeDelay, onMarqueeDelayChange
  }) => {
   return (
     React.createElement(React.Fragment, null,
@@ -151,6 +156,58 @@ const SettingsPanel = ({
                           })
                       )
                     ),
+                    React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-2 px-3" }, "טקסט נע"),
+                    React.createElement(ToggleSwitch, { 
+                        label: "שם תחנה / תוכנית",
+                        enabled: isMarqueeProgramEnabled,
+                        onChange: onMarqueeProgramEnabledChange
+                    }),
+                    React.createElement(ToggleSwitch, { 
+                        label: "שם שיר נוכחי",
+                        enabled: isMarqueeCurrentTrackEnabled,
+                        onChange: onMarqueeCurrentTrackEnabledChange
+                    }),
+                    React.createElement(ToggleSwitch, { 
+                        label: "שיר הבא",
+                        enabled: isMarqueeNextTrackEnabled,
+                        onChange: onMarqueeNextTrackEnabledChange
+                    }),
+                    React.createElement("div", { className: "p-3 rounded-lg bg-bg-primary space-y-3" },
+                        React.createElement("div", { className: "flex flex-col gap-1" },
+                            React.createElement("div", { className: "flex justify-between text-sm font-medium text-text-primary" },
+                                React.createElement("span", null, "מהירות גלילה")
+                            ),
+                            React.createElement("div", { className: "flex justify-between text-xs text-text-secondary px-1" },
+                                React.createElement("span", null, "איטי"),
+                                React.createElement("span", null, "מהיר")
+                            ),
+                            React.createElement("input", {
+                                type: "range",
+                                min: "1",
+                                max: "10",
+                                step: "1",
+                                value: marqueeSpeed,
+                                onChange: (e) => onMarqueeSpeedChange(parseInt(e.target.value, 10)),
+                                className: "w-full accent-teal-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                            })
+                        ),
+                        React.createElement("div", { className: "flex flex-col gap-1" },
+                            React.createElement("div", { className: "flex justify-between text-sm font-medium text-text-primary" },
+                                React.createElement("span", null, "השהיה בין גלילות"),
+                                React.createElement("span", null, `${marqueeDelay} ש'`)
+                            ),
+                            React.createElement("input", {
+                                type: "range",
+                                min: "1",
+                                max: "10",
+                                step: "1",
+                                value: marqueeDelay,
+                                onChange: (e) => onMarqueeDelayChange(parseInt(e.target.value, 10)),
+                                className: "w-full accent-teal-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                            })
+                        )
+                    ),
+                    React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-2 px-3" }, "כללי"),
                     React.createElement(ToggleSwitch, { 
                         label: "תצוגה גרפית (מסך מלא)", 
                         enabled: isNowPlayingVisualizerEnabled, 
@@ -178,7 +235,6 @@ const SettingsPanel = ({
                     })
                 )
             ),
-
             React.createElement("div", { className: "mt-auto text-center text-xs text-text-secondary flex-shrink-0" },
                 React.createElement("p", null, "רדיו פרימיום v1.3")
             )

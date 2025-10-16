@@ -3,6 +3,7 @@ import { EQ_PRESETS } from '../types.js';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons.js';
 import { CORS_PROXY_URL } from '../constants.js';
 import InteractiveText from './InteractiveText.js';
+import MarqueeText from './MarqueeText.js';
 
 const PlayerVisualizer = ({ frequencyData }) => {
     const canvasRef = useRef(null);
@@ -59,6 +60,11 @@ const Player = ({
   onStreamStatusChange,
   frequencyData,
   isVisualizerEnabled,
+  marqueeDelay,
+  isMarqueeProgramEnabled,
+  isMarqueeCurrentTrackEnabled,
+  isMarqueeNextTrackEnabled,
+  marqueeSpeed,
 }) => {
   const audioRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -71,7 +77,56 @@ const Player = ({
 
   const [isActuallyPlaying, setIsActuallyPlaying] = useState(false);
   const [error, setError] = useState(null);
+  const [startAnimation, setStartAnimation] = useState(false);
   
+  // Refs for marquee synchronization
+  const stationNameRef = useRef(null);
+  const currentTrackRef = useRef(null);
+  const nextTrackRef = useRef(null);
+  const [marqueeConfig, setMarqueeConfig] = useState({ duration: 0, isOverflowing: [false, false, false] });
+
+
+  // Effect for initial animation delay
+  useEffect(() => {
+    setStartAnimation(false);
+    const timer = setTimeout(() => {
+        setStartAnimation(true);
+    }, 3000); // 3-second initial delay
+
+    return () => clearTimeout(timer);
+  }, [station?.stationuuid]);
+  
+  // Effect for marquee synchronization
+  useEffect(() => {
+      const calculateMarquee = () => {
+          const refs = [stationNameRef, currentTrackRef, nextTrackRef];
+          let maxContentWidth = 0;
+          const newIsOverflowing = refs.map(ref => {
+              const content = ref.current;
+              if (!content) return false;
+              
+              const container = content.closest('.marquee-wrapper, .truncate');
+              
+              if (container && content.scrollWidth > container.clientWidth) {
+                  maxContentWidth = Math.max(maxContentWidth, content.scrollWidth);
+                  return true;
+              }
+              return false;
+          });
+
+          const anyOverflowing = newIsOverflowing.some(Boolean);
+          // New exponential scale for speed (1-10). Gives finer control over slower speeds.
+          const pixelsPerSecond = 3.668 * Math.pow(1.363, marqueeSpeed);
+          const newDuration = anyOverflowing ? Math.max(5, maxContentWidth / pixelsPerSecond) : 0;
+          
+          setMarqueeConfig({ duration: newDuration, isOverflowing: newIsOverflowing });
+      };
+
+      const timeoutId = setTimeout(calculateMarquee, 50);
+
+      return () => clearTimeout(timeoutId);
+  }, [station, trackInfo, showNextSong, marqueeSpeed]);
+
   // Report stream status changes to parent
   useEffect(() => {
     onStreamStatusChange(isActuallyPlaying);
@@ -141,8 +196,10 @@ const Player = ({
           setError(null);
         } catch (e) {
           console.error("Error playing audio:", e);
-          setError("לא ניתן לנגן את התחנה.");
-          setIsActuallyPlaying(false);
+          if (e.name !== 'AbortError') {
+            setError("לא ניתן לנגן את התחנה.");
+            setIsActuallyPlaying(false);
+          }
         }
       } else {
         audio.pause();
@@ -201,10 +258,9 @@ const Player = ({
   useEffect(() => {
     if ('mediaSession' in navigator) {
       if (station) {
-        const primaryInfo = [trackInfo?.program, trackInfo?.current].filter(Boolean).join(' | ');
         navigator.mediaSession.metadata = new MediaMetadata({
-          title: station.name,
-          artist: primaryInfo || 'רדיו פרימיום',
+          title: `${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`,
+          artist: trackInfo?.current || 'רדיו פרימיום',
           artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
         });
 
@@ -247,8 +303,6 @@ const Player = ({
     return null; // Don't render the player if no station is selected
   }
 
-  const defaultInfo = `${station.codec} @ ${station.bitrate}kbps`;
-
   return (
     React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-30" },
       React.createElement("div", { className: "relative bg-bg-secondary/80 backdrop-blur-lg shadow-t-lg" },
@@ -267,28 +321,47 @@ const Player = ({
               className: "w-14 h-14 rounded-md bg-gray-700 object-contain flex-shrink-0",
               onError: (e) => { e.currentTarget.src = 'https://picsum.photos/48'; }
             }),
-            React.createElement("div", { className: "min-w-0" },
-              React.createElement("h3", { className: "font-bold text-text-primary truncate" }, station.name),
-              React.createElement("div", { className: "text-sm text-text-secondary leading-tight" },
-                React.createElement("div", { className: "truncate" },
-                  error ? (
-                    React.createElement("span", { className: "text-red-400" }, error)
-                  ) : trackInfo?.current || trackInfo?.program ? (
-                    React.createElement(React.Fragment, null,
-                      trackInfo.program && React.createElement("span", null, trackInfo.program),
-                      trackInfo.program && trackInfo.current && React.createElement("span", { className: "mx-1 opacity-60" }, "|"),
-                      trackInfo.current && React.createElement(InteractiveText, { text: trackInfo.current })
-                    )
-                  ) : (
-                    React.createElement("span", null, defaultInfo)
+            React.createElement("div", { className: "min-w-0", key: station.stationuuid },
+               React.createElement(MarqueeText, {
+                  loopDelay: marqueeDelay,
+                  duration: marqueeConfig.duration,
+                  startAnimation: startAnimation,
+                  isOverflowing: marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled,
+                  contentRef: stationNameRef,
+                  className: "font-bold text-text-primary"
+              },
+                  React.createElement("span", null, `${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`)
+              ),
+
+              React.createElement("div", { className: "text-sm text-text-secondary leading-tight h-[1.25rem] flex items-center" },
+                error ? (
+                  React.createElement("span", { className: "text-red-400" }, error)
+                ) : trackInfo?.current ? (
+                  React.createElement(MarqueeText, {
+                      loopDelay: marqueeDelay,
+                      duration: marqueeConfig.duration,
+                      startAnimation: startAnimation,
+                      isOverflowing: marqueeConfig.isOverflowing[1] && isMarqueeCurrentTrackEnabled,
+                      contentRef: currentTrackRef
+                  },
+                      React.createElement(InteractiveText, { text: trackInfo.current })
                   )
-                ),
-                !error && showNextSong && trackInfo?.next && (
-                  React.createElement("p", { className: "truncate text-xs opacity-80" },
-                    React.createElement("span", { className: "font-semibold" }, "הבא:"), " ", trackInfo.next
+                ) : null
+              ),
+               !error && showNextSong && trackInfo?.next && (
+                  React.createElement("div", { className: "text-xs opacity-80 h-[1.125rem] flex items-center" },
+                    React.createElement("span", { className: "font-semibold flex-shrink-0" }, "הבא:\u00A0"),
+                    React.createElement(MarqueeText, { 
+                        loopDelay: marqueeDelay, 
+                        duration: marqueeConfig.duration,
+                        startAnimation: startAnimation,
+                        isOverflowing: marqueeConfig.isOverflowing[2] && isMarqueeNextTrackEnabled,
+                        contentRef: nextTrackRef
+                    },
+                      React.createElement("span", null, trackInfo.next)
+                    )
                   )
                 )
-              )
             )
           ),
           

@@ -34,6 +34,11 @@ const STATUS_INDICATOR_ENABLED_KEY = 'radio-status-indicator-enabled';
 const VOLUME_CONTROL_VISIBLE_KEY = 'radio-volume-control-visible';
 const SHOW_NEXT_SONG_KEY = 'radio-show-next-song';
 const GRID_SIZE_KEY = 'radio-grid-size';
+const MARQUEE_PROGRAM_ENABLED_KEY = 'radio-marquee-program-enabled';
+const MARQUEE_CURRENT_ENABLED_KEY = 'radio-marquee-current-enabled';
+const MARQUEE_NEXT_ENABLED_KEY = 'radio-marquee-next-enabled';
+const MARQUEE_SPEED_KEY = 'radio-marquee-speed';
+const MARQUEE_DELAY_KEY = 'radio-marquee-delay';
 
 const SortButton = ({ label, order, currentOrder, setOrder }) => (
   React.createElement("button", {
@@ -161,6 +166,32 @@ export default function App() {
     const saved = localStorage.getItem(GRID_SIZE_KEY);
     // 1 is smallest, 5 is largest. Let's default to 3.
     return saved ? JSON.parse(saved) : 3;
+  });
+  
+  const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState(() => {
+    const saved = localStorage.getItem(MARQUEE_PROGRAM_ENABLED_KEY);
+    return saved ? JSON.parse(saved) : true;
+  });
+
+  const [isMarqueeCurrentTrackEnabled, setIsMarqueeCurrentTrackEnabled] = useState(() => {
+    const saved = localStorage.getItem(MARQUEE_CURRENT_ENABLED_KEY);
+    return saved ? JSON.parse(saved) : true;
+  });
+  
+  const [isMarqueeNextTrackEnabled, setIsMarqueeNextTrackEnabled] = useState(() => {
+    const saved = localStorage.getItem(MARQUEE_NEXT_ENABLED_KEY);
+    return saved ? JSON.parse(saved) : true;
+  });
+  
+  const [marqueeSpeed, setMarqueeSpeed] = useState(() => {
+    const saved = localStorage.getItem(MARQUEE_SPEED_KEY);
+    // Defaulting to 6 on a 1-10 scale. Slower than the old default.
+    return saved ? JSON.parse(saved) : 6;
+  });
+
+  const [marqueeDelay, setMarqueeDelay] = useState(() => {
+      const saved = localStorage.getItem(MARQUEE_DELAY_KEY);
+      return saved ? JSON.parse(saved) : 3;
   });
 
 
@@ -315,6 +346,31 @@ export default function App() {
     setGridSize(size);
     localStorage.setItem(GRID_SIZE_KEY, JSON.stringify(size));
   }, []);
+  
+  const handleSetIsMarqueeProgramEnabled = (enabled) => {
+    setIsMarqueeProgramEnabled(enabled);
+    localStorage.setItem(MARQUEE_PROGRAM_ENABLED_KEY, JSON.stringify(enabled));
+  };
+
+  const handleSetIsMarqueeCurrentTrackEnabled = (enabled) => {
+    setIsMarqueeCurrentTrackEnabled(enabled);
+    localStorage.setItem(MARQUEE_CURRENT_ENABLED_KEY, JSON.stringify(enabled));
+  };
+  
+  const handleSetIsMarqueeNextTrackEnabled = (enabled) => {
+    setIsMarqueeNextTrackEnabled(enabled);
+    localStorage.setItem(MARQUEE_NEXT_ENABLED_KEY, JSON.stringify(enabled));
+  };
+
+  const handleSetMarqueeSpeed = (speed) => {
+      setMarqueeSpeed(speed);
+      localStorage.setItem(MARQUEE_SPEED_KEY, JSON.stringify(speed));
+  };
+
+  const handleSetMarqueeDelay = (delay) => {
+      setMarqueeDelay(delay);
+      localStorage.setItem(MARQUEE_DELAY_KEY, JSON.stringify(delay));
+  };
 
   const handleCycleVisualizerStyle = useCallback(() => {
     const currentIndex = VISUALIZER_STYLES.indexOf(visualizerStyle);
@@ -598,7 +654,17 @@ export default function App() {
         customEqSettings: customEqSettings,
         onCustomEqChange: handleSetCustomEqSettings,
         gridSize: gridSize,
-        onGridSizeChange: handleSetGridSize
+        onGridSizeChange: handleSetGridSize,
+        isMarqueeProgramEnabled: isMarqueeProgramEnabled,
+        onMarqueeProgramEnabledChange: handleSetIsMarqueeProgramEnabled,
+        isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled,
+        onMarqueeCurrentTrackEnabledChange: handleSetIsMarqueeCurrentTrackEnabled,
+        isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled,
+        onMarqueeNextTrackEnabledChange: handleSetIsMarqueeNextTrackEnabled,
+        marqueeSpeed: marqueeSpeed,
+        onMarqueeSpeedChange: handleSetMarqueeSpeed,
+        marqueeDelay: marqueeDelay,
+        onMarqueeDelayChange: handleSetMarqueeDelay
       }),
       currentStation && React.createElement(NowPlaying, {
         isOpen: isNowPlayingOpen,
@@ -617,6 +683,11 @@ export default function App() {
         isVisualizerEnabled: isNowPlayingVisualizerEnabled,
         onCycleVisualizerStyle: handleCycleVisualizerStyle,
         isVolumeControlVisible: isVolumeControlVisible,
+        marqueeDelay: marqueeDelay,
+        isMarqueeProgramEnabled: isMarqueeProgramEnabled,
+        isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled,
+        isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled,
+        marqueeSpeed: marqueeSpeed
       }),
       React.createElement(Player, {
         station: currentStation,
@@ -634,7 +705,12 @@ export default function App() {
         setFrequencyData: setFrequencyData,
         onStreamStatusChange: setIsStreamActive,
         frequencyData: frequencyData,
-        isVisualizerEnabled: isPlayerBarVisualizerEnabled
+        isVisualizerEnabled: isPlayerBarVisualizerEnabled,
+        marqueeDelay: marqueeDelay,
+        isMarqueeProgramEnabled: isMarqueeProgramEnabled,
+        isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled,
+        isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled,
+        marqueeSpeed: marqueeSpeed
       })
     )
   );
