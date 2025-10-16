@@ -53,9 +53,3 @@ export const ChevronDownIcon = (props) => (
         React.createElement("path", { d: "M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" })
     )
 );
-
-export const InstallIcon = (props) => (
-  React.createElement("svg", { ...props, xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "currentColor" },
-    React.createElement("path", { d: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" })
-  )
-);

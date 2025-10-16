@@ -7,7 +7,7 @@ import SettingsPanel from './components/SettingsPanel.js';
 import NowPlaying from './components/NowPlaying.js';
 import { useFavorites } from './hooks/useFavorites.js';
 import { PRIORITY_STATIONS } from './constants.js';
-import { MenuIcon, InstallIcon } from './components/Icons.js';
+import { MenuIcon } from './components/Icons.js';
 import { getCurrentProgram } from './services/scheduleService.js';
 import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/stationSpecificService.js';
 import StationListSkeleton from './components/StationListSkeleton.js';
@@ -71,7 +71,6 @@ export default function App() {
   const [isStreamActive, setIsStreamActive] = useState(false);
   const pinchDistRef = useRef(0);
   const PINCH_THRESHOLD = 40; // pixels
-  const [installPromptEvent, setInstallPromptEvent] = useState(null);
 
   const [customOrder, setCustomOrder] = useState(() => {
     try {
@@ -204,42 +203,6 @@ export default function App() {
      }
      return null;
   }, [stations, currentStationIndex]);
-
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (event) => {
-      event.preventDefault(); // Prevent the default browser prompt
-      setInstallPromptEvent(event);
-      console.log('beforeinstallprompt event captured');
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
-    const handleAppInstalled = () => {
-      console.log('PWA was installed');
-      setInstallPromptEvent(null); // Clear the prompt so the button disappears
-    };
-
-    window.addEventListener('appinstalled', handleAppInstalled);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-    };
-  }, []);
-
-  const handleInstallClick = () => {
-    if (installPromptEvent) {
-      installPromptEvent.prompt();
-      installPromptEvent.userChoice.then((choiceResult) => {
-        if (choiceResult.outcome === 'accepted') {
-          console.log('User accepted the install prompt');
-        } else {
-          console.log('User dismissed the install prompt');
-        }
-        setInstallPromptEvent(null);
-      });
-    }
-  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -610,9 +573,6 @@ export default function App() {
             React.createElement("div", { className: "flex items-center gap-2" },
               React.createElement("button", { onClick: () => setIsSettingsOpen(true), className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הגדרות" },
                 React.createElement(MenuIcon, { className: "w-6 h-6" })
-              ),
-              installPromptEvent && React.createElement("button", { onClick: handleInstallClick, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "התקן אפליקציה" },
-                React.createElement(InstallIcon, { className: "w-6 h-6" })
               )
             ),
             React.createElement("div", { className: "flex items-center bg-gray-700 rounded-full p-1" },
