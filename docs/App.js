@@ -513,6 +513,35 @@ export default function App() {
       playStationAtIndex(globalIndex);
   }, [currentStationIndex, displayedStations, stations, playStationAtIndex]);
     
+  // Media Session API Management
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) {
+      return;
+    }
+
+    if (currentStation) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: `${currentStation.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`,
+        artist: trackInfo?.current || 'רדיו פרימיום',
+        artwork: [{ src: currentStation.favicon, sizes: '96x96', type: 'image/png' }],
+      });
+
+      navigator.mediaSession.setActionHandler('play', async () => handlePlayPause());
+      navigator.mediaSession.setActionHandler('pause', async () => handlePlayPause());
+      navigator.mediaSession.setActionHandler('nexttrack', async () => handleNext());
+      navigator.mediaSession.setActionHandler('previoustrack', async () => handlePrev());
+
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    } else {
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.playbackState = 'none';
+      navigator.mediaSession.setActionHandler('play', null);
+      navigator.mediaSession.setActionHandler('pause', null);
+      navigator.mediaSession.setActionHandler('nexttrack', null);
+      navigator.mediaSession.setActionHandler('previoustrack', null);
+    }
+  }, [currentStation, isPlaying, trackInfo, handlePlayPause, handleNext, handlePrev]);
+
   const handleTouchStart = useCallback((e) => {
       if (e.touches.length === 2) {
           e.preventDefault();
