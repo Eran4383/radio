@@ -1,0 +1,16 @@
+{
+  "name": "רדיו פרימיום",
+  "short_name": "רדיו פרימיום",
+  "description": "רדיו פרימיום - אפליקציית רדיו ישראלית חינמית ונקייה, מותאמת לשימוש ברכב ובכל מקום. האזן לתחנות הרדיו המובילות בישראל עם ממשק פשוט וידידותי.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
