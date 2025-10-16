@@ -17,7 +17,7 @@ const urlsToCache = [
   './components/Visualizer.js',
   './components/InteractiveText.js',
   './services/scheduleService.js',
-  './manifest.json',
+  './manifest.webmanifest',
   'https://cdn.tailwindcss.com',
   'https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap'
 ];
