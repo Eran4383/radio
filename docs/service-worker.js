@@ -18,6 +18,8 @@ const urlsToCache = [
   './components/InteractiveText.js',
   './services/scheduleService.js',
   './manifest.json',
+  './images/icon-192.png',
+  './images/icon-512.png',
   'https://cdn.tailwindcss.com',
   'https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap'
 ];
