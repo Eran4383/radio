@@ -5,7 +5,7 @@ export type CategoryType = 'style' | 'identity' | 'region' | 'nameStructure';
 // Helper function to check for keywords in station name or tags
 const checkKeywords = (station: Station, keywords: string[]): boolean => {
     const name = station.name.toLowerCase();
-    const tags = station.tags.toLowerCase();
+    const tags = (station.tags || '').toLowerCase(); // FIX: Prevent crash if tags are undefined
     return keywords.some(kw => name.includes(kw.toLowerCase()) || tags.includes(kw.toLowerCase()));
 };
 

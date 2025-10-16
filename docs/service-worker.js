@@ -1,4 +1,4 @@
-const CACHE_NAME = 'my-radio-cache-v3';
+const CACHE_NAME = 'my-radio-cache-v4';
 const urlsToCache = [
   '.',
   './index.html',
@@ -6,7 +6,11 @@ const urlsToCache = [
   './App.js',
   './types.js',
   './constants.js',
+  './icon.svg',
   './services/radioService.js',
+  './services/scheduleService.js',
+  './services/stationSpecificService.js',
+  './services/categoryService.js',
   './hooks/useFavorites.js',
   './components/Icons.js',
   './components/Player.js',
@@ -16,7 +20,7 @@ const urlsToCache = [
   './components/NowPlaying.js',
   './components/Visualizer.js',
   './components/InteractiveText.js',
-  './services/scheduleService.js',
+  './components/MarqueeText.js',
   './manifest.json',
   './images/icon-192.png',
   './images/icon-512.png',
