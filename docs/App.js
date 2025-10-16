@@ -570,10 +570,8 @@ export default function App() {
     React.createElement("div", { className: "min-h-screen bg-bg-primary text-text-primary flex flex-col" },
       React.createElement("header", { className: "p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md" },
         React.createElement("div", { className: "max-w-7xl mx-auto flex items-center justify-between gap-4" },
-            React.createElement("div", { className: "flex items-center gap-2" },
-              React.createElement("button", { onClick: () => setIsSettingsOpen(true), className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הגדרות" },
-                React.createElement(MenuIcon, { className: "w-6 h-6" })
-              )
+            React.createElement("button", { onClick: () => setIsSettingsOpen(true), className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הגדרות" },
+              React.createElement(MenuIcon, { className: "w-6 h-6" })
             ),
             React.createElement("div", { className: "flex items-center bg-gray-700 rounded-full p-1" },
               React.createElement("button", { onClick: () => setFilter(StationFilter.All), className: `px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.All ? 'bg-accent text-white' : 'text-gray-300'}`}, StationFilter.All),

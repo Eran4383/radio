@@ -598,11 +598,9 @@ export default function App() {
     <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col">
       <header className="p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הגדרות">
-                <MenuIcon className="w-6 h-6" />
-              </button>
-            </div>
+            <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הגדרות">
+              <MenuIcon className="w-6 h-6" />
+            </button>
             
             <div className="flex items-center bg-gray-700 rounded-full p-1">
               <button 
