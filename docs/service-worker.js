@@ -1,4 +1,4 @@
-const CACHE_NAME = 'my-radio-cache-v4';
+const CACHE_NAME = 'my-radio-cache-v1';
 const urlsToCache = [
   '.',
   './index.html',
@@ -6,11 +6,7 @@ const urlsToCache = [
   './App.js',
   './types.js',
   './constants.js',
-  './icon.svg',
   './services/radioService.js',
-  './services/scheduleService.js',
-  './services/stationSpecificService.js',
-  './services/categoryService.js',
   './hooks/useFavorites.js',
   './components/Icons.js',
   './components/Player.js',
@@ -20,10 +16,8 @@ const urlsToCache = [
   './components/NowPlaying.js',
   './components/Visualizer.js',
   './components/InteractiveText.js',
-  './components/MarqueeText.js',
+  './services/scheduleService.js',
   './manifest.json',
-  './images/icon-192.png',
-  './images/icon-512.png',
   'https://cdn.tailwindcss.com',
   'https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap'
 ];
@@ -91,6 +85,6 @@ self.addEventListener('activate', event => {
           }
         })
       );
-    }).then(() => self.clients.claim()) // Ensure the new service worker takes control immediately
+    })
   );
 });

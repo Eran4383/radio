@@ -1,7 +1,7 @@
 // Helper function to check for keywords in station name or tags
 const checkKeywords = (station, keywords) => {
     const name = station.name.toLowerCase();
-    const tags = (station.tags || '').toLowerCase(); // FIX: Prevent crash if tags are undefined
+    const tags = station.tags.toLowerCase();
     return keywords.some(kw => name.includes(kw.toLowerCase()) || tags.includes(kw.toLowerCase()));
 };
 
