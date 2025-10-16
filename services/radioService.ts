@@ -183,6 +183,15 @@ export const fetchIsraeliStations = async (): Promise<Station[]> => {
   });
   
   const finalStations = Array.from(uniqueStations.values());
+
+  // Add priority index to each final station object
+  finalStations.forEach(station => {
+    const priorityIndex = PRIORITY_STATIONS.findIndex(p => p.name === station.name);
+    if (priorityIndex !== -1) {
+      station.priority = priorityIndex;
+    }
+  });
+
   console.log(`Successfully combined and de-duplicated ${finalStations.length} stations from all sources.`);
   return finalStations;
 };

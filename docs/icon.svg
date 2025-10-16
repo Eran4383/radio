@@ -1,15 +1,54 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-    <defs>
-        <style>
-            .bg { fill: #111827; }
-            .accent { fill: #14b8a6; }
-            .light { fill: #9ca3af; }
-        </style>
-    </defs>
-    <rect class="bg" width="100" height="100" rx="15"/>
-    <rect class="accent" x="10" y="20" width="80" height="40" rx="5"/>
-    <rect class="light" x="15" y="25" width="40" height="30" rx="3"/>
-    <circle class="bg" cx="70" cy="40" r="10"/>
-    <circle class="light" cx="70" cy="40" r="3"/>
-    <rect class="light" x="15" y="70" width="70" height="10" rx="3"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="gold-gradient" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="#0c1427"/>
+  
+  <!-- Outer Frame -->
+  <rect x="16" y="16" width="480" height="480" rx="80" fill="none" stroke="url(#gold-gradient)" stroke-width="24"/>
+  
+  <!-- Inner Background -->
+  <rect x="42" y="42" width="428" height="428" rx="64" fill="#081020"/>
+  
+  <!-- Phone -->
+  <rect x="192" y="108" width="128" height="296" rx="24" fill="url(#gold-gradient)"/>
+  <rect x="202" y="118" width="108" height="276" rx="16" fill="#081020"/>
+  
+  <!-- Music Note -->
+  <path fill="url(#gold-gradient)" d="M232 212 v92 a28 28 0 1 0 28 28 v-108 l48 -12 v-28 Z"/>
+
+  <!-- Sound Waves from Phone -->
+  <path stroke="url(#gold-gradient)" stroke-width="8" fill="none" stroke-linecap="round" d="M336 172 A 40 40 0 0 1 336 228 M176 172 A 40 40 0 0 0 176 228"/>
+  
+  <!-- EQ Bars -->
+  <g fill="url(#gold-gradient)">
+    <rect x="112" y="272" width="20" height="60" rx="8"/>
+    <rect x="142" y="252" width="20" height="100" rx="8"/>
+    <rect x="172" y="282" width="20" height="40" rx="8"/>
+  </g>
+  
+  <!-- Speaker -->
+  <g fill="url(#gold-gradient)">
+    <path d="M320 252 l52 28 v52 l-52 -28 Z"/>
+    <rect x="382" y="242" width="20" height="120" rx="8"/>
+  </g>
+  
+  <!-- Circuit Lines -->
+  <g stroke="#22D3EE" stroke-width="6" fill="none" stroke-linecap="round">
+    <!-- Left -->
+    <path d="M102 292 h-40 v-40 h-30"/>
+    <circle cx="62" cy="292" r="8" fill="#22D3EE"/>
+    <path d="M102 332 h-60 v40 h-20"/>
+    <circle cx="42" cy="332" r="8" fill="#22D3EE"/>
+    
+    <!-- Right -->
+    <path d="M410 292 h40 v-40 h30"/>
+    <circle cx="450" cy="292" r="8" fill="#22D3EE"/>
+    <path d="M410 332 h60 v40 h20"/>
+    <circle cx="470" cy="332" r="8" fill="#22D3EE"/>
+  </g>
 </svg>

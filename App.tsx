@@ -461,21 +461,9 @@ export default function App() {
         break;
       case 'priority':
       default:
-        const getPriorityIndex = (stationName: string): number => {
-          const lowerCaseName = stationName.toLowerCase();
-          return PRIORITY_STATIONS.findIndex(priorityStation => 
-            priorityStation.aliases.some(alias => 
-              lowerCaseName.includes(alias.toLowerCase())
-            )
-          );
-        };
-        
         stationsToSort.sort((a, b) => {
-          let aPriority = getPriorityIndex(a.name);
-          let bPriority = getPriorityIndex(b.name);
-
-          if (aPriority === -1) aPriority = Infinity;
-          if (bPriority === -1) bPriority = Infinity;
+          const aPriority = a.priority ?? Infinity;
+          const bPriority = b.priority ?? Infinity;
           
           if (aPriority !== bPriority) {
             return aPriority - bPriority;

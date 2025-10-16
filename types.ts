@@ -7,6 +7,7 @@ export interface Station {
   countrycode: string;
   codec: string;
   bitrate: number;
+  priority?: number;
 }
 
 export interface StationTrackInfo {
