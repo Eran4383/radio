@@ -1,4 +1,4 @@
-const CACHE_NAME = 'my-radio-cache-v2';
+const CACHE_NAME = 'my-radio-cache-v3';
 const urlsToCache = [
   '.',
   './index.html',
@@ -25,6 +25,7 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', event => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
@@ -83,10 +84,11 @@ self.addEventListener('activate', event => {
       return Promise.all(
         cacheNames.map(cacheName => {
           if (cacheWhitelist.indexOf(cacheName) === -1) {
+            console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
 });
