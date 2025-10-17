@@ -264,25 +264,50 @@ const Player = ({
           artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
         });
 
-        // Wrap handlers in an async function to prevent the media notification from
-        // closing immediately on mobile when an action is performed.
-        const createDelayedHandler = (handler) => {
-            return async () => {
-                try {
-                    handler();
-                    // This short delay gives the app time to process the state change
-                    // and begin playback of the new stream before the handler promise resolves.
-                    await new Promise(resolve => setTimeout(resolve, 250));
-                } catch (e) {
-                    console.error('Media session action failed:', e);
-                }
-            };
-        };
+        const createTrackChangeHandler = (handler) => {
+          return async () => {
+            const audio = audioRef.current;
+            handler(); // Call the original handler to start changing the station
+            
+            if (audio) {
+              try {
+                // Return a promise that resolves when the audio actually starts playing
+                await new Promise(resolve => {
+                  let timeoutId;
 
-        navigator.mediaSession.setActionHandler('play', createDelayedHandler(onPlayPause));
-        navigator.mediaSession.setActionHandler('pause', createDelayedHandler(onPlayPause));
-        navigator.mediaSession.setActionHandler('nexttrack', createDelayedHandler(onNext));
-        navigator.mediaSession.setActionHandler('previoustrack', createDelayedHandler(onPrev));
+                  const onPlaying = () => {
+                    clearTimeout(timeoutId);
+                    audio.removeEventListener('error', onError);
+                    resolve();
+                  };
+
+                  const onError = () => {
+                    clearTimeout(timeoutId);
+                    audio.removeEventListener('playing', onPlaying);
+                    resolve(); // Resolve on error too to not block the UI
+                  };
+
+                  audio.addEventListener('playing', onPlaying, { once: true });
+                  audio.addEventListener('error', onError, { once: true });
+
+                  // Fallback timeout in case 'playing' never fires
+                  timeoutId = window.setTimeout(() => {
+                    audio.removeEventListener('playing', onPlaying);
+                    audio.removeEventListener('error', onError);
+                    resolve();
+                  }, 2500);
+                });
+              } catch (e) {
+                console.error('Media session action failed:', e);
+              }
+            }
+          };
+        };
+        
+        navigator.mediaSession.setActionHandler('play', onPlayPause);
+        navigator.mediaSession.setActionHandler('pause', onPlayPause);
+        navigator.mediaSession.setActionHandler('nexttrack', createTrackChangeHandler(onNext));
+        navigator.mediaSession.setActionHandler('previoustrack', createTrackChangeHandler(onPrev));
 
         if (isPlaying) {
             navigator.mediaSession.playbackState = 'playing';

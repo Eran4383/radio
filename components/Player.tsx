@@ -202,4 +202,265 @@ const Player: React.FC<PlayerProps> = ({
     const audio = audioRef.current;
     if (!audio) return;
     
-    const
+    const playAudio = async () => {
+      if (station && isPlaying) {
+        setupAudioContext(); // Ensure context is setup before playing
+        if(audioContextRef.current?.state === 'suspended') {
+            await audioContextRef.current.resume();
+        }
+        
+        const newSrc = `${CORS_PROXY_URL}${station.url_resolved}`;
+        if (audio.src !== newSrc) {
+            audio.src = newSrc;
+            audio.crossOrigin = 'anonymous';
+            audio.load(); // Explicitly tell the browser to load the new source
+        }
+        try {
+          await audio.play();
+          setError(null);
+        } catch (e: any) {
+          console.error("Error playing audio:", e);
+          if (e.name !== 'AbortError') {
+            setError("לא ניתן לנגן את התחנה.");
+            setIsActuallyPlaying(false);
+          }
+        }
+      } else {
+        audio.pause();
+      }
+    };
+    
+    playAudio();
+
+  }, [station, isPlaying, setupAudioContext]);
+
+  // Handle volume changes
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+  
+  // Apply EQ settings
+  useEffect(() => {
+    if (!bassFilterRef.current || !midFilterRef.current || !trebleFilterRef.current) return;
+    
+    const settings = eqPreset === 'custom' 
+      ? customEqSettings 
+      : EQ_PRESETS[eqPreset as Exclude<EqPreset, 'custom'>];
+
+    if (settings) {
+      bassFilterRef.current.gain.value = settings.bass;
+      midFilterRef.current.gain.value = settings.mid;
+      trebleFilterRef.current.gain.value = settings.treble;
+    }
+  }, [eqPreset, customEqSettings]);
+
+  // Visualizer data loop
+  useEffect(() => {
+    const loop = () => {
+      if (analyserRef.current && isActuallyPlaying) {
+        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getByteFrequencyData(dataArray);
+        setFrequencyData(dataArray);
+      }
+      animationFrameRef.current = requestAnimationFrame(loop);
+    };
+
+    if (isActuallyPlaying) {
+      animationFrameRef.current = requestAnimationFrame(loop);
+    }
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [isActuallyPlaying, setFrequencyData]);
+
+  // Update Media Session API
+  useEffect(() => {
+    if ('mediaSession' in navigator) {
+      if (station) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: `${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`,
+          artist: trackInfo?.current || 'רדיו פרימיום',
+          artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
+        });
+
+        const createTrackChangeHandler = (handler: () => void) => {
+          return async () => {
+            const audio = audioRef.current;
+            handler(); // Call the original handler to start changing the station
+            
+            if (audio) {
+              try {
+                // Return a promise that resolves when the audio actually starts playing
+                await new Promise<void>(resolve => {
+                  let timeoutId: number;
+
+                  const onPlaying = () => {
+                    clearTimeout(timeoutId);
+                    audio.removeEventListener('error', onError);
+                    resolve();
+                  };
+
+                  const onError = () => {
+                    clearTimeout(timeoutId);
+                    audio.removeEventListener('playing', onPlaying);
+                    resolve(); // Resolve on error too to not block the UI
+                  };
+
+                  audio.addEventListener('playing', onPlaying, { once: true });
+                  audio.addEventListener('error', onError, { once: true });
+
+                  // Fallback timeout in case 'playing' never fires
+                  timeoutId = window.setTimeout(() => {
+                    audio.removeEventListener('playing', onPlaying);
+                    audio.removeEventListener('error', onError);
+                    resolve();
+                  }, 2500);
+                });
+              } catch (e) {
+                console.error('Media session action failed:', e);
+              }
+            }
+          };
+        };
+        
+        navigator.mediaSession.setActionHandler('play', onPlayPause);
+        navigator.mediaSession.setActionHandler('pause', onPlayPause);
+        navigator.mediaSession.setActionHandler('nexttrack', createTrackChangeHandler(onNext));
+        navigator.mediaSession.setActionHandler('previoustrack', createTrackChangeHandler(onPrev));
+
+        if (isPlaying) {
+            navigator.mediaSession.playbackState = 'playing';
+        } else {
+            navigator.mediaSession.playbackState = 'paused';
+        }
+      } else {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.playbackState = 'none';
+        navigator.mediaSession.setActionHandler('play', null);
+        navigator.mediaSession.setActionHandler('pause', null);
+        navigator.mediaSession.setActionHandler('nexttrack', null);
+        navigator.mediaSession.setActionHandler('previoustrack', null);
+      }
+    }
+  }, [station, isPlaying, trackInfo, onPlayPause, onNext, onPrev]);
+
+  const handlePlaying = () => {
+    setIsActuallyPlaying(true);
+    setError(null);
+  };
+  
+  const handlePause = () => {
+    setIsActuallyPlaying(false);
+  }
+
+  const handleWaiting = () => {
+    setIsActuallyPlaying(false);
+  };
+
+  const handleError = () => {
+    setError("שגיאה בניגון התחנה.");
+    setIsActuallyPlaying(false);
+  };
+  
+  if (!station) {
+    return null; // Don't render the player if no station is selected
+  }
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-30">
+      <div className="relative bg-bg-secondary/80 backdrop-blur-lg shadow-t-lg">
+        {isVisualizerEnabled && isPlaying && <PlayerVisualizer frequencyData={frequencyData} />}
+        <div className="max-w-7xl mx-auto p-4 flex items-center justify-between gap-4">
+          
+          <div 
+            className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+            onClick={onOpenNowPlaying}
+            role="button"
+            aria-label="פתח מסך ניגון"
+          >
+            <img 
+              src={station.favicon} 
+              alt={station.name} 
+              className="w-14 h-14 rounded-md bg-gray-700 object-contain flex-shrink-0"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://picsum.photos/48'; }}
+            />
+            <div className="min-w-0" key={station.stationuuid}>
+               <MarqueeText
+                  loopDelay={marqueeDelay}
+                  duration={marqueeConfig.duration}
+                  startAnimation={startAnimation}
+                  isOverflowing={marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled}
+                  contentRef={stationNameRef}
+                  className="font-bold text-text-primary"
+              >
+                  <span>{`${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`}</span>
+              </MarqueeText>
+
+              <div className="text-sm text-text-secondary leading-tight h-[1.25rem] flex items-center">
+                {error ? (
+                  <span className="text-red-400">{error}</span>
+                ) : trackInfo?.current ? (
+                  <MarqueeText
+                      loopDelay={marqueeDelay}
+                      duration={marqueeConfig.duration}
+                      startAnimation={startAnimation}
+                      isOverflowing={marqueeConfig.isOverflowing[1] && isMarqueeCurrentTrackEnabled}
+                      contentRef={currentTrackRef}
+                  >
+                      <InteractiveText text={trackInfo.current} />
+                  </MarqueeText>
+                ) : null}
+              </div>
+               {!error && showNextSong && trackInfo?.next && (
+                  <div className="text-xs opacity-80 h-[1.125rem] flex items-center">
+                    <span className="font-semibold flex-shrink-0">הבא:&nbsp;</span>
+                    <MarqueeText 
+                        loopDelay={marqueeDelay} 
+                        duration={marqueeConfig.duration}
+                        startAnimation={startAnimation}
+                        isOverflowing={marqueeConfig.isOverflowing[2] && isMarqueeNextTrackEnabled}
+                        contentRef={nextTrackRef}
+                    >
+                      <span>{trackInfo.next}</span>
+                    </MarqueeText>
+                  </div>
+                )}
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-1 sm:gap-2">
+             <button onClick={onPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הקודם">
+                <SkipNextIcon className="w-6 h-6" />
+            </button>
+            <button 
+              onClick={onPlayPause} 
+              className="p-3 bg-accent text-white rounded-full shadow-md"
+              aria-label={isPlaying ? "השהה" : "נגן"}
+            >
+              {isPlaying ? <PauseIcon className="w-7 h-7" /> : <PlayIcon className="w-7 h-7" />}
+            </button>
+            <button onClick={onNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הבא">
+                <SkipPreviousIcon className="w-6 h-6" />
+            </button>
+          </div>
+
+          <audio 
+            ref={audioRef}
+            onPlaying={handlePlaying}
+            onPause={handlePause}
+            onWaiting={handleWaiting}
+            onError={handleError}
+            crossOrigin="anonymous"
+          ></audio>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Player;
