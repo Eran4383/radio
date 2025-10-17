@@ -287,11 +287,26 @@ const Player: React.FC<PlayerProps> = ({
           artist: trackInfo?.current || 'רדיו פרימיום',
           artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
         });
+        
+        // Wrap handlers in an async function to prevent the media notification from
+        // closing immediately on mobile when an action is performed.
+        const createDelayedHandler = (handler: () => void) => {
+            return async () => {
+                try {
+                    handler();
+                    // This short delay gives the app time to process the state change
+                    // and begin playback of the new stream before the handler promise resolves.
+                    await new Promise(resolve => setTimeout(resolve, 250));
+                } catch (e) {
+                    console.error('Media session action failed:', e);
+                }
+            };
+        };
 
-        navigator.mediaSession.setActionHandler('play', onPlayPause);
-        navigator.mediaSession.setActionHandler('pause', onPlayPause);
-        navigator.mediaSession.setActionHandler('nexttrack', onNext);
-        navigator.mediaSession.setActionHandler('previoustrack', onPrev);
+        navigator.mediaSession.setActionHandler('play', createDelayedHandler(onPlayPause));
+        navigator.mediaSession.setActionHandler('pause', createDelayedHandler(onPlayPause));
+        navigator.mediaSession.setActionHandler('nexttrack', createDelayedHandler(onNext));
+        navigator.mediaSession.setActionHandler('previoustrack', createDelayedHandler(onPrev));
 
         if (isPlaying) {
             navigator.mediaSession.playbackState = 'playing';
@@ -301,6 +316,10 @@ const Player: React.FC<PlayerProps> = ({
       } else {
         navigator.mediaSession.metadata = null;
         navigator.mediaSession.playbackState = 'none';
+        navigator.mediaSession.setActionHandler('play', null);
+        navigator.mediaSession.setActionHandler('pause', null);
+        navigator.mediaSession.setActionHandler('nexttrack', null);
+        navigator.mediaSession.setActionHandler('previoustrack', null);
       }
     }
   }, [station, isPlaying, trackInfo, onPlayPause, onNext, onPrev]);
