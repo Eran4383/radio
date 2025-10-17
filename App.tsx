@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService';
-import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder } from './types';
+// FIX: Import GRID_SIZES to resolve 'Cannot find name' error.
+import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES } from './types';
 import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
@@ -11,6 +12,7 @@ import { MenuIcon } from './components/Icons';
 import { getCurrentProgram } from './services/scheduleService';
 import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/stationSpecificService';
 import StationListSkeleton from './components/StationListSkeleton';
+// FIX: Import CategoryType to resolve 'Cannot find name' error.
 import { getCategory, CategoryType } from './services/categoryService';
 
 
@@ -78,6 +80,7 @@ export default function App() {
   const [isStreamActive, setIsStreamActive] = useState(false);
   const pinchDistRef = useRef<number>(0);
   const PINCH_THRESHOLD = 40; // pixels
+  const [isSwitchingFromMedia, setIsSwitchingFromMedia] = useState(false);
   
   // State loaded from LocalStorage
   const [customOrder, setCustomOrder] = useState<string[]>(() => {
@@ -96,14 +99,8 @@ export default function App() {
 
   const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
     let savedSort = localStorage.getItem(LAST_SORT_KEY) as SortOrder | 'name' | 'tags';
-    // Handle legacy 'name' value from older versions
-    if (savedSort === 'name') {
-        savedSort = 'name_asc';
-    }
-    // Handle legacy 'tags' value
-    if (savedSort === 'tags') {
-        savedSort = 'category_style';
-    }
+    if (savedSort === 'name') savedSort = 'name_asc';
+    if (savedSort === 'tags') savedSort = 'category_style';
     const customOrderExists = !!localStorage.getItem(CUSTOM_ORDER_KEY);
 
     if (savedSort) {
@@ -169,11 +166,11 @@ export default function App() {
       const saved = localStorage.getItem(SHOW_NEXT_SONG_KEY);
       return saved ? JSON.parse(saved) : true;
   });
-
+    
   const [gridSize, setGridSize] = useState<GridSize>(() => {
     const saved = localStorage.getItem(GRID_SIZE_KEY);
-    // 1 is smallest, 5 is largest. Let's default to 3.
-    return saved ? (JSON.parse(saved) as GridSize) : 3;
+    const parsed = saved ? parseInt(saved, 10) : 3;
+    return (GRID_SIZES.includes(parsed as GridSize)) ? parsed as GridSize : 3;
   });
   
   const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState<boolean>(() => {
@@ -193,7 +190,6 @@ export default function App() {
   
   const [marqueeSpeed, setMarqueeSpeed] = useState<number>(() => {
     const saved = localStorage.getItem(MARQUEE_SPEED_KEY);
-    // Defaulting to 6 on a 1-10 scale. Slower than the old default.
     return saved ? JSON.parse(saved) : 6;
   });
 
@@ -202,238 +198,20 @@ export default function App() {
       return saved ? JSON.parse(saved) : 3;
   });
 
-
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
   
-  const currentStation = useMemo(() => {
-     if (currentStationIndex !== null && stations[currentStationIndex]) {
-        return stations[currentStationIndex];
-     }
-     return null;
-  }, [stations, currentStationIndex]);
-
-  // Fetch stations on initial load
-  useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const fetchedStations = await fetchIsraeliStations();
-        if (fetchedStations.length === 0) {
-          setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
-        } else {
-          setStations(fetchedStations);
-        }
-      } catch (err) {
-        setError('אירעה שגיאה בטעינת התחנות.');
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
-  }, []);
-
-  // Restore last played station once station list is loaded
-  useEffect(() => {
-    if (stations.length > 0 && currentStationIndex === null) {
-        const lastStationUuid = localStorage.getItem(LAST_STATION_KEY);
-        if (lastStationUuid) {
-            const stationIndex = stations.findIndex(s => s.stationuuid === lastStationUuid);
-            if (stationIndex !== -1) {
-                setCurrentStationIndex(stationIndex);
-            }
-        }
-    }
-  }, [stations, currentStationIndex]);
-  
-  // Fetch station metadata (current song/program)
-  useEffect(() => {
-    let intervalId: number | undefined;
-
-    const fetchAndSetInfo = async () => {
-      if (!currentStation) return;
-      
-      let finalInfo: StationTrackInfo | null = null;
-      const stationName = currentStation.name;
-
-      // New logic: Check if there's a specific, high-accuracy API for this station.
-      if (hasSpecificHandler(stationName)) {
-        // This station has a dedicated API. Use it exclusively for live data.
-        const specificInfo = await fetchStationSpecificTrackInfo(stationName);
-        if (specificInfo) {
-          finalInfo = specificInfo;
-        } else {
-          // If the specific API fails, only fall back to the schedule, not the generic API.
-          const scheduledProgram = getCurrentProgram(stationName);
-          if (scheduledProgram) {
-            finalInfo = { program: scheduledProgram, current: null, next: null };
-          }
-        }
-      } else {
-        // This station has NO dedicated API. Use the generic Radio-Browser API.
-        const songTitle = await fetchLiveTrackInfo(currentStation.stationuuid);
-        if (songTitle && songTitle.toLowerCase() !== stationName.toLowerCase()) {
-          finalInfo = { program: null, current: songTitle, next: null };
-        } else {
-          // If the generic API fails, fall back to the schedule.
-          const scheduledProgram = getCurrentProgram(stationName);
-          if (scheduledProgram) {
-            finalInfo = { program: scheduledProgram, current: null, next: null };
-          }
-        }
-      }
-      
-      setTrackInfo(finalInfo);
-    };
-
-    if (currentStation) {
-      fetchAndSetInfo(); 
-      intervalId = window.setInterval(fetchAndSetInfo, 20000);
-    } else {
-      setTrackInfo(null);
-    }
-
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [currentStation]);
-
-  // Effects to save state changes to localStorage
-  useEffect(() => {
-    document.documentElement.className = theme;
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
-
-  useEffect(() => {
-    localStorage.setItem(LAST_FILTER_KEY, filter);
-  }, [filter]);
-
-  useEffect(() => {
-    localStorage.setItem(LAST_SORT_KEY, sortOrder);
-  }, [sortOrder]);
-  
-  const handleSetVolume = (newVolume: number) => {
-    setVolume(newVolume);
-    localStorage.setItem(VOLUME_KEY, newVolume.toString());
-  };
-
-  const handleSetEqPreset = (preset: EqPreset) => {
-    setEqPreset(preset);
-    localStorage.setItem(EQ_KEY, preset);
-  };
-
-  const handleSetCustomEqSettings = (settings: CustomEqSettings) => {
-    setCustomEqSettings(settings);
-    localStorage.setItem(CUSTOM_EQ_KEY, JSON.stringify(settings));
-  };
-  
-  const handleSetIsNowPlayingVisualizerEnabled = (enabled: boolean) => {
-    setIsNowPlayingVisualizerEnabled(enabled);
-    localStorage.setItem(NOW_PLAYING_VISUALIZER_ENABLED_KEY, JSON.stringify(enabled));
-  };
-
-  const handleSetIsPlayerBarVisualizerEnabled = (enabled: boolean) => {
-    setIsPlayerBarVisualizerEnabled(enabled);
-    localStorage.setItem(PLAYER_BAR_VISUALIZER_ENABLED_KEY, JSON.stringify(enabled));
-  };
-  
-  const handleSetStatusIndicatorEnabled = (enabled: boolean) => {
-    setIsStatusIndicatorEnabled(enabled);
-    localStorage.setItem(STATUS_INDICATOR_ENABLED_KEY, JSON.stringify(enabled));
-  };
-
-  const handleSetIsVolumeControlVisible = (visible: boolean) => {
-    setIsVolumeControlVisible(visible);
-    localStorage.setItem(VOLUME_CONTROL_VISIBLE_KEY, JSON.stringify(visible));
-  };
-  
-  const handleSetShowNextSong = (enabled: boolean) => {
-    setShowNextSong(enabled);
-    localStorage.setItem(SHOW_NEXT_SONG_KEY, JSON.stringify(enabled));
-  };
-    
-  const handleSetGridSize = useCallback((size: GridSize) => {
-    setGridSize(size);
-    localStorage.setItem(GRID_SIZE_KEY, JSON.stringify(size));
-  }, []);
-  
-  const handleSetIsMarqueeProgramEnabled = (enabled: boolean) => {
-    setIsMarqueeProgramEnabled(enabled);
-    localStorage.setItem(MARQUEE_PROGRAM_ENABLED_KEY, JSON.stringify(enabled));
-  };
-
-  const handleSetIsMarqueeCurrentTrackEnabled = (enabled: boolean) => {
-    setIsMarqueeCurrentTrackEnabled(enabled);
-    localStorage.setItem(MARQUEE_CURRENT_ENABLED_KEY, JSON.stringify(enabled));
-  };
-  
-  const handleSetIsMarqueeNextTrackEnabled = (enabled: boolean) => {
-    setIsMarqueeNextTrackEnabled(enabled);
-    localStorage.setItem(MARQUEE_NEXT_ENABLED_KEY, JSON.stringify(enabled));
-  };
-
-  const handleSetMarqueeSpeed = (speed: number) => {
-      setMarqueeSpeed(speed);
-      localStorage.setItem(MARQUEE_SPEED_KEY, JSON.stringify(speed));
-  };
-
-  const handleSetMarqueeDelay = (delay: number) => {
-      setMarqueeDelay(delay);
-      localStorage.setItem(MARQUEE_DELAY_KEY, JSON.stringify(delay));
-  };
-
-  const handleCycleVisualizerStyle = useCallback(() => {
-    const currentIndex = VISUALIZER_STYLES.indexOf(visualizerStyle);
-    const nextIndex = (currentIndex + 1) % VISUALIZER_STYLES.length;
-    const newStyle = VISUALIZER_STYLES[nextIndex];
-    setVisualizerStyle(newStyle);
-    localStorage.setItem(VISUALIZER_STYLE_KEY, newStyle);
-  }, [visualizerStyle]);
-
-  const saveCustomOrder = (newOrder: string[]) => {
-      setCustomOrder(newOrder);
-      localStorage.setItem(CUSTOM_ORDER_KEY, JSON.stringify(newOrder));
-  }
-
-  const handleReorder = (reorderedDisplayedUuids: string[]) => {
-      const allStationUuids = stations.map(s => s.stationuuid);
-      const currentOrder = customOrder.length > 0 ? customOrder : allStationUuids;
-
-      const reorderedSet = new Set(reorderedDisplayedUuids);
-      const newOrder = [...reorderedDisplayedUuids];
-
-      currentOrder.forEach(uuid => {
-        if (!reorderedSet.has(uuid)) {
-          newOrder.push(uuid);
-        }
-      });
-      
-      saveCustomOrder(newOrder);
-      setSortOrder('custom');
-  };
-
-  const filteredStations = useMemo(() => {
-    if (filter === StationFilter.Favorites) {
-      return stations.filter(s => favorites.includes(s.stationuuid));
-    }
-    return stations;
-  }, [stations, filter, favorites]);
-  
   const displayedStations = useMemo(() => {
-    let stationsToSort = [...filteredStations];
-    
-    const customOrderMap = new Map(customOrder.map((uuid, index) => [uuid, index]));
+    let stationsToFilter = filter === StationFilter.Favorites
+      ? stations.filter(s => favorites.includes(s.stationuuid))
+      : stations;
 
+    let stationsToSort = [...stationsToFilter];
+    const customOrderMap = new Map(customOrder.map((uuid, index) => [uuid, index]));
     switch (sortOrder) {
       case 'custom':
         stationsToSort.sort((a, b) => {
             const indexA = customOrderMap.get(a.stationuuid);
             const indexB = customOrderMap.get(b.stationuuid);
-            
             if (typeof indexA === 'number' && typeof indexB === 'number') return indexA - indexB;
             if (typeof indexA === 'number') return -1;
             if (typeof indexB === 'number') return 1;
@@ -456,61 +234,168 @@ export default function App() {
             const categoryB = getCategory(b, categoryType);
             if (categoryA < categoryB) return -1;
             if (categoryA > categoryB) return 1;
-            return a.name.localeCompare(b.name, 'he'); // secondary sort by name
+            return a.name.localeCompare(b.name, 'he');
         });
         break;
       case 'priority':
       default:
-        const getPriorityIndex = (stationName: string): number => {
+        const getPriorityIndex = (stationName: string) => {
           const lowerCaseName = stationName.toLowerCase();
-          return PRIORITY_STATIONS.findIndex(priorityStation => 
-            priorityStation.aliases.some(alias => 
-              lowerCaseName.includes(alias.toLowerCase())
-            )
-          );
+          return PRIORITY_STATIONS.findIndex(ps => ps.aliases.some(alias => lowerCaseName.includes(alias.toLowerCase())));
         };
-        
         stationsToSort.sort((a, b) => {
           let aPriority = getPriorityIndex(a.name);
           let bPriority = getPriorityIndex(b.name);
-
           if (aPriority === -1) aPriority = Infinity;
           if (bPriority === -1) bPriority = Infinity;
-          
-          if (aPriority !== bPriority) {
-            return aPriority - bPriority;
-          }
-
+          if (aPriority !== bPriority) return aPriority - bPriority;
           return a.name.localeCompare(b.name, 'he');
         });
         break;
     }
     return stationsToSort;
-  }, [filteredStations, sortOrder, customOrder]);
+  }, [stations, filter, favorites, sortOrder, customOrder]);
+
+  const currentStation = useMemo(() => {
+     if (currentStationIndex !== null && stations[currentStationIndex]) {
+        return stations[currentStationIndex];
+     }
+     return null;
+  }, [stations, currentStationIndex]);
+
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const fetchedStations = await fetchIsraeliStations();
+        if (fetchedStations.length === 0) {
+          setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
+        } else {
+          setStations(fetchedStations);
+        }
+      } catch (err) {
+        setError('אירעה שגיאה בטעינת התחנות.');
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    if (stations.length > 0 && currentStationIndex === null) {
+        const lastStationUuid = localStorage.getItem(LAST_STATION_KEY);
+        if (lastStationUuid) {
+            const stationIndex = stations.findIndex(s => s.stationuuid === lastStationUuid);
+            if (stationIndex !== -1) {
+                setCurrentStationIndex(stationIndex);
+            }
+        }
+    }
+  }, [stations, currentStationIndex]);
+
+  useEffect(() => {
+    let intervalId: number;
+    const fetchAndSetInfo = async () => {
+      if (!currentStation) return;
+      let finalInfo: StationTrackInfo | null = null;
+      const stationName = currentStation.name;
+
+      if (hasSpecificHandler(stationName)) {
+        const specificInfo = await fetchStationSpecificTrackInfo(stationName);
+        if (specificInfo) finalInfo = specificInfo;
+        else {
+          const scheduledProgram = getCurrentProgram(stationName);
+          if (scheduledProgram) finalInfo = { program: scheduledProgram, current: null, next: null };
+        }
+      } else {
+        const songTitle = await fetchLiveTrackInfo(currentStation.stationuuid);
+        if (songTitle && songTitle.toLowerCase() !== stationName.toLowerCase()) {
+          finalInfo = { program: null, current: songTitle, next: null };
+        } else {
+          const scheduledProgram = getCurrentProgram(stationName);
+          if (scheduledProgram) finalInfo = { program: scheduledProgram, current: null, next: null };
+        }
+      }
+      setTrackInfo(finalInfo);
+    };
+
+    if (currentStation) {
+      fetchAndSetInfo(); 
+      intervalId = window.setInterval(fetchAndSetInfo, 20000);
+    } else {
+      setTrackInfo(null);
+    }
+    return () => clearInterval(intervalId);
+  }, [currentStation]);
+
+  useEffect(() => { document.documentElement.className = theme; localStorage.setItem(THEME_KEY, theme); }, [theme]);
+  useEffect(() => { localStorage.setItem(LAST_FILTER_KEY, filter); }, [filter]);
+  useEffect(() => { localStorage.setItem(LAST_SORT_KEY, sortOrder); }, [sortOrder]);
+
+  const createSaver = <T,>(key: string, setter: (value: T) => void) => useCallback((value: T) => {
+      setter(value);
+      localStorage.setItem(key, JSON.stringify(value));
+  }, [key, setter]);
+
+  const handleSetVolume = createSaver(VOLUME_KEY, setVolume);
+  const handleSetEqPreset = createSaver(EQ_KEY, setEqPreset);
+  const handleSetCustomEqSettings = createSaver(CUSTOM_EQ_KEY, setCustomEqSettings);
+  const handleSetIsNowPlayingVisualizerEnabled = createSaver(NOW_PLAYING_VISUALIZER_ENABLED_KEY, setIsNowPlayingVisualizerEnabled);
+  const handleSetIsPlayerBarVisualizerEnabled = createSaver(PLAYER_BAR_VISUALIZER_ENABLED_KEY, setIsPlayerBarVisualizerEnabled);
+  const handleSetStatusIndicatorEnabled = createSaver(STATUS_INDICATOR_ENABLED_KEY, setIsStatusIndicatorEnabled);
+  const handleSetIsVolumeControlVisible = createSaver(VOLUME_CONTROL_VISIBLE_KEY, setIsVolumeControlVisible);
+  const handleSetShowNextSong = createSaver(SHOW_NEXT_SONG_KEY, setShowNextSong);
+  const handleSetGridSize = createSaver<GridSize>(GRID_SIZE_KEY, setGridSize);
+  const handleSetIsMarqueeProgramEnabled = createSaver(MARQUEE_PROGRAM_ENABLED_KEY, setIsMarqueeProgramEnabled);
+  const handleSetIsMarqueeCurrentTrackEnabled = createSaver(MARQUEE_CURRENT_ENABLED_KEY, setIsMarqueeCurrentTrackEnabled);
+  const handleSetIsMarqueeNextTrackEnabled = createSaver(MARQUEE_NEXT_ENABLED_KEY, setIsMarqueeNextTrackEnabled);
+  const handleSetMarqueeSpeed = createSaver(MARQUEE_SPEED_KEY, setMarqueeSpeed);
+  const handleSetMarqueeDelay = createSaver(MARQUEE_DELAY_KEY, setMarqueeDelay);
+
+  const handleCycleVisualizerStyle = useCallback(() => {
+    const currentIndex = VISUALIZER_STYLES.indexOf(visualizerStyle);
+    const nextIndex = (currentIndex + 1) % VISUALIZER_STYLES.length;
+    const newStyle = VISUALIZER_STYLES[nextIndex];
+    setVisualizerStyle(newStyle);
+    localStorage.setItem(VISUALIZER_STYLE_KEY, newStyle);
+  }, [visualizerStyle]);
+
+  const saveCustomOrder = (newOrder: string[]) => {
+      setCustomOrder(newOrder);
+      localStorage.setItem(CUSTOM_ORDER_KEY, JSON.stringify(newOrder));
+  };
+
+  const handleReorder = (reorderedDisplayedUuids: string[]) => {
+      const allStationUuids = stations.map(s => s.stationuuid);
+      const currentOrder = customOrder.length > 0 ? customOrder : allStationUuids;
+      const reorderedSet = new Set(reorderedDisplayedUuids);
+      const newOrder = [...reorderedDisplayedUuids, ...currentOrder.filter(uuid => !reorderedSet.has(uuid))];
+      saveCustomOrder(newOrder);
+      setSortOrder('custom');
+  };
 
   const playStationAtIndex = useCallback((index: number) => {
     if (index >= 0 && index < stations.length) {
         localStorage.setItem(LAST_STATION_KEY, stations[index].stationuuid);
         setCurrentStationIndex(index);
-        setIsPlaying(true); // Always play when selecting a new station
+        setIsPlaying(true);
     }
   }, [stations]);
 
   const handleSelectStation = useCallback((station: Station) => {
     const stationIndexInMainList = stations.findIndex(s => s.stationuuid === station.stationuuid);
     if (stationIndexInMainList !== -1) {
-        if (currentStationIndex === stationIndexInMainList) {
-          setIsPlaying(prev => !prev); // Toggle if it's the same station
-        } else {
-          playStationAtIndex(stationIndexInMainList); // Play if it's a new station
-        }
+        if (currentStationIndex === stationIndexInMainList) setIsPlaying(prev => !prev);
+        else playStationAtIndex(stationIndexInMainList);
     }
   }, [stations, currentStationIndex, playStationAtIndex]);
 
   const handlePlayPause = useCallback(() => {
-    if (currentStation) {
-      setIsPlaying(!isPlaying);
-    } else if (displayedStations.length > 0) {
+    if (currentStation) setIsPlaying(!isPlaying);
+    else if (displayedStations.length > 0) {
         const firstStationIndex = stations.findIndex(s => s.stationuuid === displayedStations[0].stationuuid);
         playStationAtIndex(firstStationIndex);
     }
@@ -518,56 +403,75 @@ export default function App() {
   
   const handleNext = useCallback(() => {
       if (displayedStations.length === 0) return;
-      const currentStationObject = currentStationIndex !== null ? stations[currentStationIndex] : null;
-      const currentIndexInDisplayed = currentStationObject ? displayedStations.findIndex(s => s.stationuuid === currentStationObject.stationuuid) : -1;
-
-      let nextIndexInDisplayed = (currentIndexInDisplayed === -1) ? 0 : (currentIndexInDisplayed + 1) % displayedStations.length;
-      
-      const nextStation = displayedStations[nextIndexInDisplayed];
+      const currentIdxInDisplayed = currentStation ? displayedStations.findIndex(s => s.stationuuid === currentStation.stationuuid) : -1;
+      const nextIdxInDisplayed = (currentIdxInDisplayed + 1) % displayedStations.length;
+      const nextStation = displayedStations[nextIdxInDisplayed];
       const globalIndex = stations.findIndex(s => s.stationuuid === nextStation.stationuuid);
       playStationAtIndex(globalIndex);
-  }, [currentStationIndex, displayedStations, stations, playStationAtIndex]);
+  }, [currentStation, displayedStations, stations, playStationAtIndex]);
 
   const handlePrev = useCallback(() => {
       if (displayedStations.length === 0) return;
-      const currentStationObject = currentStationIndex !== null ? stations[currentStationIndex] : null;
-      const currentIndexInDisplayed = currentStationObject ? displayedStations.findIndex(s => s.stationuuid === currentStationObject.stationuuid) : -1;
-      
-      let prevIndexInDisplayed = (currentIndexInDisplayed <= 0) ? displayedStations.length - 1 : currentIndexInDisplayed - 1;
-
-      const prevStation = displayedStations[prevIndexInDisplayed];
+      const currentIdxInDisplayed = currentStation ? displayedStations.findIndex(s => s.stationuuid === currentStation.stationuuid) : -1;
+      const prevIdxInDisplayed = (currentIdxInDisplayed - 1 + displayedStations.length) % displayedStations.length;
+      const prevStation = displayedStations[prevIdxInDisplayed];
       const globalIndex = stations.findIndex(s => s.stationuuid === prevStation.stationuuid);
       playStationAtIndex(globalIndex);
-  }, [currentStationIndex, displayedStations, stations, playStationAtIndex]);
+  }, [currentStation, displayedStations, stations, playStationAtIndex]);
 
-  // Media Session API Management
+  // Media Session Action Handlers Setup
   useEffect(() => {
-    if (!('mediaSession' in navigator)) {
-      return;
-    }
+    if (!('mediaSession' in navigator)) return;
+    const setupHandler = (action: MediaSessionAction, handler: () => void) => {
+      try {
+        navigator.mediaSession.setActionHandler(action, () => {
+          setIsSwitchingFromMedia(true);
+          handler();
+        });
+      } catch (error) {
+        console.warn(`Could not set media session action for ${action}:`, error);
+      }
+    };
+    setupHandler('play', handlePlayPause);
+    setupHandler('pause', handlePlayPause);
+    setupHandler('nexttrack', handleNext);
+    setupHandler('previoustrack', handlePrev);
+    return () => {
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.setActionHandler('play', null);
+        navigator.mediaSession.setActionHandler('pause', null);
+        navigator.mediaSession.setActionHandler('nexttrack', null);
+        navigator.mediaSession.setActionHandler('previoustrack', null);
+      }
+    };
+  }, [handlePlayPause, handleNext, handlePrev]);
 
-    if (currentStation) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: `${currentStation.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`,
-        artist: trackInfo?.current || 'רדיו פרימיום',
-        artwork: [{ src: currentStation.favicon, sizes: '96x96', type: 'image/png' }],
-      });
-
-      navigator.mediaSession.setActionHandler('play', async () => handlePlayPause());
-      navigator.mediaSession.setActionHandler('pause', async () => handlePlayPause());
-      navigator.mediaSession.setActionHandler('nexttrack', async () => handleNext());
-      navigator.mediaSession.setActionHandler('previoustrack', async () => handlePrev());
-
-      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+  // Media Session Metadata and State Update
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const updateMetadata = () => {
+      if (currentStation) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: `${currentStation.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`,
+          artist: trackInfo?.current || 'רדיו פרימיום',
+          artwork: [{ src: currentStation.favicon, sizes: '96x96', type: 'image/png' }],
+        });
+        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+      } else {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.playbackState = 'none';
+      }
+    };
+    if (isSwitchingFromMedia) {
+      const timer = setTimeout(() => {
+        updateMetadata();
+        setIsSwitchingFromMedia(false);
+      }, 400);
+      return () => clearTimeout(timer);
     } else {
-      navigator.mediaSession.metadata = null;
-      navigator.mediaSession.playbackState = 'none';
-      navigator.mediaSession.setActionHandler('play', null);
-      navigator.mediaSession.setActionHandler('pause', null);
-      navigator.mediaSession.setActionHandler('nexttrack', null);
-      navigator.mediaSession.setActionHandler('previoustrack', null);
+      updateMetadata();
     }
-  }, [currentStation, isPlaying, trackInfo, handlePlayPause, handleNext, handlePrev]);
+  }, [currentStation, isPlaying, trackInfo, isSwitchingFromMedia]);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
       if (e.touches.length === 2) {
@@ -587,41 +491,26 @@ export default function App() {
           const delta = currentDist - pinchDistRef.current;
 
           if (Math.abs(delta) > PINCH_THRESHOLD) {
-              if (delta > 0) { // Pinch out -> bigger items
-                  const newSize = Math.min(5, gridSize + 1) as GridSize;
-                  handleSetGridSize(newSize);
-              } else { // Pinch in -> smaller items
-                  const newSize = Math.max(1, gridSize - 1) as GridSize;
-                  handleSetGridSize(newSize);
-              }
+              if (delta > 0) handleSetGridSize(Math.min(5, gridSize + 1) as GridSize);
+              else handleSetGridSize(Math.max(1, gridSize - 1) as GridSize);
               pinchDistRef.current = currentDist;
           }
       }
   }, [gridSize, handleSetGridSize]);
 
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-      if (e.touches.length < 2) {
-          pinchDistRef.current = 0;
-      }
-  }, []);
-
+  const handleTouchEnd = useCallback(() => { pinchDistRef.current = 0; }, []);
+  
   const handleCategorySortClick = () => {
     const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
-    const isCategorySortActive = currentCategoryIndex !== -1;
-
-    if (isCategorySortActive) {
-        const nextIndex = (currentCategoryIndex + 1) % CATEGORY_SORTS.length;
-        setSortOrder(CATEGORY_SORTS[nextIndex].order);
+    if (currentCategoryIndex !== -1) {
+        setSortOrder(CATEGORY_SORTS[(currentCategoryIndex + 1) % CATEGORY_SORTS.length].order);
     } else {
-        // If it's not a category sort, start from the first one
         setSortOrder(CATEGORY_SORTS[0].order);
     }
   };
 
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
-  const isCategorySortActive = currentCategoryIndex !== -1;
-  const categoryButtonLabel = isCategorySortActive ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
-
+  const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col">
@@ -630,63 +519,35 @@ export default function App() {
             <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הגדרות">
               <MenuIcon className="w-6 h-6" />
             </button>
-            
             <div className="flex items-center bg-gray-700 rounded-full p-1">
-              <button 
-                onClick={() => setFilter(StationFilter.All)}
-                className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.All ? 'bg-accent text-white' : 'text-gray-300'}`}
-              >
-                {StationFilter.All}
-              </button>
-              <button 
-                onClick={() => setFilter(StationFilter.Favorites)}
-                className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.Favorites ? 'bg-accent text-white' : 'text-gray-300'}`}
-              >
-                {StationFilter.Favorites}
-              </button>
+              <button onClick={() => setFilter(StationFilter.All)} className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.All ? 'bg-accent text-white' : 'text-gray-300'}`}>{StationFilter.All}</button>
+              <button onClick={() => setFilter(StationFilter.Favorites)} className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.Favorites ? 'bg-accent text-white' : 'text-gray-300'}`}>{StationFilter.Favorites}</button>
             </div>
-            
             <h1 className="text-xl sm:text-2xl font-bold text-accent">רדיו פרימיום</h1>
         </div>
         <div className="max-w-7xl mx-auto mt-4">
             <div className="flex items-center justify-center gap-2">
                 <span className="text-xs text-text-secondary">מיון:</span>
                 <div className="flex items-center bg-gray-700 rounded-full p-1 gap-1 flex-wrap justify-center">
-                    <SortButton label="אישי" order="custom" currentOrder={sortOrder} setOrder={setSortOrder} />
+                    <SortButton label="שלי" order="custom" currentOrder={sortOrder} setOrder={setSortOrder} />
                     <SortButton label="פופולריות" order="priority" currentOrder={sortOrder} setOrder={setSortOrder} />
                     <button
-                      onClick={() => {
-                        if (sortOrder === 'name_asc') {
-                          setSortOrder('name_desc');
-                        } else {
-                          setSortOrder('name_asc');
-                        }
-                      }}
+                      onClick={() => setSortOrder(sortOrder === 'name_asc' ? 'name_desc' : 'name_asc')}
                       className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
                         sortOrder.startsWith('name_') ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
                       }`}
-                    >
-                      {sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'}
-                    </button>
+                    >{sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'}</button>
                     <button
                       onClick={handleCategorySortClick}
                       className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-                        isCategorySortActive ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                        currentCategoryIndex !== -1 ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
                       }`}
-                    >
-                      {categoryButtonLabel}
-                    </button>
+                    >{categoryButtonLabel}</button>
                 </div>
             </div>
         </div>
       </header>
-
-      <main 
-        className="flex-grow pb-48"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
+      <main className="flex-grow pb-48" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
         {isLoading ? (
           <StationListSkeleton />
         ) : error ? (
@@ -707,18 +568,13 @@ export default function App() {
                 />
             ) : (
                 <div className="text-center p-8 text-text-secondary">
-                    <h2 className="text-xl font-semibold">
-                      {filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}
-                    </h2>
-                    <p>
-                      {filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}
-                    </p>
+                    <h2 className="text-xl font-semibold">{filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}</h2>
+                    <p>{filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}</p>
                 </div>
             )
         )}
       </main>
-
-      <SettingsPanel 
+      <SettingsPanel
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         currentTheme={theme}
@@ -750,33 +606,29 @@ export default function App() {
         marqueeDelay={marqueeDelay}
         onMarqueeDelayChange={handleSetMarqueeDelay}
       />
-
-      {currentStation && (
-         <NowPlaying
-          isOpen={isNowPlayingOpen}
-          onClose={() => setIsNowPlayingOpen(false)}
-          station={currentStation}
-          isPlaying={isPlaying}
-          onPlayPause={handlePlayPause}
-          onNext={handleNext}
-          onPrev={handlePrev}
-          volume={volume}
-          onVolumeChange={handleSetVolume}
-          trackInfo={trackInfo}
-          showNextSong={showNextSong}
-          frequencyData={frequencyData}
-          visualizerStyle={visualizerStyle}
-          isVisualizerEnabled={isNowPlayingVisualizerEnabled}
-          onCycleVisualizerStyle={handleCycleVisualizerStyle}
-          isVolumeControlVisible={isVolumeControlVisible}
-          marqueeDelay={marqueeDelay}
-          isMarqueeProgramEnabled={isMarqueeProgramEnabled}
-          isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled}
-          isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled}
-          marqueeSpeed={marqueeSpeed}
-        />
-      )}
-     
+      {currentStation && <NowPlaying
+        isOpen={isNowPlayingOpen}
+        onClose={() => setIsNowPlayingOpen(false)}
+        station={currentStation}
+        isPlaying={isPlaying}
+        onPlayPause={handlePlayPause}
+        onNext={handleNext}
+        onPrev={handlePrev}
+        volume={volume}
+        onVolumeChange={handleSetVolume}
+        trackInfo={trackInfo}
+        showNextSong={showNextSong}
+        frequencyData={frequencyData}
+        visualizerStyle={visualizerStyle}
+        isVisualizerEnabled={isNowPlayingVisualizerEnabled}
+        onCycleVisualizerStyle={handleCycleVisualizerStyle}
+        isVolumeControlVisible={isVolumeControlVisible}
+        marqueeDelay={marqueeDelay}
+        isMarqueeProgramEnabled={isMarqueeProgramEnabled}
+        isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled}
+        isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled}
+        marqueeSpeed={marqueeSpeed}
+      />}
       <Player
         station={currentStation}
         isPlaying={isPlaying}

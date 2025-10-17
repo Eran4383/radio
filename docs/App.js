@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService.js';
-import { THEMES, EQ_PRESET_KEYS, VISUALIZER_STYLES } from './types.js';
+import { THEMES, EQ_PRESET_KEYS, VISUALIZER_STYLES, GRID_SIZES } from './types.js';
 import Player from './components/Player.js';
 import StationList from './components/StationList.js';
 import SettingsPanel from './components/SettingsPanel.js';
@@ -71,6 +71,7 @@ export default function App() {
   const [isStreamActive, setIsStreamActive] = useState(false);
   const pinchDistRef = useRef(0);
   const PINCH_THRESHOLD = 40; // pixels
+  const [isSwitchingFromMedia, setIsSwitchingFromMedia] = useState(false);
 
   const [customOrder, setCustomOrder] = useState(() => {
     try {
@@ -88,14 +89,8 @@ export default function App() {
 
   const [sortOrder, setSortOrder] = useState(() => {
     let savedSort = localStorage.getItem(LAST_SORT_KEY);
-    // Handle legacy 'name' value from older versions
-    if (savedSort === 'name') {
-        savedSort = 'name_asc';
-    }
-    // Handle legacy 'tags' value
-    if (savedSort === 'tags') {
-        savedSort = 'category_style';
-    }
+    if (savedSort === 'name') savedSort = 'name_asc';
+    if (savedSort === 'tags') savedSort = 'category_style';
     const customOrderExists = !!localStorage.getItem(CUSTOM_ORDER_KEY);
 
     if (savedSort) {
@@ -164,8 +159,8 @@ export default function App() {
     
   const [gridSize, setGridSize] = useState(() => {
     const saved = localStorage.getItem(GRID_SIZE_KEY);
-    // 1 is smallest, 5 is largest. Let's default to 3.
-    return saved ? JSON.parse(saved) : 3;
+    const parsed = saved ? parseInt(saved, 10) : 3;
+    return (GRID_SIZES.includes(parsed)) ? parsed : 3;
   });
   
   const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState(() => {
@@ -185,7 +180,6 @@ export default function App() {
   
   const [marqueeSpeed, setMarqueeSpeed] = useState(() => {
     const saved = localStorage.getItem(MARQUEE_SPEED_KEY);
-    // Defaulting to 6 on a 1-10 scale. Slower than the old default.
     return saved ? JSON.parse(saved) : 6;
   });
 
@@ -194,9 +188,64 @@ export default function App() {
       return saved ? JSON.parse(saved) : 3;
   });
 
-
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
   
+  const displayedStations = useMemo(() => {
+    let stationsToFilter = filter === StationFilter.Favorites
+      ? stations.filter(s => favorites.includes(s.stationuuid))
+      : stations;
+
+    let stationsToSort = [...stationsToFilter];
+    const customOrderMap = new Map(customOrder.map((uuid, index) => [uuid, index]));
+    switch (sortOrder) {
+      case 'custom':
+        stationsToSort.sort((a, b) => {
+            const indexA = customOrderMap.get(a.stationuuid);
+            const indexB = customOrderMap.get(b.stationuuid);
+            if (typeof indexA === 'number' && typeof indexB === 'number') return indexA - indexB;
+            if (typeof indexA === 'number') return -1;
+            if (typeof indexB === 'number') return 1;
+            return a.name.localeCompare(b.name, 'he');
+        });
+        break;
+      case 'name_asc':
+        stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he'));
+        break;
+      case 'name_desc':
+        stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he'));
+        break;
+      case 'category_style':
+      case 'category_identity':
+      case 'category_region':
+      case 'category_nameStructure':
+        const categoryType = sortOrder.replace('category_', '');
+        stationsToSort.sort((a, b) => {
+            const categoryA = getCategory(a, categoryType);
+            const categoryB = getCategory(b, categoryType);
+            if (categoryA < categoryB) return -1;
+            if (categoryA > categoryB) return 1;
+            return a.name.localeCompare(b.name, 'he');
+        });
+        break;
+      case 'priority':
+      default:
+        const getPriorityIndex = (stationName) => {
+          const lowerCaseName = stationName.toLowerCase();
+          return PRIORITY_STATIONS.findIndex(ps => ps.aliases.some(alias => lowerCaseName.includes(alias.toLowerCase())));
+        };
+        stationsToSort.sort((a, b) => {
+          let aPriority = getPriorityIndex(a.name);
+          let bPriority = getPriorityIndex(b.name);
+          if (aPriority === -1) aPriority = Infinity;
+          if (bPriority === -1) bPriority = Infinity;
+          if (aPriority !== bPriority) return aPriority - bPriority;
+          return a.name.localeCompare(b.name, 'he');
+        });
+        break;
+    }
+    return stationsToSort;
+  }, [stations, filter, favorites, sortOrder, customOrder]);
+
   const currentStation = useMemo(() => {
      if (currentStationIndex !== null && stations[currentStationIndex]) {
         return stations[currentStationIndex];
@@ -241,37 +290,25 @@ export default function App() {
     let intervalId;
     const fetchAndSetInfo = async () => {
       if (!currentStation) return;
-      
       let finalInfo = null;
       const stationName = currentStation.name;
 
-      // New logic: Check if there's a specific, high-accuracy API for this station.
       if (hasSpecificHandler(stationName)) {
-        // This station has a dedicated API. Use it exclusively for live data.
         const specificInfo = await fetchStationSpecificTrackInfo(stationName);
-        if (specificInfo) {
-          finalInfo = specificInfo;
-        } else {
-          // If the specific API fails, only fall back to the schedule, not the generic API.
+        if (specificInfo) finalInfo = specificInfo;
+        else {
           const scheduledProgram = getCurrentProgram(stationName);
-          if (scheduledProgram) {
-            finalInfo = { program: scheduledProgram, current: null, next: null };
-          }
+          if (scheduledProgram) finalInfo = { program: scheduledProgram, current: null, next: null };
         }
       } else {
-        // This station has NO dedicated API. Use the generic Radio-Browser API.
         const songTitle = await fetchLiveTrackInfo(currentStation.stationuuid);
         if (songTitle && songTitle.toLowerCase() !== stationName.toLowerCase()) {
           finalInfo = { program: null, current: songTitle, next: null };
         } else {
-          // If the generic API fails, fall back to the schedule.
           const scheduledProgram = getCurrentProgram(stationName);
-          if (scheduledProgram) {
-            finalInfo = { program: scheduledProgram, current: null, next: null };
-          }
+          if (scheduledProgram) finalInfo = { program: scheduledProgram, current: null, next: null };
         }
       }
-      
       setTrackInfo(finalInfo);
     };
 
@@ -281,96 +318,32 @@ export default function App() {
     } else {
       setTrackInfo(null);
     }
-
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
+    return () => clearInterval(intervalId);
   }, [currentStation]);
 
-  useEffect(() => {
-    document.documentElement.className = theme;
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
+  useEffect(() => { document.documentElement.className = theme; localStorage.setItem(THEME_KEY, theme); }, [theme]);
+  useEffect(() => { localStorage.setItem(LAST_FILTER_KEY, filter); }, [filter]);
+  useEffect(() => { localStorage.setItem(LAST_SORT_KEY, sortOrder); }, [sortOrder]);
 
-  useEffect(() => {
-    localStorage.setItem(LAST_FILTER_KEY, filter);
-  }, [filter]);
+  const createSaver = (key, setter) => useCallback((value) => {
+      setter(value);
+      localStorage.setItem(key, JSON.stringify(value));
+  }, [key, setter]);
 
-  useEffect(() => {
-    localStorage.setItem(LAST_SORT_KEY, sortOrder);
-  }, [sortOrder]);
-  
-  const handleSetVolume = (newVolume) => {
-    setVolume(newVolume);
-    localStorage.setItem(VOLUME_KEY, newVolume.toString());
-  };
-
-  const handleSetEqPreset = (preset) => {
-    setEqPreset(preset);
-    localStorage.setItem(EQ_KEY, preset);
-  };
-  
-  const handleSetCustomEqSettings = (settings) => {
-    setCustomEqSettings(settings);
-    localStorage.setItem(CUSTOM_EQ_KEY, JSON.stringify(settings));
-  };
-  
-  const handleSetIsNowPlayingVisualizerEnabled = (enabled) => {
-    setIsNowPlayingVisualizerEnabled(enabled);
-    localStorage.setItem(NOW_PLAYING_VISUALIZER_ENABLED_KEY, JSON.stringify(enabled));
-  };
-
-  const handleSetIsPlayerBarVisualizerEnabled = (enabled) => {
-    setIsPlayerBarVisualizerEnabled(enabled);
-    localStorage.setItem(PLAYER_BAR_VISUALIZER_ENABLED_KEY, JSON.stringify(enabled));
-  };
-  
-  const handleSetStatusIndicatorEnabled = (enabled) => {
-    setIsStatusIndicatorEnabled(enabled);
-    localStorage.setItem(STATUS_INDICATOR_ENABLED_KEY, JSON.stringify(enabled));
-  };
-
-  const handleSetIsVolumeControlVisible = (visible) => {
-    setIsVolumeControlVisible(visible);
-    localStorage.setItem(VOLUME_CONTROL_VISIBLE_KEY, JSON.stringify(visible));
-  };
-
-  const handleSetShowNextSong = (enabled) => {
-    setShowNextSong(enabled);
-    localStorage.setItem(SHOW_NEXT_SONG_KEY, JSON.stringify(enabled));
-  };
-    
-  const handleSetGridSize = useCallback((size) => {
-    setGridSize(size);
-    localStorage.setItem(GRID_SIZE_KEY, JSON.stringify(size));
-  }, []);
-  
-  const handleSetIsMarqueeProgramEnabled = (enabled) => {
-    setIsMarqueeProgramEnabled(enabled);
-    localStorage.setItem(MARQUEE_PROGRAM_ENABLED_KEY, JSON.stringify(enabled));
-  };
-
-  const handleSetIsMarqueeCurrentTrackEnabled = (enabled) => {
-    setIsMarqueeCurrentTrackEnabled(enabled);
-    localStorage.setItem(MARQUEE_CURRENT_ENABLED_KEY, JSON.stringify(enabled));
-  };
-  
-  const handleSetIsMarqueeNextTrackEnabled = (enabled) => {
-    setIsMarqueeNextTrackEnabled(enabled);
-    localStorage.setItem(MARQUEE_NEXT_ENABLED_KEY, JSON.stringify(enabled));
-  };
-
-  const handleSetMarqueeSpeed = (speed) => {
-      setMarqueeSpeed(speed);
-      localStorage.setItem(MARQUEE_SPEED_KEY, JSON.stringify(speed));
-  };
-
-  const handleSetMarqueeDelay = (delay) => {
-      setMarqueeDelay(delay);
-      localStorage.setItem(MARQUEE_DELAY_KEY, JSON.stringify(delay));
-  };
+  const handleSetVolume = createSaver(VOLUME_KEY, setVolume);
+  const handleSetEqPreset = createSaver(EQ_KEY, setEqPreset);
+  const handleSetCustomEqSettings = createSaver(CUSTOM_EQ_KEY, setCustomEqSettings);
+  const handleSetIsNowPlayingVisualizerEnabled = createSaver(NOW_PLAYING_VISUALIZER_ENABLED_KEY, setIsNowPlayingVisualizerEnabled);
+  const handleSetIsPlayerBarVisualizerEnabled = createSaver(PLAYER_BAR_VISUALIZER_ENABLED_KEY, setIsPlayerBarVisualizerEnabled);
+  const handleSetStatusIndicatorEnabled = createSaver(STATUS_INDICATOR_ENABLED_KEY, setIsStatusIndicatorEnabled);
+  const handleSetIsVolumeControlVisible = createSaver(VOLUME_CONTROL_VISIBLE_KEY, setIsVolumeControlVisible);
+  const handleSetShowNextSong = createSaver(SHOW_NEXT_SONG_KEY, setShowNextSong);
+  const handleSetGridSize = createSaver(GRID_SIZE_KEY, setGridSize);
+  const handleSetIsMarqueeProgramEnabled = createSaver(MARQUEE_PROGRAM_ENABLED_KEY, setIsMarqueeProgramEnabled);
+  const handleSetIsMarqueeCurrentTrackEnabled = createSaver(MARQUEE_CURRENT_ENABLED_KEY, setIsMarqueeCurrentTrackEnabled);
+  const handleSetIsMarqueeNextTrackEnabled = createSaver(MARQUEE_NEXT_ENABLED_KEY, setIsMarqueeNextTrackEnabled);
+  const handleSetMarqueeSpeed = createSaver(MARQUEE_SPEED_KEY, setMarqueeSpeed);
+  const handleSetMarqueeDelay = createSaver(MARQUEE_DELAY_KEY, setMarqueeDelay);
 
   const handleCycleVisualizerStyle = useCallback(() => {
     const currentIndex = VISUALIZER_STYLES.indexOf(visualizerStyle);
@@ -379,7 +352,6 @@ export default function App() {
     setVisualizerStyle(newStyle);
     localStorage.setItem(VISUALIZER_STYLE_KEY, newStyle);
   }, [visualizerStyle]);
-
 
   const saveCustomOrder = (newOrder) => {
       setCustomOrder(newOrder);
@@ -390,80 +362,10 @@ export default function App() {
       const allStationUuids = stations.map(s => s.stationuuid);
       const currentOrder = customOrder.length > 0 ? customOrder : allStationUuids;
       const reorderedSet = new Set(reorderedDisplayedUuids);
-      const newOrder = [...reorderedDisplayedUuids];
-      currentOrder.forEach(uuid => {
-        if (!reorderedSet.has(uuid)) {
-          newOrder.push(uuid);
-        }
-      });
+      const newOrder = [...reorderedDisplayedUuids, ...currentOrder.filter(uuid => !reorderedSet.has(uuid))];
       saveCustomOrder(newOrder);
       setSortOrder('custom');
   };
-
-  const filteredStations = useMemo(() => {
-    if (filter === StationFilter.Favorites) {
-      return stations.filter(s => favorites.includes(s.stationuuid));
-    }
-    return stations;
-  }, [stations, filter, favorites]);
-  
-  const displayedStations = useMemo(() => {
-    let stationsToSort = [...filteredStations];
-    const customOrderMap = new Map(customOrder.map((uuid, index) => [uuid, index]));
-    switch (sortOrder) {
-      case 'custom':
-        stationsToSort.sort((a, b) => {
-            const indexA = customOrderMap.get(a.stationuuid);
-            const indexB = customOrderMap.get(b.stationuuid);
-            if (typeof indexA === 'number' && typeof indexB === 'number') return indexA - indexB;
-            if (typeof indexA === 'number') return -1;
-            if (typeof indexB === 'number') return 1;
-            return a.name.localeCompare(b.name, 'he');
-        });
-        break;
-      case 'name_asc':
-        stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he'));
-        break;
-      case 'name_desc':
-        stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he'));
-        break;
-      case 'category_style':
-      case 'category_identity':
-      case 'category_region':
-      case 'category_nameStructure':
-        const categoryType = sortOrder.replace('category_', '');
-        stationsToSort.sort((a, b) => {
-            const categoryA = getCategory(a, categoryType);
-            const categoryB = getCategory(b, categoryType);
-            if (categoryA < categoryB) return -1;
-            if (categoryA > categoryB) return 1;
-            return a.name.localeCompare(b.name, 'he'); // secondary sort by name
-        });
-        break;
-      case 'priority':
-      default:
-        const getPriorityIndex = (stationName) => {
-          const lowerCaseName = stationName.toLowerCase();
-          return PRIORITY_STATIONS.findIndex(priorityStation => 
-            priorityStation.aliases.some(alias => 
-              lowerCaseName.includes(alias.toLowerCase())
-            )
-          );
-        };
-        stationsToSort.sort((a, b) => {
-          let aPriority = getPriorityIndex(a.name);
-          let bPriority = getPriorityIndex(b.name);
-          if (aPriority === -1) aPriority = Infinity;
-          if (bPriority === -1) bPriority = Infinity;
-          if (aPriority !== bPriority) {
-            return aPriority - bPriority;
-          }
-          return a.name.localeCompare(b.name, 'he');
-        });
-        break;
-    }
-    return stationsToSort;
-  }, [filteredStations, sortOrder, customOrder]);
 
   const playStationAtIndex = useCallback((index) => {
     if (index >= 0 && index < stations.length) {
@@ -476,18 +378,14 @@ export default function App() {
   const handleSelectStation = useCallback((station) => {
     const stationIndexInMainList = stations.findIndex(s => s.stationuuid === station.stationuuid);
     if (stationIndexInMainList !== -1) {
-        if (currentStationIndex === stationIndexInMainList) {
-          setIsPlaying(prev => !prev);
-        } else {
-          playStationAtIndex(stationIndexInMainList);
-        }
+        if (currentStationIndex === stationIndexInMainList) setIsPlaying(prev => !prev);
+        else playStationAtIndex(stationIndexInMainList);
     }
   }, [stations, currentStationIndex, playStationAtIndex]);
 
   const handlePlayPause = useCallback(() => {
-    if (currentStation) {
-      setIsPlaying(!isPlaying);
-    } else if (displayedStations.length > 0) {
+    if (currentStation) setIsPlaying(!isPlaying);
+    else if (displayedStations.length > 0) {
         const firstStationIndex = stations.findIndex(s => s.stationuuid === displayedStations[0].stationuuid);
         playStationAtIndex(firstStationIndex);
     }
@@ -495,52 +393,75 @@ export default function App() {
   
   const handleNext = useCallback(() => {
       if (displayedStations.length === 0) return;
-      const currentStationObject = currentStationIndex !== null ? stations[currentStationIndex] : null;
-      const currentIndexInDisplayed = currentStationObject ? displayedStations.findIndex(s => s.stationuuid === currentStationObject.stationuuid) : -1;
-      let nextIndexInDisplayed = (currentIndexInDisplayed === -1) ? 0 : (currentIndexInDisplayed + 1) % displayedStations.length;
-      const nextStation = displayedStations[nextIndexInDisplayed];
+      const currentIdxInDisplayed = currentStation ? displayedStations.findIndex(s => s.stationuuid === currentStation.stationuuid) : -1;
+      const nextIdxInDisplayed = (currentIdxInDisplayed + 1) % displayedStations.length;
+      const nextStation = displayedStations[nextIdxInDisplayed];
       const globalIndex = stations.findIndex(s => s.stationuuid === nextStation.stationuuid);
       playStationAtIndex(globalIndex);
-  }, [currentStationIndex, displayedStations, stations, playStationAtIndex]);
+  }, [currentStation, displayedStations, stations, playStationAtIndex]);
 
   const handlePrev = useCallback(() => {
       if (displayedStations.length === 0) return;
-      const currentStationObject = currentStationIndex !== null ? stations[currentStationIndex] : null;
-      const currentIndexInDisplayed = currentStationObject ? displayedStations.findIndex(s => s.stationuuid === currentStationObject.stationuuid) : -1;
-      let prevIndexInDisplayed = (currentIndexInDisplayed <= 0) ? displayedStations.length - 1 : currentIndexInDisplayed - 1;
-      const prevStation = displayedStations[prevIndexInDisplayed];
+      const currentIdxInDisplayed = currentStation ? displayedStations.findIndex(s => s.stationuuid === currentStation.stationuuid) : -1;
+      const prevIdxInDisplayed = (currentIdxInDisplayed - 1 + displayedStations.length) % displayedStations.length;
+      const prevStation = displayedStations[prevIdxInDisplayed];
       const globalIndex = stations.findIndex(s => s.stationuuid === prevStation.stationuuid);
       playStationAtIndex(globalIndex);
-  }, [currentStationIndex, displayedStations, stations, playStationAtIndex]);
+  }, [currentStation, displayedStations, stations, playStationAtIndex]);
     
-  // Media Session API Management
+  // Media Session Action Handlers Setup
   useEffect(() => {
-    if (!('mediaSession' in navigator)) {
-      return;
-    }
+    if (!('mediaSession' in navigator)) return;
+    const setupHandler = (action, handler) => {
+      try {
+        navigator.mediaSession.setActionHandler(action, () => {
+          setIsSwitchingFromMedia(true);
+          handler();
+        });
+      } catch (error) {
+        console.warn(`Could not set media session action for ${action}:`, error);
+      }
+    };
+    setupHandler('play', handlePlayPause);
+    setupHandler('pause', handlePlayPause);
+    setupHandler('nexttrack', handleNext);
+    setupHandler('previoustrack', handlePrev);
+    return () => {
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.setActionHandler('play', null);
+        navigator.mediaSession.setActionHandler('pause', null);
+        navigator.mediaSession.setActionHandler('nexttrack', null);
+        navigator.mediaSession.setActionHandler('previoustrack', null);
+      }
+    };
+  }, [handlePlayPause, handleNext, handlePrev]);
 
-    if (currentStation) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: `${currentStation.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`,
-        artist: trackInfo?.current || 'רדיו פרימיום',
-        artwork: [{ src: currentStation.favicon, sizes: '96x96', type: 'image/png' }],
-      });
-
-      navigator.mediaSession.setActionHandler('play', async () => handlePlayPause());
-      navigator.mediaSession.setActionHandler('pause', async () => handlePlayPause());
-      navigator.mediaSession.setActionHandler('nexttrack', async () => handleNext());
-      navigator.mediaSession.setActionHandler('previoustrack', async () => handlePrev());
-
-      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+  // Media Session Metadata and State Update
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const updateMetadata = () => {
+      if (currentStation) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: `${currentStation.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`,
+          artist: trackInfo?.current || 'רדיו פרימיום',
+          artwork: [{ src: currentStation.favicon, sizes: '96x96', type: 'image/png' }],
+        });
+        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+      } else {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.playbackState = 'none';
+      }
+    };
+    if (isSwitchingFromMedia) {
+      const timer = setTimeout(() => {
+        updateMetadata();
+        setIsSwitchingFromMedia(false);
+      }, 400);
+      return () => clearTimeout(timer);
     } else {
-      navigator.mediaSession.metadata = null;
-      navigator.mediaSession.playbackState = 'none';
-      navigator.mediaSession.setActionHandler('play', null);
-      navigator.mediaSession.setActionHandler('pause', null);
-      navigator.mediaSession.setActionHandler('nexttrack', null);
-      navigator.mediaSession.setActionHandler('previoustrack', null);
+      updateMetadata();
     }
-  }, [currentStation, isPlaying, trackInfo, handlePlayPause, handleNext, handlePrev]);
+  }, [currentStation, isPlaying, trackInfo, isSwitchingFromMedia]);
 
   const handleTouchStart = useCallback((e) => {
       if (e.touches.length === 2) {
@@ -560,40 +481,26 @@ export default function App() {
           const delta = currentDist - pinchDistRef.current;
 
           if (Math.abs(delta) > PINCH_THRESHOLD) {
-              if (delta > 0) { // Pinch out -> bigger items
-                  const newSize = Math.min(5, gridSize + 1);
-                  handleSetGridSize(newSize);
-              } else { // Pinch in -> smaller items
-                  const newSize = Math.max(1, gridSize - 1);
-                  handleSetGridSize(newSize);
-              }
+              if (delta > 0) handleSetGridSize(Math.min(5, gridSize + 1));
+              else handleSetGridSize(Math.max(1, gridSize - 1));
               pinchDistRef.current = currentDist;
           }
       }
   }, [gridSize, handleSetGridSize]);
 
-  const handleTouchEnd = useCallback((e) => {
-      if (e.touches.length < 2) {
-          pinchDistRef.current = 0;
-      }
-  }, []);
+  const handleTouchEnd = useCallback(() => { pinchDistRef.current = 0; }, []);
   
   const handleCategorySortClick = () => {
     const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
-    const isCategorySortActive = currentCategoryIndex !== -1;
-
-    if (isCategorySortActive) {
-        const nextIndex = (currentCategoryIndex + 1) % CATEGORY_SORTS.length;
-        setSortOrder(CATEGORY_SORTS[nextIndex].order);
+    if (currentCategoryIndex !== -1) {
+        setSortOrder(CATEGORY_SORTS[(currentCategoryIndex + 1) % CATEGORY_SORTS.length].order);
     } else {
-        // If it's not a category sort, start from the first one
         setSortOrder(CATEGORY_SORTS[0].order);
     }
   };
 
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
-  const isCategorySortActive = currentCategoryIndex !== -1;
-  const categoryButtonLabel = isCategorySortActive ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
+  const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
   return (
     React.createElement("div", { className: "min-h-screen bg-bg-primary text-text-primary flex flex-col" },
@@ -612,16 +519,10 @@ export default function App() {
             React.createElement("div", { className: "flex items-center justify-center gap-2" },
                 React.createElement("span", { className: "text-xs text-text-secondary" }, "מיון:"),
                 React.createElement("div", { className: "flex items-center bg-gray-700 rounded-full p-1 gap-1 flex-wrap justify-center" },
-                    React.createElement(SortButton, { label: "אישי", order: "custom", currentOrder: sortOrder, setOrder: setSortOrder }),
+                    React.createElement(SortButton, { label: "שלי", order: "custom", currentOrder: sortOrder, setOrder: setSortOrder }),
                     React.createElement(SortButton, { label: "פופולריות", order: "priority", currentOrder: sortOrder, setOrder: setSortOrder }),
                     React.createElement("button", {
-                      onClick: () => {
-                        if (sortOrder === 'name_asc') {
-                          setSortOrder('name_desc');
-                        } else {
-                          setSortOrder('name_asc');
-                        }
-                      },
+                      onClick: () => setSortOrder(sortOrder === 'name_asc' ? 'name_desc' : 'name_asc'),
                       className: `px-3 py-1 text-xs font-medium rounded-full transition-colors ${
                         sortOrder.startsWith('name_') ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
                       }`
@@ -629,7 +530,7 @@ export default function App() {
                     React.createElement("button", {
                       onClick: handleCategorySortClick,
                       className: `px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-                        isCategorySortActive ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                        currentCategoryIndex !== -1 ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
                       }`
                     }, categoryButtonLabel)
                 )
