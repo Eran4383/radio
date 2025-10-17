@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService';
 import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder } from './types';
 import Player from './components/Player';
@@ -17,6 +17,64 @@ import { getCategory, CategoryType } from './services/categoryService';
 enum StationFilter {
   All = 'הכל',
   Favorites = 'מועדפים',
+}
+
+// Player State Machine
+type PlayerStatus = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'ERROR';
+interface PlayerState {
+  status: PlayerStatus;
+  station: Station | null;
+  error?: string;
+}
+type PlayerAction =
+  | { type: 'PLAY'; payload: Station }
+  | { type: 'TOGGLE_PAUSE' }
+  | { type: 'STREAM_STARTED' }
+  | { type: 'STREAM_PAUSED' }
+  | { type: 'STREAM_ERROR'; payload: string }
+  | { type: 'SELECT_STATION'; payload: Station };
+
+const initialPlayerState: PlayerState = {
+  status: 'IDLE',
+  station: null,
+};
+
+function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
+  switch (action.type) {
+    case 'SELECT_STATION':
+      if (state.station?.stationuuid === action.payload.stationuuid) {
+        // It's the same station, toggle play/pause
+        if (state.status === 'PLAYING') {
+          return { ...state, status: 'PAUSED' };
+        } else if (state.status === 'PAUSED' || state.status === 'ERROR' || state.status === 'IDLE') {
+          return { ...state, status: 'LOADING' };
+        }
+      }
+      // It's a new station
+      return { status: 'LOADING', station: action.payload };
+    case 'PLAY':
+       if (state.station) {
+         return { ...state, status: 'LOADING' };
+       }
+       return { ...state, status: 'LOADING', station: action.payload };
+    case 'TOGGLE_PAUSE':
+      if (state.status === 'PLAYING') {
+        return { ...state, status: 'PAUSED' };
+      }
+      if (state.status === 'PAUSED' && state.station) {
+        return { ...state, status: 'LOADING' };
+      }
+      return state;
+    case 'STREAM_STARTED':
+      return { ...state, status: 'PLAYING', error: undefined };
+    case 'STREAM_PAUSED':
+        if(state.status === 'LOADING') return state; // Ignore pause event during load
+        return { ...state, status: 'PAUSED' };
+    case 'STREAM_ERROR':
+      return { ...state, status: 'ERROR', error: action.payload };
+    default:
+      return state;
+  }
 }
 
 // LocalStorage Keys
@@ -67,15 +125,14 @@ const CATEGORY_SORTS: { order: SortOrder; label: string }[] = [
 
 export default function App() {
   const [stations, setStations] = useState<Station[]>([]);
-  const [currentStationIndex, setCurrentStationIndex] = useState<number | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [playerState, dispatch] = useReducer(playerReducer, initialPlayerState);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [trackInfo, setTrackInfo] = useState<StationTrackInfo | null>(null);
-  const [isStreamActive, setIsStreamActive] = useState(false);
   const pinchDistRef = useRef<number>(0);
   const PINCH_THRESHOLD = 40; // pixels
   
@@ -204,13 +261,6 @@ export default function App() {
 
 
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
-  
-  const currentStation = useMemo(() => {
-     if (currentStationIndex !== null && stations[currentStationIndex]) {
-        return stations[currentStationIndex];
-     }
-     return null;
-  }, [stations, currentStationIndex]);
 
   // Fetch stations on initial load
   useEffect(() => {
@@ -237,26 +287,34 @@ export default function App() {
 
   // Restore last played station once station list is loaded
   useEffect(() => {
-    if (stations.length > 0 && currentStationIndex === null) {
+    if (stations.length > 0 && playerState.status === 'IDLE') {
         const lastStationUuid = localStorage.getItem(LAST_STATION_KEY);
         if (lastStationUuid) {
-            const stationIndex = stations.findIndex(s => s.stationuuid === lastStationUuid);
-            if (stationIndex !== -1) {
-                setCurrentStationIndex(stationIndex);
+            const station = stations.find(s => s.stationuuid === lastStationUuid);
+            if (station) {
+                // Don't auto-play, just set it as the current station
+                dispatch({ type: 'SELECT_STATION', payload: station });
             }
         }
     }
-  }, [stations, currentStationIndex]);
+  }, [stations, playerState.status]);
+  
+  // Save last station to localStorage
+  useEffect(() => {
+      if (playerState.station) {
+          localStorage.setItem(LAST_STATION_KEY, playerState.station.stationuuid);
+      }
+  }, [playerState.station]);
   
   // Fetch station metadata (current song/program)
   useEffect(() => {
     let intervalId: number | undefined;
 
     const fetchAndSetInfo = async () => {
-      if (!currentStation) return;
+      if (!playerState.station) return;
       
       let finalInfo: StationTrackInfo | null = null;
-      const stationName = currentStation.name;
+      const stationName = playerState.station.name;
 
       // New logic: Check if there's a specific, high-accuracy API for this station.
       if (hasSpecificHandler(stationName)) {
@@ -273,7 +331,7 @@ export default function App() {
         }
       } else {
         // This station has NO dedicated API. Use the generic Radio-Browser API.
-        const songTitle = await fetchLiveTrackInfo(currentStation.stationuuid);
+        const songTitle = await fetchLiveTrackInfo(playerState.station.stationuuid);
         if (songTitle && songTitle.toLowerCase() !== stationName.toLowerCase()) {
           finalInfo = { program: null, current: songTitle, next: null };
         } else {
@@ -288,7 +346,7 @@ export default function App() {
       setTrackInfo(finalInfo);
     };
 
-    if (currentStation) {
+    if (playerState.station) {
       fetchAndSetInfo(); 
       intervalId = window.setInterval(fetchAndSetInfo, 20000);
     } else {
@@ -300,7 +358,7 @@ export default function App() {
         clearInterval(intervalId);
       }
     };
-  }, [currentStation]);
+  }, [playerState.station]);
 
   // Effects to save state changes to localStorage
   useEffect(() => {
@@ -488,57 +546,47 @@ export default function App() {
     return stationsToSort;
   }, [filteredStations, sortOrder, customOrder]);
 
-  const playStationAtIndex = useCallback((index: number) => {
-    if (index >= 0 && index < stations.length) {
-        localStorage.setItem(LAST_STATION_KEY, stations[index].stationuuid);
-        setCurrentStationIndex(index);
-        setIsPlaying(true); // Always play when selecting a new station
-    }
-  }, [stations]);
-
   const handleSelectStation = useCallback((station: Station) => {
-    const stationIndexInMainList = stations.findIndex(s => s.stationuuid === station.stationuuid);
-    if (stationIndexInMainList !== -1) {
-        if (currentStationIndex === stationIndexInMainList) {
-          setIsPlaying(prev => !prev); // Toggle if it's the same station
-        } else {
-          playStationAtIndex(stationIndexInMainList); // Play if it's a new station
-        }
-    }
-  }, [stations, currentStationIndex, playStationAtIndex]);
+      dispatch({ type: 'SELECT_STATION', payload: station });
+  }, []);
 
   const handlePlayPause = useCallback(() => {
-    if (currentStation) {
-      setIsPlaying(!isPlaying);
+    if (playerState.station) {
+      dispatch({ type: 'TOGGLE_PAUSE' });
     } else if (displayedStations.length > 0) {
-        const firstStationIndex = stations.findIndex(s => s.stationuuid === displayedStations[0].stationuuid);
-        playStationAtIndex(firstStationIndex);
+      dispatch({ type: 'PLAY', payload: displayedStations[0] });
     }
-  }, [isPlaying, currentStation, displayedStations, stations, playStationAtIndex]);
+  }, [playerState.station, displayedStations]);
   
   const handleNext = useCallback(() => {
       if (displayedStations.length === 0) return;
-      const currentStationObject = currentStationIndex !== null ? stations[currentStationIndex] : null;
-      const currentIndexInDisplayed = currentStationObject ? displayedStations.findIndex(s => s.stationuuid === currentStationObject.stationuuid) : -1;
+      
+      const currentIndexInDisplayed = playerState.station
+        ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid)
+        : -1;
 
-      let nextIndexInDisplayed = (currentIndexInDisplayed === -1) ? 0 : (currentIndexInDisplayed + 1) % displayedStations.length;
+      const nextIndexInDisplayed = (currentIndexInDisplayed === -1) 
+        ? 0 
+        : (currentIndexInDisplayed + 1) % displayedStations.length;
       
       const nextStation = displayedStations[nextIndexInDisplayed];
-      const globalIndex = stations.findIndex(s => s.stationuuid === nextStation.stationuuid);
-      playStationAtIndex(globalIndex);
-  }, [currentStationIndex, displayedStations, stations, playStationAtIndex]);
+      dispatch({ type: 'SELECT_STATION', payload: nextStation });
+  }, [displayedStations, playerState.station]);
 
   const handlePrev = useCallback(() => {
       if (displayedStations.length === 0) return;
-      const currentStationObject = currentStationIndex !== null ? stations[currentStationIndex] : null;
-      const currentIndexInDisplayed = currentStationObject ? displayedStations.findIndex(s => s.stationuuid === currentStationObject.stationuuid) : -1;
+
+      const currentIndexInDisplayed = playerState.station
+        ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid)
+        : -1;
       
-      let prevIndexInDisplayed = (currentIndexInDisplayed <= 0) ? displayedStations.length - 1 : currentIndexInDisplayed - 1;
+      const prevIndexInDisplayed = (currentIndexInDisplayed <= 0) 
+        ? displayedStations.length - 1 
+        : currentIndexInDisplayed - 1;
 
       const prevStation = displayedStations[prevIndexInDisplayed];
-      const globalIndex = stations.findIndex(s => s.stationuuid === prevStation.stationuuid);
-      playStationAtIndex(globalIndex);
-  }, [currentStationIndex, displayedStations, stations, playStationAtIndex]);
+      dispatch({ type: 'SELECT_STATION', payload: prevStation });
+  }, [displayedStations, playerState.station]);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
       if (e.touches.length === 2) {
@@ -666,12 +714,12 @@ export default function App() {
             displayedStations.length > 0 ? (
                 <StationList
                     stations={displayedStations}
-                    currentStation={currentStation}
+                    currentStation={playerState.station}
                     onSelectStation={handleSelectStation}
                     isFavorite={isFavorite}
                     toggleFavorite={toggleFavorite}
                     onReorder={handleReorder}
-                    isStreamActive={isStreamActive}
+                    isStreamActive={playerState.status === 'PLAYING'}
                     isStatusIndicatorEnabled={isStatusIndicatorEnabled}
                     gridSize={gridSize}
                     sortOrder={sortOrder}
@@ -722,12 +770,12 @@ export default function App() {
         onMarqueeDelayChange={handleSetMarqueeDelay}
       />
 
-      {currentStation && (
+      {playerState.station && (
          <NowPlaying
           isOpen={isNowPlayingOpen}
           onClose={() => setIsNowPlayingOpen(false)}
-          station={currentStation}
-          isPlaying={isPlaying}
+          station={playerState.station}
+          isPlaying={playerState.status === 'PLAYING'}
           onPlayPause={handlePlayPause}
           onNext={handleNext}
           onPrev={handlePrev}
@@ -749,11 +797,11 @@ export default function App() {
       )}
      
       <Player
-        station={currentStation}
-        isPlaying={isPlaying}
+        playerState={playerState}
         onPlayPause={handlePlayPause}
         onNext={handleNext}
         onPrev={handlePrev}
+        onPlayerEvent={(event) => dispatch(event)}
         eqPreset={eqPreset}
         customEqSettings={customEqSettings}
         volume={volume}
@@ -762,7 +810,6 @@ export default function App() {
         showNextSong={showNextSong}
         onOpenNowPlaying={() => setIsNowPlayingOpen(true)}
         setFrequencyData={setFrequencyData}
-        onStreamStatusChange={setIsStreamActive}
         frequencyData={frequencyData}
         isVisualizerEnabled={isPlayerBarVisualizerEnabled}
         marqueeDelay={marqueeDelay}

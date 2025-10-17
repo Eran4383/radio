@@ -5,12 +5,25 @@ import { CORS_PROXY_URL } from '../constants';
 import InteractiveText from './InteractiveText';
 import MarqueeText from './MarqueeText';
 
-interface PlayerProps {
+// Types from App.tsx's state machine
+type PlayerStatus = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'ERROR';
+interface PlayerState {
+  status: PlayerStatus;
   station: Station | null;
-  isPlaying: boolean;
+  error?: string;
+}
+type PlayerEvent =
+  | { type: 'STREAM_STARTED' }
+  | { type: 'STREAM_PAUSED' }
+  | { type: 'STREAM_ERROR'; payload: string };
+
+
+interface PlayerProps {
+  playerState: PlayerState;
   onPlayPause: () => void;
   onNext: () => void;
   onPrev: () => void;
+  onPlayerEvent: (event: PlayerEvent) => void;
   eqPreset: EqPreset;
   customEqSettings: CustomEqSettings;
   volume: number;
@@ -19,7 +32,6 @@ interface PlayerProps {
   showNextSong: boolean;
   onOpenNowPlaying: () => void;
   setFrequencyData: (data: Uint8Array) => void;
-  onStreamStatusChange: (isActive: boolean) => void;
   frequencyData: Uint8Array;
   isVisualizerEnabled: boolean;
   marqueeDelay: number;
@@ -68,11 +80,11 @@ const PlayerVisualizer: React.FC<{ frequencyData: Uint8Array }> = ({ frequencyDa
 
 
 const Player: React.FC<PlayerProps> = ({
-  station,
-  isPlaying,
+  playerState,
   onPlayPause,
   onNext,
   onPrev,
+  onPlayerEvent,
   eqPreset,
   customEqSettings,
   volume,
@@ -81,7 +93,6 @@ const Player: React.FC<PlayerProps> = ({
   showNextSong,
   onOpenNowPlaying,
   setFrequencyData,
-  onStreamStatusChange,
   frequencyData,
   isVisualizerEnabled,
   marqueeDelay,
@@ -99,8 +110,6 @@ const Player: React.FC<PlayerProps> = ({
   const trebleFilterRef = useRef<BiquadFilterNode | null>(null);
   const animationFrameRef = useRef<number>();
 
-  const [isActuallyPlaying, setIsActuallyPlaying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [startAnimation, setStartAnimation] = useState(false);
   
   // Refs for marquee synchronization
@@ -109,6 +118,9 @@ const Player: React.FC<PlayerProps> = ({
   const nextTrackRef = useRef<HTMLSpanElement>(null);
   const [marqueeConfig, setMarqueeConfig] = useState<{ duration: number; isOverflowing: boolean[] }>({ duration: 0, isOverflowing: [false, false, false] });
 
+  const { status, station, error } = playerState;
+  const isPlaying = status === 'PLAYING';
+  const isLoading = status === 'LOADING';
 
   // Effect for initial animation delay
   useEffect(() => {
@@ -151,11 +163,6 @@ const Player: React.FC<PlayerProps> = ({
       return () => clearTimeout(timeoutId);
   }, [station, trackInfo, showNextSong, marqueeSpeed]);
 
-  // Report stream status changes to parent
-  useEffect(() => {
-    onStreamStatusChange(isActuallyPlaying);
-  }, [isActuallyPlaying, onStreamStatusChange]);
-
 
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
@@ -197,15 +204,14 @@ const Player: React.FC<PlayerProps> = ({
     }
   }, []);
   
-  // Start/Stop playback
+  // Audio Element State Machine Driver
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio) return;
-    
+    if (!audio || !station) return;
+
     const playAudio = async () => {
-      if (station && isPlaying) {
-        setupAudioContext(); // Ensure context is setup before playing
-        if(audioContextRef.current?.state === 'suspended') {
+        setupAudioContext();
+        if (audioContextRef.current?.state === 'suspended') {
             await audioContextRef.current.resume();
         }
         
@@ -213,26 +219,25 @@ const Player: React.FC<PlayerProps> = ({
         if (audio.src !== newSrc) {
             audio.src = newSrc;
             audio.crossOrigin = 'anonymous';
-            audio.load(); // Explicitly tell the browser to load the new source
         }
+        audio.load();
         try {
-          await audio.play();
-          setError(null);
+            await audio.play();
         } catch (e: any) {
-          console.error("Error playing audio:", e);
-          if (e.name !== 'AbortError') {
-            setError("לא ניתן לנגן את התחנה.");
-            setIsActuallyPlaying(false);
-          }
+            console.error("Error playing audio:", e);
+            if (e.name !== 'AbortError') {
+                onPlayerEvent({ type: 'STREAM_ERROR', payload: "לא ניתן לנגן את התחנה." });
+            }
         }
-      } else {
-        audio.pause();
-      }
     };
-    
-    playAudio();
 
-  }, [station, isPlaying, setupAudioContext]);
+    if (status === 'LOADING') {
+      playAudio();
+    } else if (status === 'PAUSED' || status === 'IDLE' || status === 'ERROR') {
+      audio.pause();
+    }
+  }, [status, station, setupAudioContext, onPlayerEvent]);
+
 
   // Handle volume changes
   useEffect(() => {
@@ -259,7 +264,7 @@ const Player: React.FC<PlayerProps> = ({
   // Visualizer data loop
   useEffect(() => {
     const loop = () => {
-      if (analyserRef.current && isActuallyPlaying) {
+      if (analyserRef.current && isPlaying) {
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
         setFrequencyData(dataArray);
@@ -267,7 +272,7 @@ const Player: React.FC<PlayerProps> = ({
       animationFrameRef.current = requestAnimationFrame(loop);
     };
 
-    if (isActuallyPlaying) {
+    if (isPlaying) {
       animationFrameRef.current = requestAnimationFrame(loop);
     }
 
@@ -276,7 +281,7 @@ const Player: React.FC<PlayerProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isActuallyPlaying, setFrequencyData]);
+  }, [isPlaying, setFrequencyData]);
 
   // Update Media Session API
   useEffect(() => {
@@ -291,35 +296,26 @@ const Player: React.FC<PlayerProps> = ({
         const createTrackChangeHandler = (handler: () => void) => {
           return async () => {
             const audio = audioRef.current;
-            handler(); // Call the original handler to start changing the station
+            handler(); // Dispatch the action to change state
             
             if (audio) {
               try {
-                // Return a promise that resolves when the audio actually starts playing
+                // Return a promise that resolves when the new stream starts playing
                 await new Promise<void>(resolve => {
                   let timeoutId: number;
-
                   const onPlaying = () => {
                     clearTimeout(timeoutId);
                     audio.removeEventListener('error', onError);
                     resolve();
                   };
-
                   const onError = () => {
                     clearTimeout(timeoutId);
                     audio.removeEventListener('playing', onPlaying);
                     resolve(); // Resolve on error too to not block the UI
                   };
-
                   audio.addEventListener('playing', onPlaying, { once: true });
                   audio.addEventListener('error', onError, { once: true });
-
-                  // Fallback timeout in case 'playing' never fires
-                  timeoutId = window.setTimeout(() => {
-                    audio.removeEventListener('playing', onPlaying);
-                    audio.removeEventListener('error', onError);
-                    resolve();
-                  }, 2500);
+                  timeoutId = window.setTimeout(resolve, 3000); // 3-second fallback
                 });
               } catch (e) {
                 console.error('Media session action failed:', e);
@@ -333,7 +329,7 @@ const Player: React.FC<PlayerProps> = ({
         navigator.mediaSession.setActionHandler('nexttrack', createTrackChangeHandler(onNext));
         navigator.mediaSession.setActionHandler('previoustrack', createTrackChangeHandler(onPrev));
 
-        if (isPlaying) {
+        if (status === 'PLAYING') {
             navigator.mediaSession.playbackState = 'playing';
         } else {
             navigator.mediaSession.playbackState = 'paused';
@@ -347,34 +343,18 @@ const Player: React.FC<PlayerProps> = ({
         navigator.mediaSession.setActionHandler('previoustrack', null);
       }
     }
-  }, [station, isPlaying, trackInfo, onPlayPause, onNext, onPrev]);
+  }, [station, status, trackInfo, onPlayPause, onNext, onPrev]);
 
-  const handlePlaying = () => {
-    setIsActuallyPlaying(true);
-    setError(null);
-  };
-  
-  const handlePause = () => {
-    setIsActuallyPlaying(false);
-  }
-
-  const handleWaiting = () => {
-    setIsActuallyPlaying(false);
-  };
-
-  const handleError = () => {
-    setError("שגיאה בניגון התחנה.");
-    setIsActuallyPlaying(false);
-  };
-  
   if (!station) {
     return null; // Don't render the player if no station is selected
   }
 
+  const isActuallyPlaying = status === 'PLAYING';
+
   return (
     <div className="fixed bottom-0 left-0 right-0 z-30">
       <div className="relative bg-bg-secondary/80 backdrop-blur-lg shadow-t-lg">
-        {isVisualizerEnabled && isPlaying && <PlayerVisualizer frequencyData={frequencyData} />}
+        {isVisualizerEnabled && isActuallyPlaying && <PlayerVisualizer frequencyData={frequencyData} />}
         <div className="max-w-7xl mx-auto p-4 flex items-center justify-between gap-4">
           
           <div 
@@ -402,7 +382,7 @@ const Player: React.FC<PlayerProps> = ({
               </MarqueeText>
 
               <div className="text-sm text-text-secondary leading-tight h-[1.25rem] flex items-center">
-                {error ? (
+                {status === 'ERROR' ? (
                   <span className="text-red-400">{error}</span>
                 ) : trackInfo?.current ? (
                   <MarqueeText
@@ -414,9 +394,11 @@ const Player: React.FC<PlayerProps> = ({
                   >
                       <InteractiveText text={trackInfo.current} />
                   </MarqueeText>
+                ) : status === 'LOADING' ? (
+                    <span className="text-text-secondary animate-pulse">טוען...</span>
                 ) : null}
               </div>
-               {!error && showNextSong && trackInfo?.next && (
+               {status !== 'ERROR' && showNextSong && trackInfo?.next && (
                   <div className="text-xs opacity-80 h-[1.125rem] flex items-center">
                     <span className="font-semibold flex-shrink-0">הבא:&nbsp;</span>
                     <MarqueeText 
@@ -440,9 +422,9 @@ const Player: React.FC<PlayerProps> = ({
             <button 
               onClick={onPlayPause} 
               className="p-3 bg-accent text-white rounded-full shadow-md"
-              aria-label={isPlaying ? "השהה" : "נגן"}
+              aria-label={isActuallyPlaying ? "השהה" : "נגן"}
             >
-              {isPlaying ? <PauseIcon className="w-7 h-7" /> : <PlayIcon className="w-7 h-7" />}
+              {isActuallyPlaying || isLoading ? <PauseIcon className="w-7 h-7" /> : <PlayIcon className="w-7 h-7" />}
             </button>
             <button onClick={onNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הבא">
                 <SkipPreviousIcon className="w-6 h-6" />
@@ -451,10 +433,10 @@ const Player: React.FC<PlayerProps> = ({
 
           <audio 
             ref={audioRef}
-            onPlaying={handlePlaying}
-            onPause={handlePause}
-            onWaiting={handleWaiting}
-            onError={handleError}
+            onPlaying={() => onPlayerEvent({ type: 'STREAM_STARTED' })}
+            onPause={() => onPlayerEvent({ type: 'STREAM_PAUSED' })}
+            onWaiting={() => {}} // We use the LOADING state now
+            onError={() => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."})}
             crossOrigin="anonymous"
           ></audio>
         </div>
