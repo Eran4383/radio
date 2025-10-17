@@ -278,6 +278,33 @@ const Player: React.FC<PlayerProps> = ({
     };
   }, [isActuallyPlaying, setFrequencyData]);
 
+  // Update Media Session API
+  useEffect(() => {
+    if ('mediaSession' in navigator) {
+      if (station) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: `${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`,
+          artist: trackInfo?.current || 'רדיו פרימיום',
+          artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
+        });
+
+        navigator.mediaSession.setActionHandler('play', onPlayPause);
+        navigator.mediaSession.setActionHandler('pause', onPlayPause);
+        navigator.mediaSession.setActionHandler('nexttrack', onNext);
+        navigator.mediaSession.setActionHandler('previoustrack', onPrev);
+
+        if (isPlaying) {
+            navigator.mediaSession.playbackState = 'playing';
+        } else {
+            navigator.mediaSession.playbackState = 'paused';
+        }
+      } else {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.playbackState = 'none';
+      }
+    }
+  }, [station, isPlaying, trackInfo, onPlayPause, onNext, onPrev]);
+
   const handlePlaying = () => {
     setIsActuallyPlaying(true);
     setError(null);
