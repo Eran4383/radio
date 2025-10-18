@@ -2,6 +2,22 @@
   "short_name": "רדיו פרימיום",
   "name": "רדיו פרימיום",
   "description": "רדיו פרימיום - אפליקציית רדיו ישראלית חינמית ונקייה, מותאמת לשימוש ברכב ובכל מקום. האזן לתחנות הרדיו המובילות בישראל עם ממשק פשוט וידידותי.",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": ".",
+  "id": ".",
+  "scope": ".",
+  "display": "standalone",
+  "display_override": [
+    "standalone"
+  ],
+  "orientation": "any",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "categories": [
+    "music",
+    "entertainment"
+  ],
   "icons": [
     {
       "src": "icon-192.png",
@@ -28,20 +44,18 @@
       "purpose": "maskable"
     }
   ],
-  "start_url": ".",
-  "scope": ".",
-  "display": "standalone",
-  "orientation": "any",
-  "theme_color": "#111827",
-  "background_color": "#111827",
-  "lang": "he",
   "shortcuts": [
     {
       "name": "המועדפים שלי",
       "short_name": "מועדפים",
       "description": "הצג את תחנות הרדיו המועדפות עליך",
       "url": "/?filter=favorites",
-      "icons": [{ "src": "shortcut-favorites.png", "sizes": "96x96" }]
+      "icons": [
+        {
+          "src": "shortcut-favorites.png",
+          "sizes": "96x96"
+        }
+      ]
     }
   ],
   "screenshots": [
