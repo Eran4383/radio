@@ -2,12 +2,25 @@ const CACHE_NAME = 'my-radio-cache-v1';
 const urlsToCache = [
   '.',
   './index.html',
+  './manifest.json',
+  './icon.svg',
+  
+  // Scripts
   './index.js',
   './App.js',
   './types.js',
   './constants.js',
-  './services/radioService.js',
+
+  // Hooks
   './hooks/useFavorites.js',
+
+  // Services
+  './services/radioService.js',
+  './services/scheduleService.js',
+  './services/stationSpecificService.js',
+  './services/categoryService.js',
+  
+  // Components
   './components/Icons.js',
   './components/Player.js',
   './components/StationList.js',
@@ -16,8 +29,9 @@ const urlsToCache = [
   './components/NowPlaying.js',
   './components/Visualizer.js',
   './components/InteractiveText.js',
-  './services/scheduleService.js',
-  './manifest.json',
+  './components/MarqueeText.js',
+
+  // External
   'https://cdn.tailwindcss.com',
   'https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap'
 ];

@@ -147,6 +147,10 @@ export default function App() {
   });
 
   const [filter, setFilter] = useState<StationFilter>(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('filter') === 'favorites') {
+      return StationFilter.Favorites;
+    }
     const saved = localStorage.getItem(LAST_FILTER_KEY) as StationFilter;
     return (saved && Object.values(StationFilter).includes(saved)) ? saved : StationFilter.All;
   });
@@ -367,7 +371,11 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem(LAST_FILTER_KEY, filter);
+    // Only save filter to local storage if it's not from a URL param on initial load
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('filter') !== 'favorites') {
+        localStorage.setItem(LAST_FILTER_KEY, filter);
+    }
   }, [filter]);
 
   useEffect(() => {
