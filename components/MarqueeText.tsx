@@ -67,7 +67,8 @@ const MarqueeText: React.FC<MarqueeTextProps> = ({
         );
     }
     
-    const marqueeStyle: React.CSSProperties = {
+    // FIX: Use `any` type for the style object to allow for CSS custom properties which are not in the default React.CSSProperties type.
+    const marqueeStyle: any = {
         '--marquee-duration': `${duration}s`,
     };
 

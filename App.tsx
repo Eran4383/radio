@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService';
-import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder } from './types';
+import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES } from './types';
 import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
@@ -51,18 +51,15 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
         }
       }
       // It's a new station
-      return { status: 'LOADING', station: action.payload };
+      return { status: 'LOADING', station: action.payload, error: undefined };
     case 'PLAY':
-       if (state.station) {
-         return { ...state, status: 'LOADING' };
-       }
-       return { ...state, status: 'LOADING', station: action.payload };
+       return { ...state, status: 'LOADING', station: action.payload, error: undefined };
     case 'TOGGLE_PAUSE':
       if (state.status === 'PLAYING') {
         return { ...state, status: 'PAUSED' };
       }
       if (state.status === 'PAUSED' && state.station) {
-        return { ...state, status: 'LOADING' };
+        return { ...state, status: 'LOADING', error: undefined };
       }
       return state;
     case 'STREAM_STARTED':
@@ -99,13 +96,7 @@ const MARQUEE_NEXT_ENABLED_KEY = 'radio-marquee-next-enabled';
 const MARQUEE_SPEED_KEY = 'radio-marquee-speed';
 const MARQUEE_DELAY_KEY = 'radio-marquee-delay';
 
-
-const SortButton: React.FC<{
-  label: string;
-  order: SortOrder;
-  currentOrder: SortOrder;
-  setOrder: (order: SortOrder) => void;
-}> = ({ label, order, currentOrder, setOrder }) => (
+const SortButton: React.FC<{ label: string; order: SortOrder; currentOrder: SortOrder; setOrder: (order: SortOrder) => void }> = ({ label, order, currentOrder, setOrder }) => (
   <button
     onClick={() => setOrder(order)}
     className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
@@ -133,10 +124,9 @@ export default function App() {
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [trackInfo, setTrackInfo] = useState<StationTrackInfo | null>(null);
-  const pinchDistRef = useRef<number>(0);
+  const pinchDistRef = useRef(0);
   const PINCH_THRESHOLD = 40; // pixels
-  
-  // State loaded from LocalStorage
+
   const [customOrder, setCustomOrder] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(CUSTOM_ORDER_KEY);
@@ -151,25 +141,18 @@ export default function App() {
     if (urlParams.get('filter') === 'favorites') {
       return StationFilter.Favorites;
     }
-    const saved = localStorage.getItem(LAST_FILTER_KEY) as StationFilter;
-    return (saved && Object.values(StationFilter).includes(saved)) ? saved : StationFilter.All;
+    const saved = localStorage.getItem(LAST_FILTER_KEY);
+    return (saved && Object.values(StationFilter).includes(saved as StationFilter)) ? saved as StationFilter : StationFilter.All;
   });
 
   const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
-    let savedSort = localStorage.getItem(LAST_SORT_KEY) as SortOrder | 'name' | 'tags';
-    // Handle legacy 'name' value from older versions
-    if (savedSort === 'name') {
-        savedSort = 'name_asc';
-    }
-    // Handle legacy 'tags' value
-    if (savedSort === 'tags') {
-        savedSort = 'category_style';
-    }
+    let savedSort = localStorage.getItem(LAST_SORT_KEY);
+    if (savedSort === 'name') savedSort = 'name_asc';
+    if (savedSort === 'tags') savedSort = 'category_style';
     const customOrderExists = !!localStorage.getItem(CUSTOM_ORDER_KEY);
-
     if (savedSort) {
       if (savedSort === 'custom' && !customOrderExists) {
-        // Fallback if 'custom' is saved but no custom order exists
+        // Fallback
       } else {
         return savedSort as SortOrder;
       }
@@ -178,15 +161,15 @@ export default function App() {
   });
   
   const [theme, setTheme] = useState<Theme>(() => {
-      const saved = localStorage.getItem(THEME_KEY) as Theme;
-      return (saved && THEMES.includes(saved)) ? saved : 'dark';
+      const saved = localStorage.getItem(THEME_KEY);
+      return (saved && THEMES.includes(saved as Theme)) ? saved as Theme : 'dark';
   });
 
   const [eqPreset, setEqPreset] = useState<EqPreset>(() => {
-      const saved = localStorage.getItem(EQ_KEY) as EqPreset;
-      return (saved && EQ_PRESET_KEYS.includes(saved)) ? saved : 'flat';
+      const saved = localStorage.getItem(EQ_KEY);
+      return (saved && EQ_PRESET_KEYS.includes(saved as EqPreset)) ? saved as EqPreset : 'flat';
   });
-
+  
   const [customEqSettings, setCustomEqSettings] = useState<CustomEqSettings>(() => {
     try {
       const saved = localStorage.getItem(CUSTOM_EQ_KEY);
@@ -196,77 +179,75 @@ export default function App() {
     }
   });
 
-  const [volume, setVolume] = useState<number>(() => {
+  const [volume, setVolume] = useState(() => {
     const saved = localStorage.getItem(VOLUME_KEY);
     return saved ? parseFloat(saved) : 1;
   });
 
-  const [isNowPlayingVisualizerEnabled, setIsNowPlayingVisualizerEnabled] = useState<boolean>(() => {
+  const [isNowPlayingVisualizerEnabled, setIsNowPlayingVisualizerEnabled] = useState(() => {
       const saved = localStorage.getItem(NOW_PLAYING_VISUALIZER_ENABLED_KEY);
       return saved ? JSON.parse(saved) : true;
   });
 
-  const [isPlayerBarVisualizerEnabled, setIsPlayerBarVisualizerEnabled] = useState<boolean>(() => {
+  const [isPlayerBarVisualizerEnabled, setIsPlayerBarVisualizerEnabled] = useState(() => {
       const saved = localStorage.getItem(PLAYER_BAR_VISUALIZER_ENABLED_KEY);
       return saved ? JSON.parse(saved) : true;
   });
 
   const [visualizerStyle, setVisualizerStyle] = useState<VisualizerStyle>(() => {
-      const saved = localStorage.getItem(VISUALIZER_STYLE_KEY) as VisualizerStyle;
-      return (saved && VISUALIZER_STYLES.includes(saved)) ? saved : 'bars';
+      const saved = localStorage.getItem(VISUALIZER_STYLE_KEY);
+      return (saved && VISUALIZER_STYLES.includes(saved as VisualizerStyle)) ? saved as VisualizerStyle : 'bars';
   });
   
-  const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState<boolean>(() => {
+  const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState(() => {
     const saved = localStorage.getItem(STATUS_INDICATOR_ENABLED_KEY);
     return saved ? JSON.parse(saved) : true;
   });
 
-  const [isVolumeControlVisible, setIsVolumeControlVisible] = useState<boolean>(() => {
+  const [isVolumeControlVisible, setIsVolumeControlVisible] = useState(() => {
       const saved = localStorage.getItem(VOLUME_CONTROL_VISIBLE_KEY);
       return saved ? JSON.parse(saved) : true;
   });
   
-  const [showNextSong, setShowNextSong] = useState<boolean>(() => {
+  const [showNextSong, setShowNextSong] = useState(() => {
       const saved = localStorage.getItem(SHOW_NEXT_SONG_KEY);
       return saved ? JSON.parse(saved) : true;
   });
-
+    
   const [gridSize, setGridSize] = useState<GridSize>(() => {
     const saved = localStorage.getItem(GRID_SIZE_KEY);
-    // 1 is smallest, 5 is largest. Let's default to 3.
-    return saved ? (JSON.parse(saved) as GridSize) : 3;
+    const size = saved ? parseInt(JSON.parse(saved), 10) : 3;
+    return GRID_SIZES.includes(size as GridSize) ? size as GridSize : 3;
   });
   
-  const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState<boolean>(() => {
+  const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState(() => {
     const saved = localStorage.getItem(MARQUEE_PROGRAM_ENABLED_KEY);
     return saved ? JSON.parse(saved) : true;
   });
 
-  const [isMarqueeCurrentTrackEnabled, setIsMarqueeCurrentTrackEnabled] = useState<boolean>(() => {
+  const [isMarqueeCurrentTrackEnabled, setIsMarqueeCurrentTrackEnabled] = useState(() => {
     const saved = localStorage.getItem(MARQUEE_CURRENT_ENABLED_KEY);
     return saved ? JSON.parse(saved) : true;
   });
   
-  const [isMarqueeNextTrackEnabled, setIsMarqueeNextTrackEnabled] = useState<boolean>(() => {
+  const [isMarqueeNextTrackEnabled, setIsMarqueeNextTrackEnabled] = useState(() => {
     const saved = localStorage.getItem(MARQUEE_NEXT_ENABLED_KEY);
     return saved ? JSON.parse(saved) : true;
   });
   
-  const [marqueeSpeed, setMarqueeSpeed] = useState<number>(() => {
+  const [marqueeSpeed, setMarqueeSpeed] = useState(() => {
     const saved = localStorage.getItem(MARQUEE_SPEED_KEY);
-    // Defaulting to 6 on a 1-10 scale. Slower than the old default.
     return saved ? JSON.parse(saved) : 6;
   });
 
-  const [marqueeDelay, setMarqueeDelay] = useState<number>(() => {
+  const [marqueeDelay, setMarqueeDelay] = useState(() => {
       const saved = localStorage.getItem(MARQUEE_DELAY_KEY);
       return saved ? JSON.parse(saved) : 3;
   });
 
 
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
-
-  // Fetch stations on initial load
+  
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
@@ -285,66 +266,48 @@ export default function App() {
         setIsLoading(false);
       }
     };
-
     loadData();
   }, []);
 
-  // Restore last played station once station list is loaded
   useEffect(() => {
     if (stations.length > 0 && playerState.status === 'IDLE') {
         const lastStationUuid = localStorage.getItem(LAST_STATION_KEY);
         if (lastStationUuid) {
             const station = stations.find(s => s.stationuuid === lastStationUuid);
             if (station) {
-                // Don't auto-play, just set it as the current station
                 dispatch({ type: 'SELECT_STATION', payload: station });
             }
         }
     }
   }, [stations, playerState.status]);
-  
-  // Save last station to localStorage
+
   useEffect(() => {
       if (playerState.station) {
           localStorage.setItem(LAST_STATION_KEY, playerState.station.stationuuid);
       }
   }, [playerState.station]);
-  
-  // Fetch station metadata (current song/program)
-  useEffect(() => {
-    let intervalId: number | undefined;
 
+  useEffect(() => {
+    let intervalId: number;
     const fetchAndSetInfo = async () => {
       if (!playerState.station) return;
+      const { name, stationuuid } = playerState.station;
       
       let finalInfo: StationTrackInfo | null = null;
-      const stationName = playerState.station.name;
-
-      // New logic: Check if there's a specific, high-accuracy API for this station.
-      if (hasSpecificHandler(stationName)) {
-        // This station has a dedicated API. Use it exclusively for live data.
-        const specificInfo = await fetchStationSpecificTrackInfo(stationName);
-        if (specificInfo) {
-          finalInfo = specificInfo;
-        } else {
-          // If the specific API fails, only fall back to the schedule, not the generic API.
-          const scheduledProgram = getCurrentProgram(stationName);
-          if (scheduledProgram) {
-            finalInfo = { program: scheduledProgram, current: null, next: null };
-          }
+      
+      if (hasSpecificHandler(name)) {
+        const specificInfo = await fetchStationSpecificTrackInfo(name);
+        finalInfo = specificInfo ? { ...specificInfo } : { program: null, current: null, next: null };
+        if (!finalInfo.program) {
+            finalInfo.program = getCurrentProgram(name);
         }
       } else {
-        // This station has NO dedicated API. Use the generic Radio-Browser API.
-        const songTitle = await fetchLiveTrackInfo(playerState.station.stationuuid);
-        if (songTitle && songTitle.toLowerCase() !== stationName.toLowerCase()) {
-          finalInfo = { program: null, current: songTitle, next: null };
-        } else {
-          // If the generic API fails, fall back to the schedule.
-          const scheduledProgram = getCurrentProgram(stationName);
-          if (scheduledProgram) {
-            finalInfo = { program: scheduledProgram, current: null, next: null };
-          }
-        }
+        const [songTitle, programName] = await Promise.all([
+          fetchLiveTrackInfo(stationuuid),
+          getCurrentProgram(name)
+        ]);
+        const current = songTitle && songTitle.toLowerCase() !== name.toLowerCase() ? songTitle : null;
+        finalInfo = { program: programName, current, next: null };
       }
       
       setTrackInfo(finalInfo);
@@ -364,14 +327,12 @@ export default function App() {
     };
   }, [playerState.station]);
 
-  // Effects to save state changes to localStorage
   useEffect(() => {
     document.documentElement.className = theme;
     localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
   useEffect(() => {
-    // Only save filter to local storage if it's not from a URL param on initial load
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('filter') !== 'favorites') {
         localStorage.setItem(LAST_FILTER_KEY, filter);
@@ -391,7 +352,7 @@ export default function App() {
     setEqPreset(preset);
     localStorage.setItem(EQ_KEY, preset);
   };
-
+  
   const handleSetCustomEqSettings = (settings: CustomEqSettings) => {
     setCustomEqSettings(settings);
     localStorage.setItem(CUSTOM_EQ_KEY, JSON.stringify(settings));
@@ -416,7 +377,7 @@ export default function App() {
     setIsVolumeControlVisible(visible);
     localStorage.setItem(VOLUME_CONTROL_VISIBLE_KEY, JSON.stringify(visible));
   };
-  
+
   const handleSetShowNextSong = (enabled: boolean) => {
     setShowNextSong(enabled);
     localStorage.setItem(SHOW_NEXT_SONG_KEY, JSON.stringify(enabled));
@@ -460,46 +421,41 @@ export default function App() {
     localStorage.setItem(VISUALIZER_STYLE_KEY, newStyle);
   }, [visualizerStyle]);
 
+
   const saveCustomOrder = (newOrder: string[]) => {
       setCustomOrder(newOrder);
       localStorage.setItem(CUSTOM_ORDER_KEY, JSON.stringify(newOrder));
-  }
+  };
 
   const handleReorder = (reorderedDisplayedUuids: string[]) => {
       const allStationUuids = stations.map(s => s.stationuuid);
       const currentOrder = customOrder.length > 0 ? customOrder : allStationUuids;
-
       const reorderedSet = new Set(reorderedDisplayedUuids);
       const newOrder = [...reorderedDisplayedUuids];
-
       currentOrder.forEach(uuid => {
         if (!reorderedSet.has(uuid)) {
           newOrder.push(uuid);
         }
       });
-      
       saveCustomOrder(newOrder);
       setSortOrder('custom');
   };
 
   const filteredStations = useMemo(() => {
     if (filter === StationFilter.Favorites) {
-      return stations.filter(s => favorites.includes(s.stationuuid));
+      return stations.filter(s => isFavorite(s.stationuuid));
     }
     return stations;
-  }, [stations, filter, favorites]);
+  }, [stations, filter, isFavorite]);
   
   const displayedStations = useMemo(() => {
     let stationsToSort = [...filteredStations];
-    
     const customOrderMap = new Map(customOrder.map((uuid, index) => [uuid, index]));
-
     switch (sortOrder) {
       case 'custom':
         stationsToSort.sort((a, b) => {
             const indexA = customOrderMap.get(a.stationuuid);
             const indexB = customOrderMap.get(b.stationuuid);
-            
             if (typeof indexA === 'number' && typeof indexB === 'number') return indexA - indexB;
             if (typeof indexA === 'number') return -1;
             if (typeof indexB === 'number') return 1;
@@ -527,7 +483,7 @@ export default function App() {
         break;
       case 'priority':
       default:
-        const getPriorityIndex = (stationName: string): number => {
+        const getPriorityIndex = (stationName: string) => {
           const lowerCaseName = stationName.toLowerCase();
           return PRIORITY_STATIONS.findIndex(priorityStation => 
             priorityStation.aliases.some(alias => 
@@ -535,18 +491,14 @@ export default function App() {
             )
           );
         };
-        
         stationsToSort.sort((a, b) => {
           let aPriority = getPriorityIndex(a.name);
           let bPriority = getPriorityIndex(b.name);
-
           if (aPriority === -1) aPriority = Infinity;
           if (bPriority === -1) bPriority = Infinity;
-          
           if (aPriority !== bPriority) {
             return aPriority - bPriority;
           }
-
           return a.name.localeCompare(b.name, 'he');
         });
         break;
@@ -568,34 +520,18 @@ export default function App() {
   
   const handleNext = useCallback(() => {
       if (displayedStations.length === 0) return;
-      
-      const currentIndexInDisplayed = playerState.station
-        ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid)
-        : -1;
-
-      const nextIndexInDisplayed = (currentIndexInDisplayed === -1) 
-        ? 0 
-        : (currentIndexInDisplayed + 1) % displayedStations.length;
-      
-      const nextStation = displayedStations[nextIndexInDisplayed];
-      dispatch({ type: 'SELECT_STATION', payload: nextStation });
-  }, [displayedStations, playerState.station]);
+      const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid) : -1;
+      const nextIndex = (currentIndex + 1) % displayedStations.length;
+      handleSelectStation(displayedStations[nextIndex]);
+  }, [displayedStations, playerState.station, handleSelectStation]);
 
   const handlePrev = useCallback(() => {
       if (displayedStations.length === 0) return;
-
-      const currentIndexInDisplayed = playerState.station
-        ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid)
-        : -1;
-      
-      const prevIndexInDisplayed = (currentIndexInDisplayed <= 0) 
-        ? displayedStations.length - 1 
-        : currentIndexInDisplayed - 1;
-
-      const prevStation = displayedStations[prevIndexInDisplayed];
-      dispatch({ type: 'SELECT_STATION', payload: prevStation });
-  }, [displayedStations, playerState.station]);
-
+      const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid) : -1;
+      const prevIndex = (currentIndex - 1 + displayedStations.length) % displayedStations.length;
+      handleSelectStation(displayedStations[prevIndex]);
+  }, [displayedStations, playerState.station, handleSelectStation]);
+    
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
       if (e.touches.length === 2) {
           e.preventDefault();
@@ -614,10 +550,10 @@ export default function App() {
           const delta = currentDist - pinchDistRef.current;
 
           if (Math.abs(delta) > PINCH_THRESHOLD) {
-              if (delta > 0) { // Pinch out -> bigger items
+              if (delta > 0) {
                   const newSize = Math.min(5, gridSize + 1) as GridSize;
                   handleSetGridSize(newSize);
-              } else { // Pinch in -> smaller items
+              } else {
                   const newSize = Math.max(1, gridSize - 1) as GridSize;
                   handleSetGridSize(newSize);
               }
@@ -626,21 +562,17 @@ export default function App() {
       }
   }, [gridSize, handleSetGridSize]);
 
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-      if (e.touches.length < 2) {
-          pinchDistRef.current = 0;
-      }
+  const handleTouchEnd = useCallback(() => {
+      pinchDistRef.current = 0;
   }, []);
-
+  
   const handleCategorySortClick = () => {
     const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
     const isCategorySortActive = currentCategoryIndex !== -1;
-
     if (isCategorySortActive) {
         const nextIndex = (currentCategoryIndex + 1) % CATEGORY_SORTS.length;
         setSortOrder(CATEGORY_SORTS[nextIndex].order);
     } else {
-        // If it's not a category sort, start from the first one
         setSortOrder(CATEGORY_SORTS[0].order);
     }
   };
@@ -649,7 +581,6 @@ export default function App() {
   const isCategorySortActive = currentCategoryIndex !== -1;
   const categoryButtonLabel = isCategorySortActive ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
-
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col">
       <header className="p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md">
@@ -657,22 +588,10 @@ export default function App() {
             <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הגדרות">
               <MenuIcon className="w-6 h-6" />
             </button>
-            
             <div className="flex items-center bg-gray-700 rounded-full p-1">
-              <button 
-                onClick={() => setFilter(StationFilter.All)}
-                className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.All ? 'bg-accent text-white' : 'text-gray-300'}`}
-              >
-                {StationFilter.All}
-              </button>
-              <button 
-                onClick={() => setFilter(StationFilter.Favorites)}
-                className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.Favorites ? 'bg-accent text-white' : 'text-gray-300'}`}
-              >
-                {StationFilter.Favorites}
-              </button>
+              <button onClick={() => setFilter(StationFilter.All)} className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.All ? 'bg-accent text-white' : 'text-gray-300'}`}>{StationFilter.All}</button>
+              <button onClick={() => setFilter(StationFilter.Favorites)} className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.Favorites ? 'bg-accent text-white' : 'text-gray-300'}`}>{StationFilter.Favorites}</button>
             </div>
-            
             <h1 className="text-xl sm:text-2xl font-bold text-accent">רדיו פרימיום</h1>
         </div>
         <div className="max-w-7xl mx-auto mt-4">
@@ -682,38 +601,22 @@ export default function App() {
                     <SortButton label="שלי" order="custom" currentOrder={sortOrder} setOrder={setSortOrder} />
                     <SortButton label="פופולריות" order="priority" currentOrder={sortOrder} setOrder={setSortOrder} />
                     <button
-                      onClick={() => {
-                        if (sortOrder === 'name_asc') {
-                          setSortOrder('name_desc');
-                        } else {
-                          setSortOrder('name_asc');
-                        }
-                      }}
+                      onClick={() => sortOrder === 'name_asc' ? setSortOrder('name_desc') : setSortOrder('name_asc')}
                       className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
                         sortOrder.startsWith('name_') ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
                       }`}
-                    >
-                      {sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'}
-                    </button>
+                    >{sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'}</button>
                     <button
                       onClick={handleCategorySortClick}
                       className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
                         isCategorySortActive ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
                       }`}
-                    >
-                      {categoryButtonLabel}
-                    </button>
+                    >{categoryButtonLabel}</button>
                 </div>
             </div>
         </div>
       </header>
-
-      <main 
-        className="flex-grow pb-48"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
+      <main className="flex-grow pb-48" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
         {isLoading ? (
           <StationListSkeleton />
         ) : error ? (
@@ -734,18 +637,13 @@ export default function App() {
                 />
             ) : (
                 <div className="text-center p-8 text-text-secondary">
-                    <h2 className="text-xl font-semibold">
-                      {filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}
-                    </h2>
-                    <p>
-                      {filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}
-                    </p>
+                    <h2 className="text-xl font-semibold">{filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}</h2>
+                    <p>{filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}</p>
                 </div>
             )
         )}
       </main>
-
-      <SettingsPanel 
+      <SettingsPanel
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         currentTheme={theme}
@@ -777,33 +675,29 @@ export default function App() {
         marqueeDelay={marqueeDelay}
         onMarqueeDelayChange={handleSetMarqueeDelay}
       />
-
-      {playerState.station && (
-         <NowPlaying
-          isOpen={isNowPlayingOpen}
-          onClose={() => setIsNowPlayingOpen(false)}
-          station={playerState.station}
-          isPlaying={playerState.status === 'PLAYING'}
-          onPlayPause={handlePlayPause}
-          onNext={handleNext}
-          onPrev={handlePrev}
-          volume={volume}
-          onVolumeChange={handleSetVolume}
-          trackInfo={trackInfo}
-          showNextSong={showNextSong}
-          frequencyData={frequencyData}
-          visualizerStyle={visualizerStyle}
-          isVisualizerEnabled={isNowPlayingVisualizerEnabled}
-          onCycleVisualizerStyle={handleCycleVisualizerStyle}
-          isVolumeControlVisible={isVolumeControlVisible}
-          marqueeDelay={marqueeDelay}
-          isMarqueeProgramEnabled={isMarqueeProgramEnabled}
-          isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled}
-          isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled}
-          marqueeSpeed={marqueeSpeed}
-        />
-      )}
-     
+      {playerState.station && <NowPlaying
+        isOpen={isNowPlayingOpen}
+        onClose={() => setIsNowPlayingOpen(false)}
+        station={playerState.station}
+        isPlaying={playerState.status === 'PLAYING'}
+        onPlayPause={handlePlayPause}
+        onNext={handleNext}
+        onPrev={handlePrev}
+        volume={volume}
+        onVolumeChange={handleSetVolume}
+        trackInfo={trackInfo}
+        showNextSong={showNextSong}
+        frequencyData={frequencyData}
+        visualizerStyle={visualizerStyle}
+        isVisualizerEnabled={isNowPlayingVisualizerEnabled}
+        onCycleVisualizerStyle={handleCycleVisualizerStyle}
+        isVolumeControlVisible={isVolumeControlVisible}
+        marqueeDelay={marqueeDelay}
+        isMarqueeProgramEnabled={isMarqueeProgramEnabled}
+        isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled}
+        isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled}
+        marqueeSpeed={marqueeSpeed}
+      />}
       <Player
         playerState={playerState}
         onPlayPause={handlePlayPause}

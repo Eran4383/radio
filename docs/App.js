@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService.js';
-import { THEMES, EQ_PRESET_KEYS, VISUALIZER_STYLES } from './types.js';
+import { THEMES, EQ_PRESET_KEYS, VISUALIZER_STYLES, GRID_SIZES } from './types.js';
 import Player from './components/Player.js';
 import StationList from './components/StationList.js';
 import SettingsPanel from './components/SettingsPanel.js';
@@ -27,33 +27,28 @@ function playerReducer(state, action) {
   switch (action.type) {
     case 'SELECT_STATION':
       if (state.station?.stationuuid === action.payload.stationuuid) {
-        // It's the same station, toggle play/pause
         if (state.status === 'PLAYING') {
           return { ...state, status: 'PAUSED' };
         } else if (state.status === 'PAUSED' || state.status === 'ERROR' || state.status === 'IDLE') {
           return { ...state, status: 'LOADING' };
         }
       }
-      // It's a new station
-      return { status: 'LOADING', station: action.payload };
+      return { status: 'LOADING', station: action.payload, error: undefined };
     case 'PLAY':
-       if (state.station) {
-         return { ...state, status: 'LOADING' };
-       }
-       return { ...state, status: 'LOADING', station: action.payload };
+      return { ...state, status: 'LOADING', station: action.payload, error: undefined };
     case 'TOGGLE_PAUSE':
       if (state.status === 'PLAYING') {
         return { ...state, status: 'PAUSED' };
       }
       if (state.status === 'PAUSED' && state.station) {
-        return { ...state, status: 'LOADING' };
+        return { ...state, status: 'LOADING', error: undefined };
       }
       return state;
     case 'STREAM_STARTED':
       return { ...state, status: 'PLAYING', error: undefined };
     case 'STREAM_PAUSED':
-        if(state.status === 'LOADING') return state; // Ignore pause event during load
-        return { ...state, status: 'PAUSED' };
+      if (state.status === 'LOADING') return state;
+      return { ...state, status: 'PAUSED' };
     case 'STREAM_ERROR':
       return { ...state, status: 'ERROR', error: action.payload };
     default:
@@ -61,8 +56,6 @@ function playerReducer(state, action) {
   }
 }
 
-
-// LocalStorage Keys
 const CUSTOM_ORDER_KEY = 'radio-station-custom-order';
 const THEME_KEY = 'radio-theme';
 const EQ_KEY = 'radio-eq';
@@ -113,7 +106,7 @@ export default function App() {
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [trackInfo, setTrackInfo] = useState(null);
   const pinchDistRef = useRef(0);
-  const PINCH_THRESHOLD = 40; // pixels
+  const PINCH_THRESHOLD = 40;
 
   const [customOrder, setCustomOrder] = useState(() => {
     try {
@@ -135,16 +128,9 @@ export default function App() {
 
   const [sortOrder, setSortOrder] = useState(() => {
     let savedSort = localStorage.getItem(LAST_SORT_KEY);
-    // Handle legacy 'name' value from older versions
-    if (savedSort === 'name') {
-        savedSort = 'name_asc';
-    }
-    // Handle legacy 'tags' value
-    if (savedSort === 'tags') {
-        savedSort = 'category_style';
-    }
+    if (savedSort === 'name') savedSort = 'name_asc';
+    if (savedSort === 'tags') savedSort = 'category_style';
     const customOrderExists = !!localStorage.getItem(CUSTOM_ORDER_KEY);
-
     if (savedSort) {
       if (savedSort === 'custom' && !customOrderExists) {
         // Fallback
@@ -211,8 +197,8 @@ export default function App() {
     
   const [gridSize, setGridSize] = useState(() => {
     const saved = localStorage.getItem(GRID_SIZE_KEY);
-    // 1 is smallest, 5 is largest. Let's default to 3.
-    return saved ? JSON.parse(saved) : 3;
+    const size = saved ? parseInt(JSON.parse(saved), 10) : 3;
+    return GRID_SIZES.includes(size) ? size : 3;
   });
   
   const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState(() => {
@@ -232,7 +218,6 @@ export default function App() {
   
   const [marqueeSpeed, setMarqueeSpeed] = useState(() => {
     const saved = localStorage.getItem(MARQUEE_SPEED_KEY);
-    // Defaulting to 6 on a 1-10 scale. Slower than the old default.
     return saved ? JSON.parse(saved) : 6;
   });
 
@@ -271,14 +256,12 @@ export default function App() {
         if (lastStationUuid) {
             const station = stations.find(s => s.stationuuid === lastStationUuid);
             if (station) {
-                // Don't auto-play, just set it as the current station
                 dispatch({ type: 'SELECT_STATION', payload: station });
             }
         }
     }
   }, [stations, playerState.status]);
 
-  // Save last station to localStorage
   useEffect(() => {
       if (playerState.station) {
           localStorage.setItem(LAST_STATION_KEY, playerState.station.stationuuid);
@@ -289,35 +272,23 @@ export default function App() {
     let intervalId;
     const fetchAndSetInfo = async () => {
       if (!playerState.station) return;
+      const { name, stationuuid } = playerState.station;
       
       let finalInfo = null;
-      const stationName = playerState.station.name;
-
-      // New logic: Check if there's a specific, high-accuracy API for this station.
-      if (hasSpecificHandler(stationName)) {
-        // This station has a dedicated API. Use it exclusively for live data.
-        const specificInfo = await fetchStationSpecificTrackInfo(stationName);
-        if (specificInfo) {
-          finalInfo = specificInfo;
-        } else {
-          // If the specific API fails, only fall back to the schedule, not the generic API.
-          const scheduledProgram = getCurrentProgram(stationName);
-          if (scheduledProgram) {
-            finalInfo = { program: scheduledProgram, current: null, next: null };
-          }
+      
+      if (hasSpecificHandler(name)) {
+        const specificInfo = await fetchStationSpecificTrackInfo(name);
+        finalInfo = specificInfo ? { ...specificInfo } : { program: null, current: null, next: null };
+        if (!finalInfo.program) {
+            finalInfo.program = getCurrentProgram(name);
         }
       } else {
-        // This station has NO dedicated API. Use the generic Radio-Browser API.
-        const songTitle = await fetchLiveTrackInfo(playerState.station.stationuuid);
-        if (songTitle && songTitle.toLowerCase() !== stationName.toLowerCase()) {
-          finalInfo = { program: null, current: songTitle, next: null };
-        } else {
-          // If the generic API fails, fall back to the schedule.
-          const scheduledProgram = getCurrentProgram(stationName);
-          if (scheduledProgram) {
-            finalInfo = { program: scheduledProgram, current: null, next: null };
-          }
-        }
+        const [songTitle, programName] = await Promise.all([
+          fetchLiveTrackInfo(stationuuid),
+          getCurrentProgram(name)
+        ]);
+        const current = songTitle && songTitle.toLowerCase() !== name.toLowerCase() ? songTitle : null;
+        finalInfo = { program: programName, current, next: null };
       }
       
       setTrackInfo(finalInfo);
@@ -343,7 +314,6 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    // Only save filter to local storage if it's not from a URL param on initial load
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('filter') !== 'favorites') {
         localStorage.setItem(LAST_FILTER_KEY, filter);
@@ -454,10 +424,10 @@ export default function App() {
 
   const filteredStations = useMemo(() => {
     if (filter === StationFilter.Favorites) {
-      return stations.filter(s => favorites.includes(s.stationuuid));
+      return stations.filter(s => isFavorite(s.stationuuid));
     }
     return stations;
-  }, [stations, filter, favorites]);
+  }, [stations, filter, isFavorite]);
   
   const displayedStations = useMemo(() => {
     let stationsToSort = [...filteredStations];
@@ -489,7 +459,7 @@ export default function App() {
             const categoryB = getCategory(b, categoryType);
             if (categoryA < categoryB) return -1;
             if (categoryA > categoryB) return 1;
-            return a.name.localeCompare(b.name, 'he'); // secondary sort by name
+            return a.name.localeCompare(b.name, 'he');
         });
         break;
       case 'priority':
@@ -531,33 +501,17 @@ export default function App() {
   
   const handleNext = useCallback(() => {
       if (displayedStations.length === 0) return;
-      
-      const currentIndexInDisplayed = playerState.station
-        ? displayedStations.findIndex(s => s.stationuuid === playerState.station.stationuuid)
-        : -1;
-
-      const nextIndexInDisplayed = (currentIndexInDisplayed === -1) 
-        ? 0 
-        : (currentIndexInDisplayed + 1) % displayedStations.length;
-      
-      const nextStation = displayedStations[nextIndexInDisplayed];
-      dispatch({ type: 'SELECT_STATION', payload: nextStation });
-  }, [displayedStations, playerState.station]);
+      const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station.stationuuid) : -1;
+      const nextIndex = (currentIndex + 1) % displayedStations.length;
+      handleSelectStation(displayedStations[nextIndex]);
+  }, [displayedStations, playerState.station, handleSelectStation]);
 
   const handlePrev = useCallback(() => {
       if (displayedStations.length === 0) return;
-
-      const currentIndexInDisplayed = playerState.station
-        ? displayedStations.findIndex(s => s.stationuuid === playerState.station.stationuuid)
-        : -1;
-      
-      const prevIndexInDisplayed = (currentIndexInDisplayed <= 0) 
-        ? displayedStations.length - 1 
-        : currentIndexInDisplayed - 1;
-
-      const prevStation = displayedStations[prevIndexInDisplayed];
-      dispatch({ type: 'SELECT_STATION', payload: prevStation });
-  }, [displayedStations, playerState.station]);
+      const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station.stationuuid) : -1;
+      const prevIndex = (currentIndex - 1 + displayedStations.length) % displayedStations.length;
+      handleSelectStation(displayedStations[prevIndex]);
+  }, [displayedStations, playerState.station, handleSelectStation]);
     
   const handleTouchStart = useCallback((e) => {
       if (e.touches.length === 2) {
@@ -577,10 +531,10 @@ export default function App() {
           const delta = currentDist - pinchDistRef.current;
 
           if (Math.abs(delta) > PINCH_THRESHOLD) {
-              if (delta > 0) { // Pinch out -> bigger items
+              if (delta > 0) {
                   const newSize = Math.min(5, gridSize + 1);
                   handleSetGridSize(newSize);
-              } else { // Pinch in -> smaller items
+              } else {
                   const newSize = Math.max(1, gridSize - 1);
                   handleSetGridSize(newSize);
               }
@@ -589,21 +543,17 @@ export default function App() {
       }
   }, [gridSize, handleSetGridSize]);
 
-  const handleTouchEnd = useCallback((e) => {
-      if (e.touches.length < 2) {
-          pinchDistRef.current = 0;
-      }
+  const handleTouchEnd = useCallback(() => {
+      pinchDistRef.current = 0;
   }, []);
   
   const handleCategorySortClick = () => {
     const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
     const isCategorySortActive = currentCategoryIndex !== -1;
-
     if (isCategorySortActive) {
         const nextIndex = (currentCategoryIndex + 1) % CATEGORY_SORTS.length;
         setSortOrder(CATEGORY_SORTS[nextIndex].order);
     } else {
-        // If it's not a category sort, start from the first one
         setSortOrder(CATEGORY_SORTS[0].order);
     }
   };
@@ -632,13 +582,7 @@ export default function App() {
                     React.createElement(SortButton, { label: "שלי", order: "custom", currentOrder: sortOrder, setOrder: setSortOrder }),
                     React.createElement(SortButton, { label: "פופולריות", order: "priority", currentOrder: sortOrder, setOrder: setSortOrder }),
                     React.createElement("button", {
-                      onClick: () => {
-                        if (sortOrder === 'name_asc') {
-                          setSortOrder('name_desc');
-                        } else {
-                          setSortOrder('name_asc');
-                        }
-                      },
+                      onClick: () => sortOrder === 'name_asc' ? setSortOrder('name_desc') : setSortOrder('name_asc'),
                       className: `px-3 py-1 text-xs font-medium rounded-full transition-colors ${
                         sortOrder.startsWith('name_') ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
                       }`

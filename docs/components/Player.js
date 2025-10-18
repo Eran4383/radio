@@ -131,7 +131,7 @@ const Player = ({
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
     try {
-      const context = new (window.AudioContext || window.webkitAudioContext)();
+      const context = new (window.AudioContext || window.webkitAudioContext)({});
       audioContextRef.current = context;
       
       const source = context.createMediaElementSource(audioRef.current);
@@ -249,63 +249,23 @@ const Player = ({
 
   // Update Media Session API
   useEffect(() => {
-    if ('mediaSession' in navigator) {
-      if (station) {
+    if ('mediaSession' in navigator && station) {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: `${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`,
           artist: trackInfo?.current || 'רדיו פרימיום',
           artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
         });
 
-        const createTrackChangeHandler = (handler) => {
-          return async () => {
-            const audio = audioRef.current;
-            handler(); // Dispatch the action to change state
-            
-            if (audio) {
-              try {
-                // Return a promise that resolves when the new stream starts playing
-                await new Promise(resolve => {
-                  let timeoutId;
-                  const onPlaying = () => {
-                    clearTimeout(timeoutId);
-                    audio.removeEventListener('error', onError);
-                    resolve();
-                  };
-                  const onError = () => {
-                    clearTimeout(timeoutId);
-                    audio.removeEventListener('playing', onPlaying);
-                    resolve(); // Resolve on error too to not block the UI
-                  };
-                  audio.addEventListener('playing', onPlaying, { once: true });
-                  audio.addEventListener('error', onError, { once: true });
-                  timeoutId = window.setTimeout(resolve, 3000); // 3-second fallback
-                });
-              } catch (e) {
-                console.error('Media session action failed:', e);
-              }
-            }
-          };
-        };
-        
         navigator.mediaSession.setActionHandler('play', onPlayPause);
         navigator.mediaSession.setActionHandler('pause', onPlayPause);
-        navigator.mediaSession.setActionHandler('nexttrack', createTrackChangeHandler(onNext));
-        navigator.mediaSession.setActionHandler('previoustrack', createTrackChangeHandler(onPrev));
-
+        navigator.mediaSession.setActionHandler('nexttrack', onNext);
+        navigator.mediaSession.setActionHandler('previoustrack', onPrev);
+        
         if (status === 'PLAYING') {
             navigator.mediaSession.playbackState = 'playing';
         } else {
             navigator.mediaSession.playbackState = 'paused';
         }
-      } else {
-        navigator.mediaSession.metadata = null;
-        navigator.mediaSession.playbackState = 'none';
-        navigator.mediaSession.setActionHandler('play', null);
-        navigator.mediaSession.setActionHandler('pause', null);
-        navigator.mediaSession.setActionHandler('nexttrack', null);
-        navigator.mediaSession.setActionHandler('previoustrack', null);
-      }
     }
   }, [station, status, trackInfo, onPlayPause, onNext, onPrev]);
 
@@ -331,7 +291,7 @@ const Player = ({
               src: station.favicon, 
               alt: station.name, 
               className: "w-14 h-14 rounded-md bg-gray-700 object-contain flex-shrink-0",
-              onError: (e) => { e.currentTarget.src = 'https://picsum.photos/48'; }
+              onError: (e) => { (e.target).src = 'https://picsum.photos/48'; }
             }),
             React.createElement("div", { className: "min-w-0", key: station.stationuuid },
                React.createElement(MarqueeText, {
@@ -381,7 +341,7 @@ const Player = ({
           
           React.createElement("div", { className: "flex items-center gap-1 sm:gap-2" },
              React.createElement("button", { onClick: onPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הקודם" },
-                React.createElement(SkipNextIcon, { className: "w-6 h-6" })
+                React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
             ),
             React.createElement("button", { 
               onClick: onPlayPause, 
@@ -391,7 +351,7 @@ const Player = ({
               isActuallyPlaying || isLoading ? React.createElement(PauseIcon, { className: "w-7 h-7" }) : React.createElement(PlayIcon, { className: "w-7 h-7" })
             ),
             React.createElement("button", { onClick: onNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הבא" },
-                React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
+                React.createElement(SkipNextIcon, { className: "w-6 h-6" })
             )
           ),
 
@@ -399,7 +359,7 @@ const Player = ({
             ref: audioRef,
             onPlaying: () => onPlayerEvent({ type: 'STREAM_STARTED' }),
             onPause: () => onPlayerEvent({ type: 'STREAM_PAUSED' }),
-            onWaiting: () => {}, // We use the LOADING state now
+            onWaiting: () => {}, 
             onError: () => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."}),
             crossOrigin: "anonymous"
           })

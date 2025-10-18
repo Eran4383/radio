@@ -3,7 +3,6 @@ const urlsToCache = [
   '.',
   './index.html',
   './manifest.json',
-  './icon.svg',
   
   // Scripts
   './index.js',
@@ -63,10 +62,6 @@ self.addEventListener('fetch', event => {
           response => {
             if (!response || response.status !== 200) {
               return response;
-            }
-            
-            if (response.type === 'opaque') {
-                return response;
             }
 
             const responseToCache = response.clone();

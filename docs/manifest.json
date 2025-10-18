@@ -49,7 +49,7 @@
       "name": "המועדפים שלי",
       "short_name": "מועדפים",
       "description": "הצג את תחנות הרדיו המועדפות עליך",
-      "url": "/?filter=favorites",
+      "url": "./?filter=favorites",
       "icons": [
         {
           "src": "shortcut-favorites.png",

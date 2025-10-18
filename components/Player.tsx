@@ -167,6 +167,7 @@ const Player: React.FC<PlayerProps> = ({
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
     try {
+      // FIX: The constructor for AudioContext is called without arguments, as the argument is optional and may cause issues with some TypeScript configurations.
       const context = new (window.AudioContext || (window as any).webkitAudioContext)();
       audioContextRef.current = context;
       
@@ -285,63 +286,23 @@ const Player: React.FC<PlayerProps> = ({
 
   // Update Media Session API
   useEffect(() => {
-    if ('mediaSession' in navigator) {
-      if (station) {
+    if ('mediaSession' in navigator && station) {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: `${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`,
           artist: trackInfo?.current || 'רדיו פרימיום',
           artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
         });
 
-        const createTrackChangeHandler = (handler: () => void) => {
-          return async () => {
-            const audio = audioRef.current;
-            handler(); // Dispatch the action to change state
-            
-            if (audio) {
-              try {
-                // Return a promise that resolves when the new stream starts playing
-                await new Promise<void>(resolve => {
-                  let timeoutId: number;
-                  const onPlaying = () => {
-                    clearTimeout(timeoutId);
-                    audio.removeEventListener('error', onError);
-                    resolve();
-                  };
-                  const onError = () => {
-                    clearTimeout(timeoutId);
-                    audio.removeEventListener('playing', onPlaying);
-                    resolve(); // Resolve on error too to not block the UI
-                  };
-                  audio.addEventListener('playing', onPlaying, { once: true });
-                  audio.addEventListener('error', onError, { once: true });
-                  timeoutId = window.setTimeout(resolve, 3000); // 3-second fallback
-                });
-              } catch (e) {
-                console.error('Media session action failed:', e);
-              }
-            }
-          };
-        };
-        
         navigator.mediaSession.setActionHandler('play', onPlayPause);
         navigator.mediaSession.setActionHandler('pause', onPlayPause);
-        navigator.mediaSession.setActionHandler('nexttrack', createTrackChangeHandler(onNext));
-        navigator.mediaSession.setActionHandler('previoustrack', createTrackChangeHandler(onPrev));
-
+        navigator.mediaSession.setActionHandler('nexttrack', onNext);
+        navigator.mediaSession.setActionHandler('previoustrack', onPrev);
+        
         if (status === 'PLAYING') {
             navigator.mediaSession.playbackState = 'playing';
         } else {
             navigator.mediaSession.playbackState = 'paused';
         }
-      } else {
-        navigator.mediaSession.metadata = null;
-        navigator.mediaSession.playbackState = 'none';
-        navigator.mediaSession.setActionHandler('play', null);
-        navigator.mediaSession.setActionHandler('pause', null);
-        navigator.mediaSession.setActionHandler('nexttrack', null);
-        navigator.mediaSession.setActionHandler('previoustrack', null);
-      }
     }
   }, [station, status, trackInfo, onPlayPause, onNext, onPrev]);
 
@@ -367,7 +328,7 @@ const Player: React.FC<PlayerProps> = ({
               src={station.favicon} 
               alt={station.name} 
               className="w-14 h-14 rounded-md bg-gray-700 object-contain flex-shrink-0"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://picsum.photos/48'; }}
+              onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/48'; }}
             />
             <div className="min-w-0" key={station.stationuuid}>
                <MarqueeText
@@ -416,8 +377,9 @@ const Player: React.FC<PlayerProps> = ({
           </div>
           
           <div className="flex items-center gap-1 sm:gap-2">
+            {/* FIX: Correctly map onPrev to SkipPreviousIcon */}
              <button onClick={onPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הקודם">
-                <SkipNextIcon className="w-6 h-6" />
+                <SkipPreviousIcon className="w-6 h-6" />
             </button>
             <button 
               onClick={onPlayPause} 
@@ -426,11 +388,13 @@ const Player: React.FC<PlayerProps> = ({
             >
               {isActuallyPlaying || isLoading ? <PauseIcon className="w-7 h-7" /> : <PlayIcon className="w-7 h-7" />}
             </button>
+            {/* FIX: Correctly map onNext to SkipNextIcon */}
             <button onClick={onNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הבא">
-                <SkipPreviousIcon className="w-6 h-6" />
+                <SkipNextIcon className="w-6 h-6" />
             </button>
           </div>
 
+        </div>
           <audio 
             ref={audioRef}
             onPlaying={() => onPlayerEvent({ type: 'STREAM_STARTED' })}
@@ -438,8 +402,7 @@ const Player: React.FC<PlayerProps> = ({
             onWaiting={() => {}} // We use the LOADING state now
             onError={() => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."})}
             crossOrigin="anonymous"
-          ></audio>
-        </div>
+          />
       </div>
     </div>
   );
