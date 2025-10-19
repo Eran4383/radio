@@ -518,14 +518,30 @@ export default function App() {
     }
   }, [playerState.station, displayedStations]);
   
-  const handleNext = useCallback(() => {
+  // Specific async handlers for Media Session API to prevent notification shade from closing
+  const handlePlay = useCallback(async () => {
+    if (playerState.status === 'PLAYING') return;
+    if (playerState.station) {
+        dispatch({ type: 'TOGGLE_PAUSE' });
+    } else if (displayedStations.length > 0) {
+        dispatch({ type: 'PLAY', payload: displayedStations[0] });
+    }
+  }, [playerState.status, playerState.station, displayedStations]);
+  
+  const handlePause = useCallback(async () => {
+    if (playerState.status === 'PLAYING') {
+      dispatch({ type: 'TOGGLE_PAUSE' });
+    }
+  }, [playerState.status]);
+
+  const handleNext = useCallback(async () => {
       if (displayedStations.length === 0) return;
       const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid) : -1;
       const nextIndex = (currentIndex + 1) % displayedStations.length;
       handleSelectStation(displayedStations[nextIndex]);
   }, [displayedStations, playerState.station, handleSelectStation]);
 
-  const handlePrev = useCallback(() => {
+  const handlePrev = useCallback(async () => {
       if (displayedStations.length === 0) return;
       const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid) : -1;
       const prevIndex = (currentIndex - 1 + displayedStations.length) % displayedStations.length;
@@ -700,6 +716,8 @@ export default function App() {
       />}
       <Player
         playerState={playerState}
+        onPlay={handlePlay}
+        onPause={handlePause}
         onPlayPause={handlePlayPause}
         onNext={handleNext}
         onPrev={handlePrev}

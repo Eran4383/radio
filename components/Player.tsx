@@ -21,6 +21,8 @@ type PlayerEvent =
 interface PlayerProps {
   playerState: PlayerState;
   onPlayPause: () => void;
+  onPlay: () => void;
+  onPause: () => void;
   onNext: () => void;
   onPrev: () => void;
   onPlayerEvent: (event: PlayerEvent) => void;
@@ -82,6 +84,8 @@ const PlayerVisualizer: React.FC<{ frequencyData: Uint8Array }> = ({ frequencyDa
 const Player: React.FC<PlayerProps> = ({
   playerState,
   onPlayPause,
+  onPlay,
+  onPause,
   onNext,
   onPrev,
   onPlayerEvent,
@@ -167,8 +171,8 @@ const Player: React.FC<PlayerProps> = ({
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
     try {
-      // FIX: The constructor for AudioContext is called without arguments, as the argument is optional and may cause issues with some TypeScript configurations.
-      const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // The AudioContext constructor is called with an empty options object to satisfy stricter TypeScript definitions.
+      const context = new (window.AudioContext || (window as any).webkitAudioContext)({});
       audioContextRef.current = context;
       
       const source = context.createMediaElementSource(audioRef.current);
@@ -293,8 +297,8 @@ const Player: React.FC<PlayerProps> = ({
           artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
         });
 
-        navigator.mediaSession.setActionHandler('play', onPlayPause);
-        navigator.mediaSession.setActionHandler('pause', onPlayPause);
+        navigator.mediaSession.setActionHandler('play', onPlay);
+        navigator.mediaSession.setActionHandler('pause', onPause);
         navigator.mediaSession.setActionHandler('nexttrack', onNext);
         navigator.mediaSession.setActionHandler('previoustrack', onPrev);
         
@@ -304,7 +308,7 @@ const Player: React.FC<PlayerProps> = ({
             navigator.mediaSession.playbackState = 'paused';
         }
     }
-  }, [station, status, trackInfo, onPlayPause, onNext, onPrev]);
+  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev]);
 
   if (!station) {
     return null; // Don't render the player if no station is selected

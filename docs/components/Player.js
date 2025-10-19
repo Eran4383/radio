@@ -46,6 +46,8 @@ const PlayerVisualizer = ({ frequencyData }) => {
 const Player = ({
   playerState,
   onPlayPause,
+  onPlay,
+  onPause,
   onNext,
   onPrev,
   onPlayerEvent,
@@ -131,7 +133,7 @@ const Player = ({
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
     try {
-      const context = new (window.AudioContext || window.webkitAudioContext)({});
+      const context = new (window.AudioContext || window.webkitAudioContext)();
       audioContextRef.current = context;
       
       const source = context.createMediaElementSource(audioRef.current);
@@ -256,8 +258,8 @@ const Player = ({
           artwork: [{ src: station.favicon, sizes: '96x96', type: 'image/png' }],
         });
 
-        navigator.mediaSession.setActionHandler('play', onPlayPause);
-        navigator.mediaSession.setActionHandler('pause', onPlayPause);
+        navigator.mediaSession.setActionHandler('play', onPlay);
+        navigator.mediaSession.setActionHandler('pause', onPause);
         navigator.mediaSession.setActionHandler('nexttrack', onNext);
         navigator.mediaSession.setActionHandler('previoustrack', onPrev);
         
@@ -267,7 +269,7 @@ const Player = ({
             navigator.mediaSession.playbackState = 'paused';
         }
     }
-  }, [station, status, trackInfo, onPlayPause, onNext, onPrev]);
+  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev]);
 
   if (!station) {
     return null; // Don't render the player if no station is selected
@@ -353,17 +355,16 @@ const Player = ({
             React.createElement("button", { onClick: onNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הבא" },
                 React.createElement(SkipNextIcon, { className: "w-6 h-6" })
             )
-          ),
-
-          React.createElement("audio", { 
-            ref: audioRef,
-            onPlaying: () => onPlayerEvent({ type: 'STREAM_STARTED' }),
-            onPause: () => onPlayerEvent({ type: 'STREAM_PAUSED' }),
-            onWaiting: () => {}, 
-            onError: () => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."}),
-            crossOrigin: "anonymous"
-          })
-        )
+          )
+        ),
+        React.createElement("audio", { 
+          ref: audioRef,
+          onPlaying: () => onPlayerEvent({ type: 'STREAM_STARTED' }),
+          onPause: () => onPlayerEvent({ type: 'STREAM_PAUSED' }),
+          onWaiting: () => {}, 
+          onError: () => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."}),
+          crossOrigin: "anonymous"
+        })
       )
     )
   );
