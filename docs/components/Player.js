@@ -133,7 +133,8 @@ const Player = ({
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
     try {
-      const context = new (window.AudioContext || window.webkitAudioContext)();
+      // FIX: Passing an empty object `{}` ensures compatibility with older browser implementations that might otherwise throw an error.
+      const context = new (window.AudioContext || window.webkitAudioContext)({});
       audioContextRef.current = context;
       
       const source = context.createMediaElementSource(audioRef.current);

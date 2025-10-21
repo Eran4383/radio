@@ -171,9 +171,8 @@ const Player: React.FC<PlayerProps> = ({
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
     try {
-      // FIX: Pass an empty options object to the AudioContext constructor.
-      // Some older browser implementations or polyfills might incorrectly require an argument.
-      // The standard AudioContext constructor accepts an optional options object.
+      // FIX: The AudioContext constructor accepts an optional options object.
+      // Passing an empty object `{}` ensures compatibility with older browser implementations that might otherwise throw an error.
       const context = new (window.AudioContext || (window as any).webkitAudioContext)({});
       audioContextRef.current = context;
       
