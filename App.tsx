@@ -5,6 +5,7 @@ import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
 import NowPlaying from './components/NowPlaying';
+import ActionMenu from './components/ActionMenu';
 import { useFavorites } from './hooks/useFavorites';
 import { PRIORITY_STATIONS } from './constants';
 import { MenuIcon } from './components/Icons';
@@ -126,6 +127,7 @@ export default function App() {
   const [trackInfo, setTrackInfo] = useState<StationTrackInfo | null>(null);
   const pinchDistRef = useRef(0);
   const PINCH_THRESHOLD = 40; // pixels
+  const [actionMenuState, setActionMenuState] = useState<{isOpen: boolean; songTitle: string | null}>({ isOpen: false, songTitle: null });
 
   const [customOrder, setCustomOrder] = useState<string[]>(() => {
     try {
@@ -593,6 +595,14 @@ export default function App() {
     }
   };
 
+  const openActionMenu = useCallback((songTitle: string) => {
+    setActionMenuState({ isOpen: true, songTitle });
+  }, []);
+
+  const closeActionMenu = useCallback(() => {
+    setActionMenuState({ isOpen: false, songTitle: null });
+  }, []);
+
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
   const isCategorySortActive = currentCategoryIndex !== -1;
   const categoryButtonLabel = isCategorySortActive ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
@@ -713,7 +723,13 @@ export default function App() {
         isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled}
         isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled}
         marqueeSpeed={marqueeSpeed}
+        onOpenActionMenu={openActionMenu}
       />}
+       <ActionMenu
+        isOpen={actionMenuState.isOpen}
+        onClose={closeActionMenu}
+        songTitle={actionMenuState.songTitle}
+      />
       <Player
         playerState={playerState}
         onPlay={handlePlay}
@@ -737,6 +753,7 @@ export default function App() {
         isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled}
         isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled}
         marqueeSpeed={marqueeSpeed}
+        onOpenActionMenu={openActionMenu}
       />
     </div>
   );

@@ -27,6 +27,7 @@ interface NowPlayingProps {
   isMarqueeCurrentTrackEnabled: boolean;
   isMarqueeNextTrackEnabled: boolean;
   marqueeSpeed: number;
+  onOpenActionMenu: (songTitle: string) => void;
 }
 
 const NowPlaying: React.FC<NowPlayingProps> = ({
@@ -34,7 +35,8 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
   volume, onVolumeChange, trackInfo, showNextSong, frequencyData,
   visualizerStyle, isVisualizerEnabled, onCycleVisualizerStyle,
   isVolumeControlVisible, marqueeDelay,
-  isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled, marqueeSpeed
+  isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled, marqueeSpeed,
+  onOpenActionMenu
 }) => {
     const touchStartY = useRef(0);
     const touchStartX = useRef(0);
@@ -198,7 +200,7 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
                                         isOverflowing={marqueeConfig.isOverflowing[2] && isMarqueeCurrentTrackEnabled}
                                         contentRef={currentTrackRef}
                                     >
-                                        <InteractiveText text={trackInfo.current} className="font-bold text-xl"/>
+                                        <InteractiveText text={trackInfo.current} className="font-bold text-xl" onOpenActionMenu={onOpenActionMenu}/>
                                     </MarqueeText>
                                 </div>
                             </>

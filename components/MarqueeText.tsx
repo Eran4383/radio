@@ -3,6 +3,7 @@ import React, { useRef, useEffect, RefObject } from 'react';
 interface MarqueeTextProps {
   children: React.ReactNode;
   className?: string;
+  onClick?: () => void;
   // Sync props
   loopDelay: number;
   duration: number;
@@ -12,7 +13,7 @@ interface MarqueeTextProps {
 }
 
 const MarqueeText: React.FC<MarqueeTextProps> = ({ 
-    children, className, loopDelay, duration, startAnimation, isOverflowing, contentRef 
+    children, className, loopDelay, duration, startAnimation, isOverflowing, contentRef, onClick 
 }) => {
     const marqueeDivRef = useRef<HTMLDivElement>(null);
     const timeoutRef = useRef<number | null>(null);
@@ -59,7 +60,7 @@ const MarqueeText: React.FC<MarqueeTextProps> = ({
 
     if (!isOverflowing) {
         return (
-            <div className={`truncate ${wrapperClasses}`}>
+            <div className={`truncate ${wrapperClasses}`} onClick={onClick}>
                 <span ref={contentRef} className="inline-block">
                     {children}
                 </span>
@@ -73,7 +74,7 @@ const MarqueeText: React.FC<MarqueeTextProps> = ({
     };
 
     return (
-        <div className={`marquee-wrapper ${wrapperClasses}`}>
+        <div className={`marquee-wrapper ${wrapperClasses}`} onClick={onClick}>
             <div ref={marqueeDivRef} className="animate-marquee inline-flex" style={marqueeStyle}>
                 <span className="pr-4 flex-shrink-0" ref={contentRef}>
                     {children}

@@ -41,6 +41,7 @@ interface PlayerProps {
   isMarqueeCurrentTrackEnabled: boolean;
   isMarqueeNextTrackEnabled: boolean;
   marqueeSpeed: number;
+  onOpenActionMenu: (songTitle: string) => void;
 }
 
 const PlayerVisualizer: React.FC<{ frequencyData: Uint8Array }> = ({ frequencyData }) => {
@@ -104,6 +105,7 @@ const Player: React.FC<PlayerProps> = ({
   isMarqueeCurrentTrackEnabled,
   isMarqueeNextTrackEnabled,
   marqueeSpeed,
+  onOpenActionMenu
 }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -173,6 +175,7 @@ const Player: React.FC<PlayerProps> = ({
     try {
       // FIX: The AudioContext constructor accepts an optional options object.
       // Passing an empty object `{}` ensures compatibility with older browser implementations that might otherwise throw an error.
+// FIIX: Pass an empty object to the AudioContext constructor to satisfy the requirement of 1 argument.
       const context = new (window.AudioContext || (window as any).webkitAudioContext)({});
       audioContextRef.current = context;
       
@@ -324,15 +327,13 @@ const Player: React.FC<PlayerProps> = ({
         <div className="max-w-7xl mx-auto p-4 flex items-center justify-between gap-4">
           
           <div 
-            className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
-            onClick={onOpenNowPlaying}
-            role="button"
-            aria-label="פתח מסך ניגון"
+            className="flex items-center gap-3 flex-1 min-w-0"
           >
             <img 
               src={station.favicon} 
               alt={station.name} 
-              className="w-14 h-14 rounded-md bg-gray-700 object-contain flex-shrink-0"
+              className="w-14 h-14 rounded-md bg-gray-700 object-contain flex-shrink-0 cursor-pointer"
+              onClick={onOpenNowPlaying}
               onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/48'; }}
             />
             <div className="min-w-0" key={station.stationuuid}>
@@ -342,7 +343,8 @@ const Player: React.FC<PlayerProps> = ({
                   startAnimation={startAnimation}
                   isOverflowing={marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled}
                   contentRef={stationNameRef}
-                  className="font-bold text-text-primary"
+                  className="font-bold text-text-primary cursor-pointer"
+                  onClick={onOpenNowPlaying}
               >
                   <span>{`${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`}</span>
               </MarqueeText>
@@ -358,14 +360,14 @@ const Player: React.FC<PlayerProps> = ({
                       isOverflowing={marqueeConfig.isOverflowing[1] && isMarqueeCurrentTrackEnabled}
                       contentRef={currentTrackRef}
                   >
-                      <InteractiveText text={trackInfo.current} />
+                      <InteractiveText text={trackInfo.current} onOpenActionMenu={onOpenActionMenu} />
                   </MarqueeText>
                 ) : status === 'LOADING' ? (
                     <span className="text-text-secondary animate-pulse">טוען...</span>
                 ) : null}
               </div>
                {status !== 'ERROR' && showNextSong && trackInfo?.next && (
-                  <div className="text-xs opacity-80 h-[1.125rem] flex items-center">
+                  <div className="text-xs opacity-80 h-[1.125rem] flex items-center cursor-pointer" onClick={onOpenNowPlaying}>
                     <span className="font-semibold flex-shrink-0">הבא:&nbsp;</span>
                     <MarqueeText 
                         loopDelay={marqueeDelay} 
