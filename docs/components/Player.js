@@ -128,7 +128,8 @@ const Player = ({
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
     try {
-      const context = new (window.AudioContext || window.webkitAudioContext)({});
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const context = new AudioContextClass();
       audioContextRef.current = context;
       
       const source = context.createMediaElementSource(audioRef.current);

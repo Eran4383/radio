@@ -173,13 +173,10 @@ const Player: React.FC<PlayerProps> = ({
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
     try {
-      // FIX: The AudioContext constructor in some browsers requires an options object,
-      // while the older webkitAudioContext does not take any arguments.
-      // This handles both cases to ensure compatibility.
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      const context = window.AudioContext
-        ? new AudioContextClass({})
-        : new AudioContextClass();
+      // FIX: The AudioContext constructor might require an argument in some older browser implementations.
+      // Passing an empty options object ensures compatibility.
+      const context = new AudioContextClass({});
       audioContextRef.current = context;
       
       const source = context.createMediaElementSource(audioRef.current);
