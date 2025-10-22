@@ -142,16 +142,27 @@ export default function App() {
   });
 
   const [sortOrder, setSortOrder] = useState(() => {
+    const VALID_SORT_ORDERS = ['priority', 'name_asc', 'name_desc', 'custom', 'category_style', 'category_identity', 'category_region', 'category_nameStructure'];
+    
     let savedSort = localStorage.getItem(LAST_SORT_KEY);
+    
+    // Migration for old values from previous versions
     if (savedSort === 'name') savedSort = 'name_asc';
     if (savedSort === 'tags') savedSort = 'category_style';
-    const customOrderExists = !!localStorage.getItem(CUSTOM_ORDER_KEY);
-    if (savedSort) {
+    
+    const customOrderFromStorage = safeJsonParse(localStorage.getItem(CUSTOM_ORDER_KEY), []);
+    const customOrderExists = customOrderFromStorage.length > 0;
+    
+    // Validate the saved sort order
+    if (savedSort && VALID_SORT_ORDERS.includes(savedSort)) {
+      // If 'custom' is saved but no custom order exists, fall back.
       if (savedSort === 'custom' && !customOrderExists) {
-      } else {
-        return savedSort;
+        return 'priority';
       }
+      return savedSort;
     }
+    
+    // Default logic if nothing valid is saved
     return customOrderExists ? 'custom' : 'priority';
   });
   

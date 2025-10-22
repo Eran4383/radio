@@ -162,17 +162,27 @@ export default function App() {
   });
 
   const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
+    const VALID_SORT_ORDERS: SortOrder[] = ['priority', 'name_asc', 'name_desc', 'custom', 'category_style', 'category_identity', 'category_region', 'category_nameStructure'];
+    
     let savedSort = localStorage.getItem(LAST_SORT_KEY);
+    
+    // Migration for old values from previous versions
     if (savedSort === 'name') savedSort = 'name_asc';
     if (savedSort === 'tags') savedSort = 'category_style';
-    const customOrderExists = !!localStorage.getItem(CUSTOM_ORDER_KEY);
-    if (savedSort) {
+    
+    const customOrderFromStorage = safeJsonParse<string[]>(localStorage.getItem(CUSTOM_ORDER_KEY), []);
+    const customOrderExists = customOrderFromStorage.length > 0;
+    
+    // Validate the saved sort order
+    if (savedSort && VALID_SORT_ORDERS.includes(savedSort as SortOrder)) {
+      // If 'custom' is saved but no custom order exists, fall back.
       if (savedSort === 'custom' && !customOrderExists) {
-        // Fallback
-      } else {
-        return savedSort as SortOrder;
+        return 'priority';
       }
+      return savedSort as SortOrder;
     }
+    
+    // Default logic if nothing valid is saved
     return customOrderExists ? 'custom' : 'priority';
   });
   
@@ -468,7 +478,7 @@ export default function App() {
         stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he'));
         break;
       case 'name_desc':
-        stationsToSort.sort((a, b) => b.name.localeCompare(b.name, 'he'));
+        stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he'));
         break;
       case 'category_style':
       case 'category_identity':

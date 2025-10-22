@@ -1,49 +1,48 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 
 const FAVORITES_KEY = 'radio-favorites';
 
+function safeParseFavorites(jsonString) {
+    if (!jsonString) {
+        return [];
+    }
+    try {
+        const parsed = JSON.parse(jsonString);
+        if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
+            return parsed;
+        }
+    } catch (e) {
+        console.warn("Could not parse favorites from localStorage", e);
+    }
+    return [];
+}
+
+
 export const useFavorites = () => {
-  const [favorites, setFavorites] = useState([]);
+  const [favorites, setFavorites] = useState(() => {
+    return safeParseFavorites(localStorage.getItem(FAVORITES_KEY));
+  });
 
-  useEffect(() => {
-    try {
-      const storedFavorites = localStorage.getItem(FAVORITES_KEY);
-      if (storedFavorites) {
-        setFavorites(JSON.parse(storedFavorites));
+  const toggleFavorite = useCallback((stationUuid) => {
+    setFavorites(currentFavorites => {
+      const isCurrentlyFavorite = currentFavorites.includes(stationUuid);
+      const newFavorites = isCurrentlyFavorite
+        ? currentFavorites.filter(uuid => uuid !== stationUuid)
+        : [...currentFavorites, stationUuid];
+
+      try {
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(newFavorites));
+      } catch (error) {
+        console.error("Failed to save favorites to localStorage", error);
       }
-    } catch (error) {
-      console.error("Failed to load favorites from localStorage", error);
-    }
+
+      return newFavorites;
+    });
   }, []);
-
-  const saveFavorites = (newFavorites) => {
-    try {
-      setFavorites(newFavorites);
-      localStorage.setItem(FAVORITES_KEY, JSON.stringify(newFavorites));
-    } catch (error) {
-      console.error("Failed to save favorites to localStorage", error);
-    }
-  };
-
-  const addFavorite = useCallback((stationUuid) => {
-    saveFavorites([...favorites, stationUuid]);
-  }, [favorites]);
-
-  const removeFavorite = useCallback((stationUuid) => {
-    saveFavorites(favorites.filter(uuid => uuid !== stationUuid));
-  }, [favorites]);
 
   const isFavorite = useCallback((stationUuid) => {
     return favorites.includes(stationUuid);
   }, [favorites]);
-
-  const toggleFavorite = useCallback((stationUuid) => {
-    if (isFavorite(stationUuid)) {
-      removeFavorite(stationUuid);
-    } else {
-      addFavorite(stationUuid);
-    }
-  }, [isFavorite, addFavorite, removeFavorite]);
 
   return { favorites, toggleFavorite, isFavorite };
 };
