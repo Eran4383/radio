@@ -46,15 +46,13 @@ const ActionMenu: React.FC<ActionMenuProps> = ({ isOpen, onClose, songTitle }) =
 
   const handleSearchYouTubeMusic = () => {
     const query = encodeURIComponent(songTitle);
-    // This deep link attempts to open the app. Fallback might be needed for browsers.
-    window.open(`youtubemusic://search?q=${query}`);
+    window.open(`https://music.youtube.com/search?q=${query}`, '_blank', 'noopener,noreferrer');
     onClose();
   };
 
   const handleSearchSpotify = () => {
     const query = encodeURIComponent(songTitle);
-    // Spotify's search deep link
-    window.open(`spotify:search:${query}`);
+    window.open(`https://open.spotify.com/search/${query}`, '_blank', 'noopener,noreferrer');
     onClose();
   };
   
