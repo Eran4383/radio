@@ -173,8 +173,13 @@ const Player: React.FC<PlayerProps> = ({
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
     try {
-      // FIX: The AudioContext constructor was called without arguments. Passing an empty object to satisfy the requirement of 1 argument in some browsers.
-      const context = new (window.AudioContext || (window as any).webkitAudioContext)({});
+      // FIX: The AudioContext constructor in some browsers requires an options object,
+      // while the older webkitAudioContext does not take any arguments.
+      // This handles both cases to ensure compatibility.
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const context = window.AudioContext
+        ? new AudioContextClass({})
+        : new AudioContextClass();
       audioContextRef.current = context;
       
       const source = context.createMediaElementSource(audioRef.current);
@@ -227,12 +232,16 @@ const Player: React.FC<PlayerProps> = ({
             audio.src = newSrc;
             audio.crossOrigin = 'anonymous';
         }
-        audio.load();
         try {
             await audio.play();
         } catch (e: any) {
-            console.error("Error playing audio:", e);
-            if (e.name !== 'AbortError') {
+            // This error is expected when a user quickly switches stations.
+            // The browser aborts the previous play() request, which is correct.
+            // We'll log it for debugging but won't treat it as a user-facing error.
+            if (e.name === 'AbortError') {
+                console.debug('Audio play request was interrupted by a new load request (normal behavior).');
+            } else {
+                console.error("Error playing audio:", e);
                 onPlayerEvent({ type: 'STREAM_ERROR', payload: "לא ניתן לנגן את התחנה." });
             }
         }

@@ -180,12 +180,13 @@ const Player = ({
             audio.src = newSrc;
             audio.crossOrigin = 'anonymous';
         }
-        audio.load();
         try {
             await audio.play();
         } catch (e) {
-            console.error("Error playing audio:", e);
-            if (e.name !== 'AbortError') {
+            if (e.name === 'AbortError') {
+                console.debug('Audio play request was interrupted by a new load request (normal behavior).');
+            } else {
+                console.error("Error playing audio:", e);
                 onPlayerEvent({ type: 'STREAM_ERROR', payload: "לא ניתן לנגן את התחנה." });
             }
         }
