@@ -53,3 +53,27 @@ export const ChevronDownIcon = (props) => (
         React.createElement("path", { d: "M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" })
     )
 );
+
+export const CopyIcon = (props) => (
+    React.createElement("svg", { ...props, xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "currentColor" },
+        React.createElement("path", { d: "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" })
+    )
+);
+
+export const YouTubeMusicIcon = (props) => (
+    React.createElement("svg", { ...props, xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "currentColor" },
+        React.createElement("path", { d: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-7c-1.38 0-2.5 1.12-2.5 2.5s1.12 2.5 2.5 2.5 2.5-1.12 2.5-2.5-1.12-2.5-2.5-2.5z M9.02 11.19l3.59 2.07c.23.13.51-.04.51-.31V9.43c0-.27-.28-.44-.51-.31l-3.59 2.07z" })
+    )
+);
+
+export const SpotifyIcon = (props) => (
+    React.createElement("svg", { ...props, xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "currentColor" },
+        React.createElement("path", { d: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.19 14.39c-.21.32-.6.41-.91.19-2.53-1.54-5.71-1.88-9.4-1.04-.37.09-.68-.17-.76-.54-.09-.37.17-.68.54-.76 4.01-.9 7.48-.52 10.33 1.2.32.21.41.6.19.91zm.87-2.27c-.26.4-.75.52-1.15.26-2.9-1.78-7.18-2.31-10.43-1.26-.44.14-.9-.15-1.04-.59-.14-.44.15-.9.59-1.04 3.65-1.14 8.35-.55 11.63 1.48.4.26.52.75.26 1.15zm.9-2.42c-3.48-2.07-9.1-2.26-12.44-1.25-.53.16-1.09-.2-1.25-.73-.16-.53.2-1.09.73-1.25 3.82-1.11 9.99-.88 13.96 1.4.52.29.71.9.42 1.42-.29.52-.9.71-1.42.41z" })
+    )
+);
+
+export const LyricsIcon = (props) => (
+    React.createElement("svg", { ...props, xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "currentColor" },
+        React.createElement("path", { d: "M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6zm4-8h4v2h-4zm0 4h4v2h-4zm-4-8h4v2H6z" })
+    )
+);
