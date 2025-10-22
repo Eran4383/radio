@@ -7,6 +7,23 @@ interface ActionMenuProps {
   songTitle: string | null;
 }
 
+// Re-creating the ActionButton component locally for easier styling
+const ActionButton: React.FC<{
+    onClick: () => void;
+    icon: React.ReactNode;
+    label: string;
+    className: string;
+}> = ({ onClick, icon, label, className }) => (
+    <button
+        onClick={onClick}
+        className={`flex flex-col items-center justify-center gap-2 p-6 rounded-2xl text-white font-bold text-center transition-transform transform hover:scale-105 active:scale-95 ${className}`}
+    >
+        {icon}
+        <span>{label}</span>
+    </button>
+);
+
+
 const ActionMenu: React.FC<ActionMenuProps> = ({ isOpen, onClose, songTitle }) => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
 
@@ -62,26 +79,34 @@ const ActionMenu: React.FC<ActionMenuProps> = ({ isOpen, onClose, songTitle }) =
         aria-labelledby="action-menu-title"
       >
         <div className="w-12 h-1.5 bg-gray-600 rounded-full mx-auto mb-4"></div>
-        <h2 id="action-menu-title" className="text-lg font-bold text-center text-text-primary mb-4 truncate px-4">
+        <h2 id="action-menu-title" className="text-lg font-bold text-center text-text-primary mb-6 truncate px-4">
           {songTitle}
         </h2>
-        <div className="space-y-2">
-            <button onClick={handleCopy} className="w-full flex items-center gap-4 p-4 rounded-lg bg-bg-primary hover:bg-accent/10 transition-colors">
-                <CopyIcon className="w-6 h-6 text-accent"/>
-                <span className="font-semibold">{copyStatus === 'idle' ? 'העתק שם השיר' : 'הועתק!'}</span>
-            </button>
-             <button onClick={handleSearchYouTubeMusic} className="w-full flex items-center gap-4 p-4 rounded-lg bg-bg-primary hover:bg-accent/10 transition-colors">
-                <YouTubeMusicIcon className="w-6 h-6 text-accent"/>
-                <span className="font-semibold">חפש ב-YouTube Music</span>
-            </button>
-             <button onClick={handleSearchSpotify} className="w-full flex items-center gap-4 p-4 rounded-lg bg-bg-primary hover:bg-accent/10 transition-colors">
-                <SpotifyIcon className="w-6 h-6 text-accent"/>
-                <span className="font-semibold">חפש ב-Spotify</span>
-            </button>
-             <button onClick={handleSearchLyrics} className="w-full flex items-center gap-4 p-4 rounded-lg bg-bg-primary hover:bg-accent/10 transition-colors">
-                <LyricsIcon className="w-6 h-6 text-accent"/>
-                <span className="font-semibold">חפש מילים בגוגל</span>
-            </button>
+        <div className="grid grid-cols-2 gap-4">
+            <ActionButton 
+                onClick={handleCopy}
+                icon={<CopyIcon className="w-8 h-8"/>}
+                label={copyStatus === 'idle' ? 'העתק שם' : 'הועתק!'}
+                className="action-btn-copy"
+            />
+             <ActionButton 
+                onClick={handleSearchYouTubeMusic}
+                icon={<YouTubeMusicIcon className="w-8 h-8"/>}
+                label="YouTube Music"
+                className="action-btn-ytmusic"
+            />
+             <ActionButton 
+                onClick={handleSearchSpotify}
+                icon={<SpotifyIcon className="w-8 h-8"/>}
+                label="Spotify"
+                className="action-btn-spotify"
+            />
+             <ActionButton 
+                onClick={handleSearchLyrics}
+                icon={<LyricsIcon className="w-8 h-8"/>}
+                label="חיפוש מילים"
+                className="action-btn-lyrics"
+            />
         </div>
       </div>
     </>

@@ -9,14 +9,14 @@ const NowPlaying = ({
   volume, onVolumeChange, trackInfo, showNextSong, frequencyData,
   visualizerStyle, isVisualizerEnabled, onCycleVisualizerStyle,
   isVolumeControlVisible, marqueeDelay,
-  isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled, marqueeSpeed
+  isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled, marqueeSpeed,
+  onOpenActionMenu
 }) => {
     const touchStartY = useRef(0);
     const touchStartX = useRef(0);
     const dragRef = useRef(null);
     const [startAnimation, setStartAnimation] = useState(false);
     
-    // Refs for marquee synchronization
     const stationNameRef = useRef(null);
     const programNameRef = useRef(null);
     const currentTrackRef = useRef(null);
@@ -33,7 +33,6 @@ const NowPlaying = ({
       return () => clearTimeout(timer);
     }, [station?.stationuuid]);
     
-    // Effect for marquee synchronization
     useEffect(() => {
         const calculateMarquee = () => {
             const refs = [stationNameRef, programNameRef, currentTrackRef, nextTrackRef];
@@ -52,7 +51,6 @@ const NowPlaying = ({
             });
 
             const anyOverflowing = newIsOverflowing.some(Boolean);
-            // New exponential scale for speed (1-10). Gives finer control over slower speeds.
             const pixelsPerSecond = 3.668 * Math.pow(1.363, marqueeSpeed);
             const newDuration = anyOverflowing ? Math.max(5, maxContentWidth / pixelsPerSecond) : 0;
             
@@ -61,7 +59,7 @@ const NowPlaying = ({
 
         const timeoutId = setTimeout(calculateMarquee, 50);
         return () => clearTimeout(timeoutId);
-    }, [station, trackInfo, showNextSong, marqueeSpeed, isOpen]); // Rerun when panel opens too
+    }, [station, trackInfo, showNextSong, marqueeSpeed, isOpen]);
 
     const handleTouchStart = (e) => {
         touchStartX.current = e.targetTouches[0].clientX;
@@ -70,7 +68,7 @@ const NowPlaying = ({
     
     const handleTouchMove = (e) => {
         const deltaY = e.targetTouches[0].clientY - touchStartY.current;
-        if (deltaY > 0 && dragRef.current) { // only for swipe down
+        if (deltaY > 0 && dragRef.current) {
              dragRef.current.style.transform = `translateY(${deltaY}px)`;
              dragRef.current.style.transition = 'none';
         }
@@ -80,7 +78,7 @@ const NowPlaying = ({
         const deltaX = e.changedTouches[0].clientX - touchStartX.current;
         const deltaY = e.changedTouches[0].clientY - touchStartY.current;
 
-        if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5) { // Horizontal swipe
+        if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
             if (Math.abs(deltaX) > 50) {
                 if (deltaX > 0) {
                     onPrev();
@@ -88,7 +86,7 @@ const NowPlaying = ({
                     onNext();
                 }
             }
-        } else { // Vertical swipe
+        } else {
             if (deltaY > 70) {
                 onClose();
             }
@@ -111,13 +109,11 @@ const NowPlaying = ({
         onTouchMove: handleTouchMove,
         onTouchEnd: handleTouchEnd
       },
-        // Header
         React.createElement("div", { className: "flex-shrink-0 text-center pt-4 px-4" },
             React.createElement("button", { onClick: onClose, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "סגור" },
                 React.createElement(ChevronDownIcon, { className: "w-8 h-8 mx-auto" })
             )
         ),
-        // Main Content - Scrollable
         React.createElement("div", { className: "flex-grow flex flex-col items-center justify-center gap-4 text-center overflow-y-auto py-4 px-4" },
             React.createElement("img", { 
               src: station?.favicon || 'https://picsum.photos/256', 
@@ -171,7 +167,7 @@ const NowPlaying = ({
                                         isOverflowing: marqueeConfig.isOverflowing[2] && isMarqueeCurrentTrackEnabled,
                                         contentRef: currentTrackRef
                                     },
-                                        React.createElement(InteractiveText, { text: trackInfo.current, className: "font-bold text-xl" })
+                                        React.createElement(InteractiveText, { text: trackInfo.current, className: "font-bold text-xl", onOpenActionMenu: onOpenActionMenu })
                                     )
                                 )
                             )
@@ -195,7 +191,6 @@ const NowPlaying = ({
                     )
                 )
             ),
-            
             React.createElement("div", { className: "w-full max-w-sm px-4 flex-shrink-0" },
                 isVisualizerEnabled && (
                     React.createElement(Visualizer, { 
@@ -206,8 +201,6 @@ const NowPlaying = ({
                 )
             )
         ),
-        
-        // Controls
         React.createElement("div", { className: "flex-shrink-0 flex flex-col items-center gap-4 sm:gap-6 pb-4 sm:pb-8 px-4" },
             React.createElement("div", { className: "flex items-center justify-center gap-4" },
               React.createElement("button", { onClick: onPrev, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "הקודם" },
@@ -224,7 +217,6 @@ const NowPlaying = ({
                 React.createElement(SkipNextIcon, { className: "w-12 h-12" })
               )
             ),
-
             isVolumeControlVisible && (
               React.createElement("div", { className: "w-full max-w-xs flex items-center gap-3" },
                 React.createElement(VolumeUpIcon, { className: "w-6 h-6 text-text-secondary flex-shrink-0" }),

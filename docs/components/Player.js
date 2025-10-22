@@ -32,9 +32,7 @@ const PlayerVisualizer = ({ frequencyData }) => {
 
         for (let i = 0; i < halfBuffer; i++) {
             const barHeight = (frequencyData[i] / 255) * height;
-            // Draw right side
             context.fillRect(centerX + (i * barWidth), height - barHeight, barWidth - 1, barHeight);
-            // Draw left side (mirrored)
             context.fillRect(centerX - ((i + 1) * barWidth), height - barHeight, barWidth - 1, barHeight);
         }
     }, [frequencyData]);
@@ -66,6 +64,7 @@ const Player = ({
   isMarqueeCurrentTrackEnabled,
   isMarqueeNextTrackEnabled,
   marqueeSpeed,
+  onOpenActionMenu
 }) => {
   const audioRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -78,7 +77,6 @@ const Player = ({
 
   const [startAnimation, setStartAnimation] = useState(false);
   
-  // Refs for marquee synchronization
   const stationNameRef = useRef(null);
   const currentTrackRef = useRef(null);
   const nextTrackRef = useRef(null);
@@ -88,17 +86,15 @@ const Player = ({
   const isPlaying = status === 'PLAYING';
   const isLoading = status === 'LOADING';
 
-  // Effect for initial animation delay
   useEffect(() => {
     setStartAnimation(false);
     const timer = setTimeout(() => {
         setStartAnimation(true);
-    }, 3000); // 3-second initial delay
+    }, 3000);
 
     return () => clearTimeout(timer);
   }, [station?.stationuuid]);
   
-  // Effect for marquee synchronization
   useEffect(() => {
       const calculateMarquee = () => {
           const refs = [stationNameRef, currentTrackRef, nextTrackRef];
@@ -117,7 +113,6 @@ const Player = ({
           });
 
           const anyOverflowing = newIsOverflowing.some(Boolean);
-          // New exponential scale for speed (1-10). Gives finer control over slower speeds.
           const pixelsPerSecond = 3.668 * Math.pow(1.363, marqueeSpeed);
           const newDuration = anyOverflowing ? Math.max(5, maxContentWidth / pixelsPerSecond) : 0;
           
@@ -133,7 +128,6 @@ const Player = ({
   const setupAudioContext = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return;
     try {
-      // FIX: Passing an empty object `{}` ensures compatibility with older browser implementations that might otherwise throw an error.
       const context = new (window.AudioContext || window.webkitAudioContext)({});
       audioContextRef.current = context;
       
@@ -141,7 +135,7 @@ const Player = ({
       sourceRef.current = source;
 
       const analyser = context.createAnalyser();
-      analyser.fftSize = 128; // for 64 frequency bins
+      analyser.fftSize = 128;
       analyserRef.current = analyser;
 
       const bassFilter = context.createBiquadFilter();
@@ -171,7 +165,6 @@ const Player = ({
     }
   }, []);
   
-  // Audio Element State Machine Driver
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !station) return;
@@ -205,15 +198,12 @@ const Player = ({
     }
   }, [status, station, setupAudioContext, onPlayerEvent]);
 
-
-  // Handle volume changes
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
     }
   }, [volume]);
   
-  // Apply EQ settings
   useEffect(() => {
     if (!bassFilterRef.current || !midFilterRef.current || !trebleFilterRef.current) return;
     
@@ -228,7 +218,6 @@ const Player = ({
     }
   }, [eqPreset, customEqSettings]);
 
-  // Visualizer data loop
   useEffect(() => {
     const loop = () => {
       if (analyserRef.current && isPlaying) {
@@ -250,7 +239,6 @@ const Player = ({
     };
   }, [isPlaying, setFrequencyData]);
 
-  // Update Media Session API
   useEffect(() => {
     if ('mediaSession' in navigator && station) {
         navigator.mediaSession.metadata = new MediaMetadata({
@@ -273,7 +261,7 @@ const Player = ({
   }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev]);
 
   if (!station) {
-    return null; // Don't render the player if no station is selected
+    return null;
   }
 
   const isActuallyPlaying = status === 'PLAYING';
@@ -285,15 +273,13 @@ const Player = ({
         React.createElement("div", { className: "max-w-7xl mx-auto p-4 flex items-center justify-between gap-4" },
           
           React.createElement("div", { 
-            className: "flex items-center gap-3 flex-1 min-w-0 cursor-pointer",
-            onClick: onOpenNowPlaying,
-            role: "button",
-            "aria-label": "פתח מסך ניגון"
+            className: "flex items-center gap-3 flex-1 min-w-0"
           },
             React.createElement("img", { 
               src: station.favicon, 
               alt: station.name, 
-              className: "w-14 h-14 rounded-md bg-gray-700 object-contain flex-shrink-0",
+              className: "w-14 h-14 rounded-md bg-gray-700 object-contain flex-shrink-0 cursor-pointer",
+              onClick: onOpenNowPlaying,
               onError: (e) => { (e.target).src = 'https://picsum.photos/48'; }
             }),
             React.createElement("div", { className: "min-w-0", key: station.stationuuid },
@@ -303,7 +289,8 @@ const Player = ({
                   startAnimation: startAnimation,
                   isOverflowing: marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled,
                   contentRef: stationNameRef,
-                  className: "font-bold text-text-primary"
+                  className: "font-bold text-text-primary cursor-pointer",
+                  onClick: onOpenNowPlaying
               },
                   React.createElement("span", null, `${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`)
               ),
@@ -319,14 +306,14 @@ const Player = ({
                       isOverflowing: marqueeConfig.isOverflowing[1] && isMarqueeCurrentTrackEnabled,
                       contentRef: currentTrackRef
                   },
-                      React.createElement(InteractiveText, { text: trackInfo.current })
+                      React.createElement(InteractiveText, { text: trackInfo.current, onOpenActionMenu: onOpenActionMenu })
                   )
                 ) : status === 'LOADING' ? (
                     React.createElement("span", { className: "text-text-secondary animate-pulse" }, "טוען...")
                 ) : null
               ),
                status !== 'ERROR' && showNextSong && trackInfo?.next && (
-                  React.createElement("div", { className: "text-xs opacity-80 h-[1.125rem] flex items-center" },
+                  React.createElement("div", { className: "text-xs opacity-80 h-[1.125rem] flex items-center cursor-pointer", onClick: onOpenNowPlaying },
                     React.createElement("span", { className: "font-semibold flex-shrink-0" }, "הבא:\u00A0"),
                     React.createElement(MarqueeText, { 
                         loopDelay: marqueeDelay, 
@@ -362,7 +349,7 @@ const Player = ({
           ref: audioRef,
           onPlaying: () => onPlayerEvent({ type: 'STREAM_STARTED' }),
           onPause: () => onPlayerEvent({ type: 'STREAM_PAUSED' }),
-          onWaiting: () => {}, 
+          onWaiting: () => {},
           onError: () => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."}),
           crossOrigin: "anonymous"
         })

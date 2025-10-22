@@ -29,6 +29,7 @@ const urlsToCache = [
   './components/Visualizer.js',
   './components/InteractiveText.js',
   './components/MarqueeText.js',
+  './components/ActionMenu.js',
 
   // External
   'https://cdn.tailwindcss.com',

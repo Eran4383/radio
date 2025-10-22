@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 
 const MarqueeText = ({ 
-    children, className, loopDelay, duration, startAnimation, isOverflowing, contentRef 
+    children, className, loopDelay, duration, startAnimation, isOverflowing, contentRef, onClick 
 }) => {
     const marqueeDivRef = useRef(null);
     const timeoutRef = useRef(null);
@@ -48,7 +48,7 @@ const MarqueeText = ({
 
     if (!isOverflowing) {
         return (
-            React.createElement("div", { className: `truncate ${wrapperClasses}` },
+            React.createElement("div", { className: `truncate ${wrapperClasses}`, onClick: onClick },
                 React.createElement("span", { ref: contentRef, className: "inline-block" },
                     children
                 )
@@ -56,12 +56,13 @@ const MarqueeText = ({
         );
     }
     
+    // FIX: Use `any` type for the style object to allow for CSS custom properties which are not in the default React.CSSProperties type.
     const marqueeStyle = {
         '--marquee-duration': `${duration}s`,
     };
 
     return (
-        React.createElement("div", { className: `marquee-wrapper ${wrapperClasses}` },
+        React.createElement("div", { className: `marquee-wrapper ${wrapperClasses}`, onClick: onClick },
             React.createElement("div", { ref: marqueeDivRef, className: "animate-marquee inline-flex", style: marqueeStyle },
                 React.createElement("span", { className: "pr-4 flex-shrink-0", ref: contentRef },
                     children

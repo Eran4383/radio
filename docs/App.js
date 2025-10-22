@@ -5,6 +5,7 @@ import Player from './components/Player.js';
 import StationList from './components/StationList.js';
 import SettingsPanel from './components/SettingsPanel.js';
 import NowPlaying from './components/NowPlaying.js';
+import ActionMenu from './components/ActionMenu.js';
 import { useFavorites } from './hooks/useFavorites.js';
 import { PRIORITY_STATIONS } from './constants.js';
 import { MenuIcon } from './components/Icons.js';
@@ -107,6 +108,7 @@ export default function App() {
   const [trackInfo, setTrackInfo] = useState(null);
   const pinchDistRef = useRef(0);
   const PINCH_THRESHOLD = 40;
+  const [actionMenuState, setActionMenuState] = useState({ isOpen: false, songTitle: null });
 
   const [customOrder, setCustomOrder] = useState(() => {
     try {
@@ -133,7 +135,6 @@ export default function App() {
     const customOrderExists = !!localStorage.getItem(CUSTOM_ORDER_KEY);
     if (savedSort) {
       if (savedSort === 'custom' && !customOrderExists) {
-        // Fallback
       } else {
         return savedSort;
       }
@@ -499,7 +500,6 @@ export default function App() {
     }
   }, [playerState.station, displayedStations]);
   
-  // Specific async handlers for Media Session API to prevent notification shade from closing
   const handlePlay = useCallback(async () => {
     if (playerState.status === 'PLAYING') return;
     if (playerState.station) {
@@ -573,6 +573,14 @@ export default function App() {
         setSortOrder(CATEGORY_SORTS[0].order);
     }
   };
+
+  const openActionMenu = useCallback((songTitle) => {
+    setActionMenuState({ isOpen: true, songTitle });
+  }, []);
+
+  const closeActionMenu = useCallback(() => {
+    setActionMenuState({ isOpen: false, songTitle: null });
+  }, []);
 
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
   const isCategorySortActive = currentCategoryIndex !== -1;
@@ -693,7 +701,13 @@ export default function App() {
         isMarqueeProgramEnabled: isMarqueeProgramEnabled,
         isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled,
         isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled,
-        marqueeSpeed: marqueeSpeed
+        marqueeSpeed: marqueeSpeed,
+        onOpenActionMenu: openActionMenu
+      }),
+       React.createElement(ActionMenu, {
+        isOpen: actionMenuState.isOpen,
+        onClose: closeActionMenu,
+        songTitle: actionMenuState.songTitle
       }),
       React.createElement(Player, {
         playerState: playerState,
@@ -717,7 +731,8 @@ export default function App() {
         isMarqueeProgramEnabled: isMarqueeProgramEnabled,
         isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled,
         isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled,
-        marqueeSpeed: marqueeSpeed
+        marqueeSpeed: marqueeSpeed,
+        onOpenActionMenu: openActionMenu
       })
     )
   );
