@@ -30,6 +30,7 @@ const InteractiveText = ({ text, className, onOpenActionMenu }) => {
     'span',
     {
       className: combinedClassName,
+      style: { userSelect: 'none', WebkitUserSelect: 'none' },
       onMouseDown: handlePressStart,
       onMouseUp: handlePressEnd,
       onMouseLeave: handlePressEnd,

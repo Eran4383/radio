@@ -38,6 +38,7 @@ const InteractiveText: React.FC<InteractiveTextProps> = ({ text, className, onOp
   return (
     <span
       className={combinedClassName}
+      style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
       onMouseDown={handlePressStart}
       onMouseUp={handlePressEnd}
       onMouseLeave={handlePressEnd}
