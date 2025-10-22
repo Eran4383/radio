@@ -75,6 +75,25 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
   }
 }
 
+// Helper function for safely parsing JSON from localStorage
+function safeJsonParse<T>(jsonString: string | null, defaultValue: T): T {
+    if (jsonString === null) {
+        return defaultValue;
+    }
+    try {
+        const parsedValue = JSON.parse(jsonString);
+        // Don't return null if the default isn't null.
+        if (parsedValue === null && defaultValue !== null) {
+            return defaultValue;
+        }
+        return parsedValue;
+    } catch (e) {
+        console.warn('Failed to parse JSON from localStorage. Returning default value.', e);
+        return defaultValue;
+    }
+}
+
+
 // LocalStorage Keys
 const CUSTOM_ORDER_KEY = 'radio-station-custom-order';
 const THEME_KEY = 'radio-theme';
@@ -130,12 +149,7 @@ export default function App() {
   const [actionMenuState, setActionMenuState] = useState<{isOpen: boolean; songTitle: string | null}>({ isOpen: false, songTitle: null });
 
   const [customOrder, setCustomOrder] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem(CUSTOM_ORDER_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+    return safeJsonParse(localStorage.getItem(CUSTOM_ORDER_KEY), []);
   });
 
   const [filter, setFilter] = useState<StationFilter>(() => {
@@ -163,88 +177,74 @@ export default function App() {
   });
   
   const [theme, setTheme] = useState<Theme>(() => {
-      const saved = localStorage.getItem(THEME_KEY);
-      return (saved && THEMES.includes(saved as Theme)) ? saved as Theme : 'dark';
+      const saved = localStorage.getItem(THEME_KEY) as Theme;
+      return (saved && THEMES.includes(saved)) ? saved : 'dark';
   });
 
   const [eqPreset, setEqPreset] = useState<EqPreset>(() => {
-      const saved = localStorage.getItem(EQ_KEY);
-      return (saved && EQ_PRESET_KEYS.includes(saved as EqPreset)) ? saved as EqPreset : 'flat';
+      const saved = localStorage.getItem(EQ_KEY) as EqPreset;
+      return (saved && EQ_PRESET_KEYS.includes(saved)) ? saved : 'flat';
   });
   
   const [customEqSettings, setCustomEqSettings] = useState<CustomEqSettings>(() => {
-    try {
-      const saved = localStorage.getItem(CUSTOM_EQ_KEY);
-      return saved ? JSON.parse(saved) : { bass: 0, mid: 0, treble: 0 };
-    } catch {
-      return { bass: 0, mid: 0, treble: 0 };
-    }
+    return safeJsonParse(localStorage.getItem(CUSTOM_EQ_KEY), { bass: 0, mid: 0, treble: 0 });
   });
 
   const [volume, setVolume] = useState(() => {
     const saved = localStorage.getItem(VOLUME_KEY);
-    return saved ? parseFloat(saved) : 1;
+    if (saved === null) return 1;
+    const parsed = parseFloat(saved);
+    return isNaN(parsed) ? 1 : parsed;
   });
 
   const [isNowPlayingVisualizerEnabled, setIsNowPlayingVisualizerEnabled] = useState(() => {
-      const saved = localStorage.getItem(NOW_PLAYING_VISUALIZER_ENABLED_KEY);
-      return saved ? JSON.parse(saved) : true;
+      return safeJsonParse(localStorage.getItem(NOW_PLAYING_VISUALIZER_ENABLED_KEY), true);
   });
 
   const [isPlayerBarVisualizerEnabled, setIsPlayerBarVisualizerEnabled] = useState(() => {
-      const saved = localStorage.getItem(PLAYER_BAR_VISUALIZER_ENABLED_KEY);
-      return saved ? JSON.parse(saved) : true;
+      return safeJsonParse(localStorage.getItem(PLAYER_BAR_VISUALIZER_ENABLED_KEY), true);
   });
 
   const [visualizerStyle, setVisualizerStyle] = useState<VisualizerStyle>(() => {
-      const saved = localStorage.getItem(VISUALIZER_STYLE_KEY);
-      return (saved && VISUALIZER_STYLES.includes(saved as VisualizerStyle)) ? saved as VisualizerStyle : 'bars';
+      const saved = localStorage.getItem(VISUALIZER_STYLE_KEY) as VisualizerStyle;
+      return (saved && VISUALIZER_STYLES.includes(saved)) ? saved : 'bars';
   });
   
   const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState(() => {
-    const saved = localStorage.getItem(STATUS_INDICATOR_ENABLED_KEY);
-    return saved ? JSON.parse(saved) : true;
+    return safeJsonParse(localStorage.getItem(STATUS_INDICATOR_ENABLED_KEY), true);
   });
 
   const [isVolumeControlVisible, setIsVolumeControlVisible] = useState(() => {
-      const saved = localStorage.getItem(VOLUME_CONTROL_VISIBLE_KEY);
-      return saved ? JSON.parse(saved) : true;
+      return safeJsonParse(localStorage.getItem(VOLUME_CONTROL_VISIBLE_KEY), true);
   });
   
   const [showNextSong, setShowNextSong] = useState(() => {
-      const saved = localStorage.getItem(SHOW_NEXT_SONG_KEY);
-      return saved ? JSON.parse(saved) : true;
+      return safeJsonParse(localStorage.getItem(SHOW_NEXT_SONG_KEY), true);
   });
     
   const [gridSize, setGridSize] = useState<GridSize>(() => {
-    const saved = localStorage.getItem(GRID_SIZE_KEY);
-    const size = saved ? parseInt(JSON.parse(saved), 10) : 3;
+    const size = safeJsonParse(localStorage.getItem(GRID_SIZE_KEY), 3);
     return GRID_SIZES.includes(size as GridSize) ? size as GridSize : 3;
   });
   
   const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState(() => {
-    const saved = localStorage.getItem(MARQUEE_PROGRAM_ENABLED_KEY);
-    return saved ? JSON.parse(saved) : true;
+    return safeJsonParse(localStorage.getItem(MARQUEE_PROGRAM_ENABLED_KEY), true);
   });
 
   const [isMarqueeCurrentTrackEnabled, setIsMarqueeCurrentTrackEnabled] = useState(() => {
-    const saved = localStorage.getItem(MARQUEE_CURRENT_ENABLED_KEY);
-    return saved ? JSON.parse(saved) : true;
+    return safeJsonParse(localStorage.getItem(MARQUEE_CURRENT_ENABLED_KEY), true);
   });
   
   const [isMarqueeNextTrackEnabled, setIsMarqueeNextTrackEnabled] = useState(() => {
-    const saved = localStorage.getItem(MARQUEE_NEXT_ENABLED_KEY);
-    return saved ? JSON.parse(saved) : true;
+    return safeJsonParse(localStorage.getItem(MARQUEE_NEXT_ENABLED_KEY), true);
   });
   
   const [marqueeSpeed, setMarqueeSpeed] = useState(() => {
-    const saved = localStorage.getItem(MARQUEE_SPEED_KEY);
-    return saved ? JSON.parse(saved) : 6;
+    return safeJsonParse(localStorage.getItem(MARQUEE_SPEED_KEY), 6);
   });
 
   const [marqueeDelay, setMarqueeDelay] = useState(() => {
-      const saved = localStorage.getItem(MARQUEE_DELAY_KEY);
-      return saved ? JSON.parse(saved) : 3;
+      return safeJsonParse(localStorage.getItem(MARQUEE_DELAY_KEY), 3);
   });
 
 
@@ -468,7 +468,7 @@ export default function App() {
         stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he'));
         break;
       case 'name_desc':
-        stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he'));
+        stationsToSort.sort((a, b) => b.name.localeCompare(b.name, 'he'));
         break;
       case 'category_style':
       case 'category_identity':

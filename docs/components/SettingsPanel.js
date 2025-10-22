@@ -1,5 +1,28 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
+
+const releaseNotes = [
+  {
+    version: '1.4',
+    date: 'יולי 2024',
+    features: [
+      "הוספת היסטוריית גרסאות ומידע על פיצ'רים חדשים.",
+      "שיפורי ביצועים ויציבות כלליים.",
+    ],
+  },
+  {
+    version: '1.3',
+    date: 'יוני 2024',
+    features: [
+        'מיון תחנות לפי קטגוריות (סגנון, אופי, אזור).',
+        'שינוי גודל תצוגת התחנות באמצעות מחוות צביטה (Pinch-to-Zoom).',
+        'הוספת סגנונות תצוגה גרפית חדשים: "זוהר צפוני" ו"טבעות".',
+        'בקרת מהירות והשהייה לטקסט נע.',
+    ],
+  },
+];
+
+const currentVersionInfo = releaseNotes[0];
 
 const SettingsButton = ({ label, isActive, onClick }) => (
     React.createElement("button", {
@@ -62,6 +85,8 @@ const SettingsPanel = ({
     marqueeSpeed, onMarqueeSpeedChange,
     marqueeDelay, onMarqueeDelayChange
  }) => {
+  const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
+  
   return (
     React.createElement(React.Fragment, null,
       /* Overlay */
@@ -235,8 +260,31 @@ const SettingsPanel = ({
                     })
                 )
             ),
-            React.createElement("div", { className: "mt-auto text-center text-xs text-text-secondary flex-shrink-0" },
-                React.createElement("p", null, "רדיו פרימיום v1.3")
+             React.createElement("div", { className: "mt-auto flex-shrink-0" },
+                isVersionHistoryVisible && React.createElement("div", { className: "mb-4 text-xs text-text-secondary" },
+                    React.createElement("h4", { className: "font-bold text-sm text-text-primary mb-2" }, "היסטוריית גרסאות"),
+                    React.createElement("div", { className: "space-y-3 max-h-48 overflow-y-auto pr-2" },
+                        releaseNotes.map(release => 
+                            React.createElement("div", { key: release.version },
+                                React.createElement("p", { className: "font-semibold text-text-primary" }, `גרסה ${release.version} (${release.date})`),
+                                React.createElement("ul", { className: "list-disc list-inside space-y-1 mt-1" },
+                                    release.features.map((feature, index) => 
+                                        React.createElement("li", { key: index }, feature)
+                                    )
+                                )
+                            )
+                        )
+                    )
+                ),
+                React.createElement("div", {
+                    className: "text-center text-xs text-text-secondary cursor-pointer hover:text-text-primary",
+                    onClick: () => setIsVersionHistoryVisible(!isVersionHistoryVisible),
+                    role: "button",
+                    tabIndex: 0,
+                    onKeyDown: (e) => (e.key === 'Enter' || e.key === ' ') && setIsVersionHistoryVisible(!isVersionHistoryVisible)
+                },
+                    React.createElement("p", null, `רדיו פרימיום v${currentVersionInfo.version}`)
+                )
             )
         )
       )
