@@ -40,6 +40,13 @@ interface SettingsPanelProps {
 
 const releaseNotes = [
   {
+    version: '1.7',
+    date: 'יולי 2024',
+    features: [
+        "תיקון אגרסיבי לעדכון אייקון האפליקציה על-ידי שינוי שמות קבצי האייקון.",
+    ],
+  },
+  {
     version: '1.6',
     date: 'יולי 2024',
     features: [
