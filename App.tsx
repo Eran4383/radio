@@ -134,6 +134,8 @@ const CATEGORY_SORTS: { order: SortOrder; label: string }[] = [
     { order: 'category_nameStructure', label: 'שם' },
 ];
 
+type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'found' | 'not-found' | 'error';
+
 export default function App() {
   const [stations, setStations] = useState<Station[]>([]);
   const [playerState, dispatch] = useReducer(playerReducer, initialPlayerState);
@@ -261,11 +263,13 @@ export default function App() {
   
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
   const waitingWorkerRef = useRef<ServiceWorker | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./service-worker.js').then(registration => {
         registration.onupdatefound = () => {
+          setUpdateStatus('downloading');
           const installingWorker = registration.installing;
           if (installingWorker) {
             installingWorker.onstatechange = () => {
@@ -273,6 +277,7 @@ export default function App() {
                 // A new service worker is ready and waiting.
                 waitingWorkerRef.current = installingWorker;
                 setIsUpdateAvailable(true);
+                setUpdateStatus('found');
               }
             };
           }
@@ -288,6 +293,41 @@ export default function App() {
           refreshing = true;
         }
       });
+    }
+  }, []);
+
+  const handleManualUpdateCheck = useCallback(async () => {
+    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.ready) {
+      console.warn('Service Worker not available to check for updates.');
+      setUpdateStatus('error');
+      setTimeout(() => setUpdateStatus('idle'), 3000);
+      return;
+    }
+
+    setUpdateStatus('checking');
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.update();
+
+      // After triggering update, wait a few seconds. If the `onupdatefound` event
+      // hasn't fired and changed our status, we assume there's no update.
+      setTimeout(() => {
+        setUpdateStatus(currentStatus => {
+          if (currentStatus === 'checking') {
+            // No update was found
+            setTimeout(() => setUpdateStatus('idle'), 3000);
+            return 'not-found';
+          }
+          // An update was found and status is now 'downloading' or 'found'. Leave it as is.
+          return currentStatus;
+        });
+      }, 5000); // 5 second timeout.
+
+    } catch (error) {
+      console.error('Error during manual update check:', error);
+      setUpdateStatus('error');
+      setTimeout(() => setUpdateStatus('idle'), 3000);
     }
   }, []);
 
@@ -748,6 +788,8 @@ export default function App() {
         onMarqueeSpeedChange={handleSetMarqueeSpeed}
         marqueeDelay={marqueeDelay}
         onMarqueeDelayChange={handleSetMarqueeDelay}
+        updateStatus={updateStatus}
+        onManualUpdateCheck={handleManualUpdateCheck}
       />
       {playerState.station && <NowPlaying
         isOpen={isNowPlayingOpen}

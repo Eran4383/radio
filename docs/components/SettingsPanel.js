@@ -83,10 +83,29 @@ const SettingsPanel = ({
     isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange,
     isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange,
     marqueeSpeed, onMarqueeSpeedChange,
-    marqueeDelay, onMarqueeDelayChange
+    marqueeDelay, onMarqueeDelayChange,
+    updateStatus, onManualUpdateCheck
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
   
+  const getUpdateStatusContent = () => {
+      switch (updateStatus) {
+        case 'checking':
+          return 'בודק עדכונים...';
+        case 'downloading':
+          return 'מוריד עדכון...';
+        case 'found':
+          return 'העדכון מוכן להתקנה!';
+        case 'not-found':
+          return 'הגרסה עדכנית';
+        case 'error':
+          return 'שגיאה בבדיקה';
+        case 'idle':
+        default:
+          return React.createElement("span", { className: "opacity-70" }, "לחץ לבדיקת עדכונים");
+      }
+    };
+
   return (
     React.createElement(React.Fragment, null,
       /* Overlay */
@@ -276,14 +295,25 @@ const SettingsPanel = ({
                         )
                     )
                 ),
-                React.createElement("div", {
-                    className: "text-center text-xs text-text-secondary cursor-pointer hover:text-text-primary",
-                    onClick: () => setIsVersionHistoryVisible(!isVersionHistoryVisible),
-                    role: "button",
-                    tabIndex: 0,
-                    onKeyDown: (e) => (e.key === 'Enter' || e.key === ' ') && setIsVersionHistoryVisible(!isVersionHistoryVisible)
-                },
-                    React.createElement("p", null, `רדיו פרימיום v${currentVersionInfo.version}`)
+                React.createElement("div", { className: "text-center text-xs text-text-secondary space-y-2" },
+                    React.createElement("div", {
+                        className: `p-2 rounded-lg ${updateStatus === 'idle' ? 'cursor-pointer hover:bg-bg-primary' : 'cursor-default'}`,
+                        onClick: updateStatus === 'idle' ? onManualUpdateCheck : undefined,
+                        role: "button",
+                        tabIndex: updateStatus === 'idle' ? 0 : -1,
+                        "aria-live": "polite"
+                    },
+                        React.createElement("p", null, `רדיו פרימיום v${currentVersionInfo.version}`),
+                        React.createElement("div", { className: "h-4 mt-1 flex items-center justify-center" },
+                            getUpdateStatusContent()
+                        )
+                    ),
+                    React.createElement("button", {
+                        className: "text-text-secondary hover:text-text-primary opacity-80",
+                        onClick: () => setIsVersionHistoryVisible(prev => !prev)
+                    },
+                        isVersionHistoryVisible ? 'הסתר היסטוריית גרסאות' : 'הצג היסטוריית גרסאות'
+                    )
                 )
             )
         )

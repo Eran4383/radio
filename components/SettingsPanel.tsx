@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize } from '../types';
 
+type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'found' | 'not-found' | 'error';
+
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -32,6 +34,8 @@ interface SettingsPanelProps {
   onMarqueeSpeedChange: (speed: number) => void;
   marqueeDelay: number;
   onMarqueeDelayChange: (delay: number) => void;
+  updateStatus: UpdateStatus;
+  onManualUpdateCheck: () => void;
 }
 
 const releaseNotes = [
@@ -130,9 +134,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange,
     isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange,
     marqueeSpeed, onMarqueeSpeedChange,
-    marqueeDelay, onMarqueeDelayChange
+    marqueeDelay, onMarqueeDelayChange,
+    updateStatus, onManualUpdateCheck
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
+
+  const getUpdateStatusContent = () => {
+      switch (updateStatus) {
+        case 'checking':
+          return 'בודק עדכונים...';
+        case 'downloading':
+          return 'מוריד עדכון...';
+        case 'found':
+          return 'העדכון מוכן להתקנה!';
+        case 'not-found':
+          return 'הגרסה עדכנית';
+        case 'error':
+          return 'שגיאה בבדיקה';
+        case 'idle':
+        default:
+          return <span className="opacity-70">לחץ לבדיקת עדכונים</span>;
+      }
+    };
 
   return (
     <>
@@ -328,14 +351,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         </div>
                     </div>
                 )}
-                <div 
-                    className="text-center text-xs text-text-secondary cursor-pointer hover:text-text-primary"
-                    onClick={() => setIsVersionHistoryVisible(!isVersionHistoryVisible)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setIsVersionHistoryVisible(!isVersionHistoryVisible)}
-                >
-                    <p>רדיו פרימיום v{currentVersionInfo.version}</p>
+                 <div className="text-center text-xs text-text-secondary space-y-2">
+                    <div
+                        className={`p-2 rounded-lg ${updateStatus === 'idle' ? 'cursor-pointer hover:bg-bg-primary' : 'cursor-default'}`}
+                        onClick={updateStatus === 'idle' ? onManualUpdateCheck : undefined}
+                        role="button"
+                        tabIndex={updateStatus === 'idle' ? 0 : -1}
+                        aria-live="polite"
+                    >
+                        <p>רדיו פרימיום v{currentVersionInfo.version}</p>
+                        <div className="h-4 mt-1 flex items-center justify-center">
+                            {getUpdateStatusContent()}
+                        </div>
+                    </div>
+                    <button
+                        className="text-text-secondary hover:text-text-primary opacity-80"
+                        onClick={() => setIsVersionHistoryVisible(prev => !prev)}
+                    >
+                        {isVersionHistoryVisible ? 'הסתר היסטוריית גרסאות' : 'הצג היסטוריית גרסאות'}
+                    </button>
                 </div>
             </div>
         </div>
