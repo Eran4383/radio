@@ -4,21 +4,21 @@ import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
 const releaseNotes = [
   {
     version: '1.7',
-    date: 'יולי 2024',
+    date: 'אוגוסט 2024',
     features: [
         "תיקון אגרסיבי לעדכון אייקון האפליקציה על-ידי שינוי שמות קבצי האייקון.",
     ],
   },
   {
     version: '1.6',
-    date: 'יולי 2024',
+    date: 'אוגוסט 2024',
     features: [
         "כפיית עדכון אייקון האפליקציה במסך הבית לכלל המשתמשים.",
     ],
   },
   {
     version: '1.5',
-    date: 'יולי 2024',
+    date: 'אוגוסט 2024',
     features: [
         "החלפת אייקון האפליקציה ושיפור מנגנון העדכון.",
     ],

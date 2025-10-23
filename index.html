@@ -168,82 +168,6 @@
         background-color: #d97706; /* amber-600 */
       }
 
-      /* Static App Shell for instant loading feedback */
-      #app-shell {
-        position: fixed;
-        inset: 0;
-        display: flex;
-        flex-direction: column;
-        background-color: var(--bg-primary);
-        color: var(--text-primary);
-        font-family: 'Rubik', sans-serif;
-      }
-      .shell-header {
-        padding: 1rem;
-        background-color: var(--bg-secondary);
-        opacity: 0.8;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      }
-      .shell-header-content {
-        max-width: 48rem;
-        margin: 0 auto;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
-      }
-      .shell-icon-placeholder {
-        width: 2.25rem;
-        height: 2.25rem;
-        background-color: var(--text-secondary);
-        opacity: 0.2;
-        border-radius: 0.25rem;
-      }
-      .shell-title {
-        font-size: 1.5rem; /* text-2xl */
-        font-weight: 700; /* font-bold */
-        color: var(--accent);
-      }
-      .shell-filter-placeholder {
-        display: flex;
-        align-items: center;
-        background-color: #374151; /* gray-700 */
-        border-radius: 9999px;
-        padding: 0.25rem;
-      }
-      .shell-filter-button {
-        height: 1.75rem;
-        width: 4rem;
-        border-radius: 9999px;
-        margin: 0 0.125rem;
-      }
-      .shell-filter-button.active {
-        background-color: var(--accent);
-      }
-      .shell-main {
-        flex-grow: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-      }
-      .shell-spinner {
-        width: 48px;
-        height: 48px;
-        border: 4px solid var(--text-secondary);
-        border-top-color: var(--accent);
-        border-radius: 50%;
-        animation: shell-spin 1s linear infinite;
-      }
-      .shell-loading-text {
-        margin-top: 1rem;
-        color: var(--text-secondary);
-      }
-      @keyframes shell-spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
        @keyframes fade-in-up {
         from { opacity: 0; transform: translateY(20px) translateX(-50%); }
         to { opacity: 1; transform: translateY(0) translateX(-50%); }
@@ -264,25 +188,7 @@
 </script>
 </head>
   <body class="bg-primary text-primary font-sans">
-    <div id="root">
-      <!-- Static App Shell for instant loading feedback -->
-      <div id="app-shell">
-        <header class="shell-header">
-          <div class="shell-header-content">
-            <div class="shell-icon-placeholder"></div>
-            <div class="shell-filter-placeholder">
-              <div class="shell-filter-button"></div>
-              <div class="shell-filter-button active"></div>
-            </div>
-            <h1 class="shell-title">רדיו פרימיום</h1>
-          </div>
-        </header>
-        <main class="shell-main">
-          <div class="shell-spinner"></div>
-          <p class="shell-loading-text">טוען תחנות...</p>
-        </main>
-      </div>
-    </div>
+    <div id="root"></div>
     <script type="module" src="./index.tsx"></script>
   </body>
 </html>
