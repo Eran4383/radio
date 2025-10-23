@@ -1,4 +1,3 @@
-
 {
   "short_name": "רדיו פרימיום",
   "name": "רדיו פרימיום",
@@ -9,9 +8,6 @@
   "id": ".",
   "scope": ".",
   "display": "standalone",
-  "display_override": [
-    "standalone"
-  ],
   "orientation": "any",
   "background_color": "#111827",
   "theme_color": "#111827",
@@ -21,58 +17,10 @@
   ],
   "icons": [
     {
-      "src": "icon-192.png",
-      "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "any"
-    },
-    {
-      "src": "icon-512.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "any"
-    },
-    {
-      "src": "icon-maskable-192.png",
-      "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "maskable"
-    },
-    {
-      "src": "icon-maskable-512.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "המועדפים שלי",
-      "short_name": "מועדפים",
-      "description": "הצג את תחנות הרדיו המועדפות עליך",
-      "url": "./?filter=favorites",
-      "icons": [
-        {
-          "src": "shortcut-favorites.png",
-          "sizes": "96x96"
-        }
-      ]
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "screenshot1.png",
-      "sizes": "1080x1920",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "מסך ראשי עם תחנות הרדיו"
-    },
-    {
-      "src": "screenshot2.png",
-      "sizes": "1080x1920",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "מסך ניגון עם תצוגה גרפית"
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }
