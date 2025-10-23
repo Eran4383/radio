@@ -335,7 +335,7 @@ const Player = ({
           
           React.createElement("div", { className: "flex items-center gap-1 sm:gap-2" },
              React.createElement("button", { onClick: onPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הקודם" },
-                React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
+                React.createElement(SkipNextIcon, { className: "w-6 h-6" })
             ),
             React.createElement("button", { 
               onClick: onPlayPause, 
@@ -345,7 +345,7 @@ const Player = ({
               isActuallyPlaying || isLoading ? React.createElement(PauseIcon, { className: "w-7 h-7" }) : React.createElement(PlayIcon, { className: "w-7 h-7" })
             ),
             React.createElement("button", { onClick: onNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הבא" },
-                React.createElement(SkipNextIcon, { className: "w-6 h-6" })
+                React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
             )
           )
         ),

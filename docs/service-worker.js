@@ -1,9 +1,10 @@
-const CACHE_NAME = 'radio-premium-cache-v2'; // Bumped version to force update
+const CACHE_NAME = 'radio-premium-cache-v4'; // Bumped version for update mechanism
 const urlsToCache = [
   './',
   './index.html',
   './manifest.json',
-  './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
   './index.js',
   './App.js',
   './types.js',
@@ -28,7 +29,8 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', event => {
-  self.skipWaiting();
+  // We no longer call skipWaiting() here automatically.
+  // We wait for the user to confirm the update via a message.
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
@@ -94,4 +96,10 @@ self.addEventListener('fetch', event => {
         );
       })
   );
+});
+
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });

@@ -240,6 +240,45 @@ export default function App() {
 
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
   
+  const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
+  const waitingWorkerRef = useRef(null);
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js').then(registration => {
+        registration.onupdatefound = () => {
+          const installingWorker = registration.installing;
+          if (installingWorker) {
+            installingWorker.onstatechange = () => {
+              if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // A new service worker is ready and waiting.
+                waitingWorkerRef.current = installingWorker;
+                setIsUpdateAvailable(true);
+              }
+            };
+          }
+        };
+      }).catch(error => {
+        console.error('Error during service worker registration:', error);
+      });
+
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          window.location.reload();
+          refreshing = true;
+        }
+      });
+    }
+  }, []);
+
+  const handleUpdateClick = () => {
+    if (waitingWorkerRef.current) {
+      waitingWorkerRef.current.postMessage({ type: 'SKIP_WAITING' });
+      setIsUpdateAvailable(false);
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
@@ -743,7 +782,14 @@ export default function App() {
         isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled,
         marqueeSpeed: marqueeSpeed,
         onOpenActionMenu: openActionMenu
-      })
+      }),
+      isUpdateAvailable && React.createElement("div", { className: "fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up" },
+        React.createElement("p", { className: "text-sm font-semibold" }, "עדכון חדש זמין"),
+        React.createElement("button", { 
+          onClick: handleUpdateClick,
+          className: "py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold"
+        }, "רענן")
+      )
     )
   );
 }

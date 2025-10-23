@@ -388,9 +388,8 @@ const Player: React.FC<PlayerProps> = ({
           </div>
           
           <div className="flex items-center gap-1 sm:gap-2">
-            {/* FIX: Correctly map onPrev to SkipPreviousIcon */}
              <button onClick={onPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הקודם">
-                <SkipPreviousIcon className="w-6 h-6" />
+                <SkipNextIcon className="w-6 h-6" />
             </button>
             <button 
               onClick={onPlayPause} 
@@ -399,9 +398,8 @@ const Player: React.FC<PlayerProps> = ({
             >
               {isActuallyPlaying || isLoading ? <PauseIcon className="w-7 h-7" /> : <PlayIcon className="w-7 h-7" />}
             </button>
-            {/* FIX: Correctly map onNext to SkipNextIcon */}
             <button onClick={onNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הבא">
-                <SkipNextIcon className="w-6 h-6" />
+                <SkipPreviousIcon className="w-6 h-6" />
             </button>
           </div>
 

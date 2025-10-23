@@ -257,8 +257,46 @@ export default function App() {
       return safeJsonParse(localStorage.getItem(MARQUEE_DELAY_KEY), 3);
   });
 
-
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
+  
+  const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
+  const waitingWorkerRef = useRef<ServiceWorker | null>(null);
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js').then(registration => {
+        registration.onupdatefound = () => {
+          const installingWorker = registration.installing;
+          if (installingWorker) {
+            installingWorker.onstatechange = () => {
+              if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // A new service worker is ready and waiting.
+                waitingWorkerRef.current = installingWorker;
+                setIsUpdateAvailable(true);
+              }
+            };
+          }
+        };
+      }).catch(error => {
+        console.error('Error during service worker registration:', error);
+      });
+
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          window.location.reload();
+          refreshing = true;
+        }
+      });
+    }
+  }, []);
+
+  const handleUpdateClick = () => {
+    if (waitingWorkerRef.current) {
+      waitingWorkerRef.current.postMessage({ type: 'SKIP_WAITING' });
+      setIsUpdateAvailable(false);
+    }
+  };
   
   useEffect(() => {
     const loadData = async () => {
@@ -478,7 +516,7 @@ export default function App() {
         stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he'));
         break;
       case 'name_desc':
-        stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he'));
+        stationsToSort.sort((a, b) => b.name.localeCompare(b.name, 'he'));
         break;
       case 'category_style':
       case 'category_identity':
@@ -765,6 +803,17 @@ export default function App() {
         marqueeSpeed={marqueeSpeed}
         onOpenActionMenu={openActionMenu}
       />
+      {isUpdateAvailable && (
+        <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up">
+          <p className="text-sm font-semibold">עדכון חדש זמין</p>
+          <button 
+            onClick={handleUpdateClick}
+            className="py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold"
+          >
+            רענן
+          </button>
+        </div>
+      )}
     </div>
   );
 }
