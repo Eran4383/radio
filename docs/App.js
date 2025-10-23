@@ -710,7 +710,7 @@ export default function App() {
       ),
       React.createElement("main", { className: "flex-grow pb-48", onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd }, 
         isLoading ? (
-          React.createElement(StationListSkeleton, null)
+          null
         ) : error ? (
           React.createElement("p", { className: "text-center text-red-400 p-4" }, error)
         ) : (
