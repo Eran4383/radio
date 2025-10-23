@@ -1,4 +1,4 @@
-const CACHE_NAME = 'radio-premium-cache-v8'; // Bumped version for update mechanism
+const CACHE_NAME = 'radio-premium-cache-v9'; // Bumped version for update mechanism
 const urlsToCache = [
   './',
   './index.html',
