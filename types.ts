@@ -44,7 +44,7 @@ export const EQ_PRESET_LABELS: Record<EqPreset, string> = {
   custom: 'מותאם אישית',
 };
 
-export const VISUALIZER_STYLES = ['bars', 'wave', 'pulse', 'spectrum', 'aurora', 'rings', 'static', 'vortex'] as const;
+export const VISUALIZER_STYLES = ['bars', 'wave', 'pulse', 'spectrum', 'aurora', 'rings', 'static', 'vortex', 'speaker', 'galaxy', 'equalizer'] as const;
 export type VisualizerStyle = typeof VISUALIZER_STYLES[number];
 
 export const VISUALIZER_STYLE_LABELS: Record<VisualizerStyle, string> = {
@@ -56,6 +56,9 @@ export const VISUALIZER_STYLE_LABELS: Record<VisualizerStyle, string> = {
     rings: 'טבעות',
     static: 'חשמל סטטי',
     vortex: 'מערבולת',
+    speaker: 'רמקול',
+    galaxy: 'גלקסיה',
+    equalizer: 'אקולייזר',
 };
 
 export const GRID_SIZES = [1, 2, 3, 4, 5] as const;

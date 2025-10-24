@@ -129,9 +129,9 @@ const Player = ({
     if (!audioRef.current || audioContextRef.current) return;
     try {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      // FIX: The AudioContext constructor might require an argument in some older browser implementations.
-      // Passing an empty options object ensures compatibility.
-      const context = new AudioContextClass({});
+      // FIX: Expected 1 arguments, but got 0.
+      // Calling the constructor without arguments is the most compatible way and fixes the error.
+      const context = new AudioContextClass();
       audioContextRef.current = context;
       
       const source = context.createMediaElementSource(audioRef.current);

@@ -150,7 +150,6 @@ const drawAuroraSymmetric = (ctx: CanvasRenderingContext2D, data: Uint8Array, wi
     drawHalf(-1);
 };
 
-
 const drawRings = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number) => {
     const centerX = width / 2;
     const centerY = height / 2;
@@ -235,6 +234,99 @@ const drawVortex = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: numb
     }
 };
 
+const drawSpeaker = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number, color: string) => {
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const bass = (data[0] + data[1] + data[2]) / 3 / 255;
+    const mid = data.slice(10, 20).reduce((a, b) => a + b, 0) / (10 * 255);
+    const maxRadius = Math.min(width, height) * 0.45;
+
+    // Outer ring
+    ctx.strokeStyle = `${color}80`;
+    ctx.lineWidth = 1 + mid * 4;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, maxRadius * 0.9 + mid * 10, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    // Mid ring
+    ctx.strokeStyle = `${color}40`;
+    ctx.lineWidth = 2 + mid * 8;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, maxRadius * 0.6, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    // Central pulsing circle (speaker cone)
+    const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, maxRadius * bass);
+    gradient.addColorStop(0, `${color}FF`);
+    gradient.addColorStop(0.5, `${color}80`);
+    gradient.addColorStop(1, `${color}00`);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, maxRadius * 0.4 + bass * maxRadius * 0.4, 0, 2 * Math.PI);
+    ctx.fill();
+};
+
+const drawGalaxy = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number) => {
+    const centerX = width / 2;
+    const centerY = height / 2;
+
+    for (let i = 0; i < data.length; i++) {
+        const value = data[i] / 255;
+        const angle = i * 4; // Spread particles
+        const radius = value * Math.min(width, height) * 0.4;
+
+        const x = centerX + Math.cos(angle) * radius;
+        const y = centerY + Math.sin(angle) * radius;
+
+        const hue = 180 + i * 2;
+        const size = value * 3 + 1;
+        ctx.fillStyle = `hsla(${hue}, 100%, 70%, ${0.5 + value * 0.5})`;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, 2 * Math.PI);
+        ctx.fill();
+    }
+};
+
+const drawEqualizer = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number, color: string) => {
+    const bufferLength = data.length;
+    const halfBuffer = Math.floor(bufferLength / 2);
+    const centerX = width / 2;
+    const barWidth = Math.max(1, (width / 2) / halfBuffer * 0.8);
+    const gap = (width / 2) / halfBuffer * 0.2;
+
+    const drawRoundedRect = (x: number, y: number, w: number, h: number, r: number) => {
+        if (h < 2 * r) r = h / 2;
+        if (w < 2 * r) r = w / 2;
+        if (h <= 0) return;
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r);
+        ctx.arcTo(x, y + h, x, y, r);
+        ctx.arcTo(x, y, x + w, y, r);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    for (let i = 0; i < halfBuffer; i++) {
+        const barHeight = (data[i] / 255) * height;
+        const hue = (i * 360) / halfBuffer;
+        
+        const gradient = ctx.createLinearGradient(0, height, 0, height - barHeight);
+        gradient.addColorStop(0, `hsl(${hue}, 100%, 40%)`);
+        gradient.addColorStop(0.7, `hsl(${hue}, 100%, 60%)`);
+        gradient.addColorStop(1, `hsl(${hue}, 100%, 80%)`);
+        ctx.fillStyle = gradient;
+
+        const xRight = centerX + (i * (barWidth + gap));
+        const xLeft = centerX - ((i + 1) * (barWidth + gap) + gap);
+        
+        drawRoundedRect(xRight, height - barHeight, barWidth, barHeight, 3);
+        drawRoundedRect(xLeft, height - barHeight, barWidth, barHeight, 3);
+    }
+};
+
+
 const Visualizer: React.FC<VisualizerProps> = ({ frequencyData, style }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -242,6 +334,13 @@ const Visualizer: React.FC<VisualizerProps> = ({ frequencyData, style }) => {
     const canvas = canvasRef.current;
     if (!canvas || !frequencyData) return;
     
+    // Ensure canvas resolution matches its display size for high quality
+    const { clientWidth, clientHeight } = canvas;
+    if (canvas.width !== clientWidth || canvas.height !== clientHeight) {
+        canvas.width = clientWidth;
+        canvas.height = clientHeight;
+    }
+
     const context = canvas.getContext('2d');
     if (!context) return;
     
@@ -273,6 +372,15 @@ const Visualizer: React.FC<VisualizerProps> = ({ frequencyData, style }) => {
         case 'vortex':
             drawVortex(context, frequencyData, width, height, accentColor);
             break;
+        case 'speaker':
+            drawSpeaker(context, frequencyData, width, height, accentColor);
+            break;
+        case 'galaxy':
+            drawGalaxy(context, frequencyData, width, height);
+            break;
+        case 'equalizer':
+            drawEqualizer(context, frequencyData, width, height, accentColor);
+            break;
         case 'bars':
         default:
             drawBarsMirrored(context, frequencyData, width, height, accentColor);
@@ -282,10 +390,8 @@ const Visualizer: React.FC<VisualizerProps> = ({ frequencyData, style }) => {
   }, [frequencyData, style]);
 
   return (
-    <div 
-        className="w-full h-full"
-    >
-        <canvas ref={canvasRef} width="300" height="80" className="w-full h-full" />
+    <div className="w-full h-full">
+        <canvas ref={canvasRef} className="w-full h-full" />
     </div>
   );
 };

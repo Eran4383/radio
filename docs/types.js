@@ -19,7 +19,7 @@ export const EQ_PRESET_LABELS = {
   custom: 'מותאם אישית',
 };
 
-export const VISUALIZER_STYLES = ['bars', 'wave', 'pulse', 'spectrum', 'aurora', 'rings', 'static', 'vortex'];
+export const VISUALIZER_STYLES = ['bars', 'wave', 'pulse', 'spectrum', 'aurora', 'rings', 'static', 'vortex', 'speaker', 'galaxy', 'equalizer'];
 
 export const VISUALIZER_STYLE_LABELS = {
     bars: 'עמודות',
@@ -30,6 +30,9 @@ export const VISUALIZER_STYLE_LABELS = {
     rings: 'טבעות',
     static: 'חשמל סטטי',
     vortex: 'מערבולת',
+    speaker: 'רמקול',
+    galaxy: 'גלקסיה',
+    equalizer: 'אקולייזר',
 };
 
 export const GRID_SIZES = [1, 2, 3, 4, 5]; // 1=Smallest, 5=Largest

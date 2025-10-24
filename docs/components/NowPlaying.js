@@ -25,7 +25,7 @@ const NowPlaying = ({
     // Refs for gesture detection
     const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
     const longPressTimerRef = useRef(null);
-    const pinchDistRef = useRef(0);
+    const hasMoved = useRef(false);
 
     useEffect(() => {
       setStartAnimation(false);
@@ -62,7 +62,7 @@ const NowPlaying = ({
 
         const timeoutId = setTimeout(calculateMarquee, 50);
         return () => clearTimeout(timeoutId);
-    }, [station, trackInfo, showNextSong, marqueeSpeed, isOpen]);
+    }, [station, trackInfo, showNextSong, marqueeSpeed, isOpen, isVisualizerFullscreen]);
 
     const clearLongPressTimer = useCallback(() => {
         if (longPressTimerRef.current) {
@@ -79,64 +79,62 @@ const NowPlaying = ({
         if (e.touches.length === 1) {
             const touch = e.touches[0];
             touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+            hasMoved.current = false;
 
-            if (isVisualizerArea && !isVisualizerFullscreen) {
+            if (isVisualizerArea) {
                 longPressTimerRef.current = window.setTimeout(() => {
-                    setIsVisualizerFullscreen(true);
-                    longPressTimerRef.current = null;
-                }, 500);
+                    setIsVisualizerFullscreen(!isVisualizerFullscreen);
+                    longPressTimerRef.current = null; // Mark as fired
+                }, 500); // 500ms for long press
             }
-        } else if (e.touches.length === 2 && isVisualizerFullscreen) {
-            e.preventDefault();
-            const dx = e.touches[0].clientX - e.touches[1].clientX;
-            const dy = e.touches[0].clientY - e.touches[1].clientY;
-            pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
+        } else {
+             clearLongPressTimer();
         }
     };
     
     const handleTouchMove = (e) => {
-        clearLongPressTimer();
-        if (e.touches.length === 2 && isVisualizerFullscreen && pinchDistRef.current > 0) {
-            e.preventDefault();
-            const dx = e.touches[0].clientX - e.touches[1].clientX;
-            const dy = e.touches[0].clientY - e.touches[1].clientY;
-            const currentDist = Math.sqrt(dx * dx + dy * dy);
-            
-            if (pinchDistRef.current - currentDist > 40) { // Pinch-in
-                setIsVisualizerFullscreen(false);
-                pinchDistRef.current = 0;
-            }
-        } else if (e.touches.length === 1 && !isVisualizerFullscreen) {
+        if (e.touches.length === 1) {
             const touch = e.touches[0];
-            const deltaY = touch.clientY - touchStartRef.current.y;
-            if (deltaY > 0 && dragRef.current) {
-                 dragRef.current.style.transform = `translateY(${deltaY}px)`;
-                 dragRef.current.style.transition = 'none';
+            const deltaX = Math.abs(touch.clientX - touchStartRef.current.x);
+            const deltaY = Math.abs(touch.clientY - touchStartRef.current.y);
+
+            if (deltaX > 10 || deltaY > 10) {
+                hasMoved.current = true;
+                clearLongPressTimer();
             }
+
+            if (!isVisualizerFullscreen) {
+                 const dragDownY = touch.clientY - touchStartRef.current.y;
+                 if (dragDownY > 0 && dragRef.current) {
+                     dragRef.current.style.transform = `translateY(${dragDownY}px)`;
+                     dragRef.current.style.transition = 'none';
+                 }
+            }
+        } else {
+            clearLongPressTimer();
         }
     };
 
     const handleTouchEnd = (e) => {
-        const touchDuration = Date.now() - touchStartRef.current.time;
         const target = e.target;
         const isVisualizerArea = target.closest('.visualizer-interaction-area');
 
         if (longPressTimerRef.current) {
             clearLongPressTimer();
-            if (isVisualizerArea && touchDuration < 500) {
-                onCycleVisualizerStyle();
+            if (isVisualizerArea && !hasMoved.current) {
+                 onCycleVisualizerStyle();
             }
         }
-
+        
         if (!isVisualizerFullscreen) {
             const touch = e.changedTouches[0];
             const deltaX = touch.clientX - touchStartRef.current.x;
             const deltaY = touch.clientY - touchStartRef.current.y;
 
-            if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5 && Math.abs(deltaX) > 50) {
+            if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY)) {
                 if (deltaX > 0) onPrev();
                 else onNext();
-            } else if (deltaY > 70) {
+            } else if (deltaY > 70 && !hasMoved.current) {
                 onClose();
             }
         }
@@ -145,7 +143,6 @@ const NowPlaying = ({
             dragRef.current.style.transform = '';
             dragRef.current.style.transition = '';
         }
-        pinchDistRef.current = 0;
     };
 
     return (
