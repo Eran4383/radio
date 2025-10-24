@@ -1,8 +1,8 @@
-const CACHE_NAME = 'radio-premium-cache-v14'; // Bumped version for update mechanism
+const CACHE_NAME = 'radio-premium-cache-v15'; // Bumped version for update mechanism
 const urlsToCache = [
   './',
   './index.html',
-  './manifest.json',
+  './manifest.json?v=1.9.4',
   './icon-192-v2.png',
   './icon-512-v2.png',
   './index.js',
@@ -35,7 +35,14 @@ self.addEventListener('install', event => {
     caches.open(CACHE_NAME)
       .then(cache => {
         console.log('Opened cache, caching assets.');
-        return cache.addAll(urlsToCache).catch(err => {
+        // When caching, we must cache the un-versioned manifest so it can be found.
+        const cachePromises = urlsToCache.map(urlToCache => {
+            if (urlToCache.includes('manifest.json')) {
+                return cache.add(new Request('./manifest.json', { cache: 'reload' }));
+            }
+            return cache.add(urlToCache);
+        });
+        return Promise.all(cachePromises).catch(err => {
           console.error('Failed to cache all required files during install:', err);
         });
       })
@@ -62,8 +69,21 @@ self.addEventListener('fetch', event => {
   if (!event.request.url.startsWith('http')) {
     return;
   }
+  
+  const requestUrl = new URL(event.request.url);
 
-  // Use a cache-first strategy
+  // Special handling for the manifest file to ignore the query string when matching in cache
+  if (requestUrl.pathname.endsWith('/manifest.json')) {
+      event.respondWith(
+          caches.match('./manifest.json').then(response => {
+              return response || fetch(event.request);
+          })
+      );
+      return;
+  }
+
+
+  // Use a cache-first strategy for all other requests
   event.respondWith(
     caches.match(event.request)
       .then(response => {

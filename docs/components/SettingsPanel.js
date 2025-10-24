@@ -3,6 +3,15 @@ import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
 
 const releaseNotes = [
   {
+    version: '1.9.4',
+    date: '27 באוגוסט 2024',
+    features: [
+        "תיקון מקיף לבעיית התקנת האפליקציה (PWA) והצגת האייקון.",
+        "כפיית רענון של קובץ ה-manifest כדי להבטיח שהדפדפן תמיד טוען את הגרסה העדכנית ביותר.",
+        "עדכון גרסת ה-cache ל-v15 לניקוי יסודי של קבצים ישנים מכל המכשירים.",
+    ],
+  },
+  {
     version: '1.9.3',
     date: '26 באוגוסט 2024',
     features: [
