@@ -3,6 +3,15 @@ import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
 
 const releaseNotes = [
   {
+    version: '1.9.3',
+    date: '26 באוגוסט 2024',
+    features: [
+        "תיקון סופי להצגת הלוגו המקורי של המשתמש.",
+        "החלפת קבצי הלוגו הישנים בקבצים ריקים כדי למנוע טעינתם מזיכרון המטמון.",
+        "כפיית עדכון גרסה אגרסיבי (v14) לכלל המשתמשים.",
+    ],
+  },
+  {
     version: '1.9.2',
     date: '25 באוגוסט 2024',
     features: [
