@@ -3,6 +3,15 @@ import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
 
 const releaseNotes = [
   {
+    version: '1.9.1',
+    date: '24 באוגוסט 2024',
+    features: [
+        "עיצוב לוגו חדש ומקצועי לאפליקציה.",
+        "הטמעת הלוגו החדש כאייקון במסך הבית (PWA).",
+        "שיפור מנגנון עדכון האייקון כדי להבטיח שהשינוי יופיע אצל כל המשתמשים.",
+    ],
+  },
+  {
     version: '1.9',
     date: '23 באוגוסט 2024',
     features: [
