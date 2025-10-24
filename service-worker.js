@@ -1,7 +1,7 @@
-const CACHE_NAME = 'radio-premium-cache-v18'; // Resilient SW install
+const CACHE_NAME = 'radio-premium-cache-v19'; // Aggressive manifest cache busting
 const urlsToCache = [
   './index.html',
-  './manifest.json',
+  './manifest.json?v=19',
   './icon-192-v2.png',
   './icon-512-v2.png',
   './index.js',
@@ -29,7 +29,7 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('Opened cache, caching assets for v18.');
+        console.log('Opened cache, caching assets for v19.');
         const cachePromises = urlsToCache.map(url => {
           // Fetch and cache each file individually.
           // This is more resilient than cache.addAll which fails if one file fails.
@@ -84,13 +84,18 @@ self.addEventListener('fetch', event => {
           // Also update the cache with the new manifest
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseToCache);
+            // Make sure to use the versioned URL as the key
+            const urlToCache = new URL(event.request.url);
+            urlToCache.search = '?v=19';
+            cache.put(urlToCache.href, responseToCache);
           });
           return networkResponse;
         })
         .catch(() => {
           // If network fails, serve from cache
-          return caches.match(event.request);
+           const urlToMatch = new URL(event.request.url);
+           urlToMatch.search = '?v=19';
+          return caches.match(urlToMatch.href);
         })
     );
     return;
