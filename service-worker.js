@@ -1,6 +1,5 @@
-const CACHE_NAME = 'radio-premium-cache-v17'; // Robust SW install
+const CACHE_NAME = 'radio-premium-cache-v18'; // Resilient SW install
 const urlsToCache = [
-  './',
   './index.html',
   './manifest.json',
   './icon-192-v2.png',
@@ -30,10 +29,24 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('Opened cache, caching assets for v17.');
-        const cachePromises = urlsToCache.map(urlToCache => {
-          const request = new Request(urlToCache, { cache: 'reload' });
-          return cache.add(request);
+        console.log('Opened cache, caching assets for v18.');
+        const cachePromises = urlsToCache.map(url => {
+          // Fetch and cache each file individually.
+          // This is more resilient than cache.addAll which fails if one file fails.
+          return fetch(new Request(url, { cache: 'reload' }))
+            .then(response => {
+              if (response.ok) {
+                return cache.put(url, response);
+              }
+              // Log the error but don't let it crash the install
+              console.warn(`Failed to cache ${url}: status ${response.status}`);
+              return Promise.resolve(); 
+            })
+            .catch(err => {
+              // Log the fetch error but don't let it crash the install
+              console.error(`Failed to fetch and cache ${url}`, err);
+              return Promise.resolve();
+            });
         });
         return Promise.all(cachePromises);
       })
@@ -68,6 +81,7 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(event.request)
         .then(networkResponse => {
+          // Also update the cache with the new manifest
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
             cache.put(event.request, responseToCache);
@@ -75,6 +89,7 @@ self.addEventListener('fetch', event => {
           return networkResponse;
         })
         .catch(() => {
+          // If network fails, serve from cache
           return caches.match(event.request);
         })
     );
