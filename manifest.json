@@ -19,14 +19,12 @@
     {
       "src": "icon-192-v2.png",
       "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "any maskable"
+      "sizes": "192x192"
     },
     {
       "src": "icon-512-v2.png",
       "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "any maskable"
+      "sizes": "512x512"
     }
   ]
 }

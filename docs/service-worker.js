@@ -1,7 +1,7 @@
-const CACHE_NAME = 'radio-premium-cache-v19'; // Aggressive manifest cache busting
+const CACHE_NAME = 'radio-premium-cache-v20'; // Force update for correct icons
 const urlsToCache = [
   './index.html',
-  './manifest.json?v=19',
+  './manifest.json?v=20',
   './icon-192-v2.png',
   './icon-512-v2.png',
   './index.js',
@@ -29,21 +29,17 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('Opened cache, caching assets for v19.');
+        console.log('Opened cache, caching assets for v20.');
         const cachePromises = urlsToCache.map(url => {
-          // Fetch and cache each file individually.
-          // This is more resilient than cache.addAll which fails if one file fails.
           return fetch(new Request(url, { cache: 'reload' }))
             .then(response => {
               if (response.ok) {
                 return cache.put(url, response);
               }
-              // Log the error but don't let it crash the install
               console.warn(`Failed to cache ${url}: status ${response.status}`);
               return Promise.resolve(); 
             })
             .catch(err => {
-              // Log the fetch error but don't let it crash the install
               console.error(`Failed to fetch and cache ${url}`, err);
               return Promise.resolve();
             });
@@ -81,20 +77,17 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(event.request)
         .then(networkResponse => {
-          // Also update the cache with the new manifest
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
-            // Make sure to use the versioned URL as the key
             const urlToCache = new URL(event.request.url);
-            urlToCache.search = '?v=19';
+            urlToCache.search = '?v=20';
             cache.put(urlToCache.href, responseToCache);
           });
           return networkResponse;
         })
         .catch(() => {
-          // If network fails, serve from cache
            const urlToMatch = new URL(event.request.url);
-           urlToMatch.search = '?v=19';
+           urlToMatch.search = '?v=20';
           return caches.match(urlToMatch.href);
         })
     );
@@ -110,7 +103,6 @@ self.addEventListener('fetch', event => {
         }
         return fetch(event.request).then(
           networkResponse => {
-            // Check for valid responses to cache
             if (!networkResponse || networkResponse.status !== 200 || (networkResponse.type !== 'basic' && networkResponse.type !== 'cors')) {
               return networkResponse;
             }
