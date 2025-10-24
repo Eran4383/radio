@@ -1,9 +1,10 @@
-const CACHE_NAME = 'radio-premium-cache-v12'; // Bumped version for update mechanism
+const CACHE_NAME = 'radio-premium-cache-v13'; // Bumped version for update mechanism
 const urlsToCache = [
   './',
   './index.html',
   './manifest.json',
-  './icon.svg',
+  './icon-192-v2.png',
+  './icon-512-v2.png',
   './index.js',
   './App.js',
   './types.js',

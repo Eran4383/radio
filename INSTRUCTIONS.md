@@ -1,3 +1,8 @@
+# PROTECTED FILES: DO NOT MODIFY OR DELETE
+- `icon-192-v2.png`
+- `icon-512-v2.png`
+These are custom user-provided icons and must not be changed by the AI agent.
+---
 # AI AGENT INSTRUCTIONS: READ AND FOLLOW THESE RULES BEFORE MODIFYING ANY CODE.
 
 1.  **SOURCE CODE**: The primary source code is in the root directory and uses TypeScript (`.tsx`, `.ts` files).
