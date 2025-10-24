@@ -3,6 +3,14 @@ import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
 
 const releaseNotes = [
   {
+    version: '1.9.9',
+    date: '1 בספטמבר 2024',
+    features: [
+        "הוספת הגנה בקובץ ההוראות הראשי (`INSTRUCTIONS.md`) למניעת מחיקה או שינוי של קבצי האייקונים המותאמים אישית (`icon-*-v2.png`).",
+        "התיעוד מבטיח שהזהות החזותית של האפליקציה תישמר בכל העדכונים העתידיים.",
+    ],
+  },
+  {
     version: '1.9.8',
     date: '31 באוגוסט 2024',
     features: [

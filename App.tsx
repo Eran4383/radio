@@ -144,6 +144,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
+  const [isVisualizerFullscreen, setIsVisualizerFullscreen] = useState(false);
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [trackInfo, setTrackInfo] = useState<StationTrackInfo | null>(null);
   const pinchDistRef = useRef(0);
@@ -556,7 +557,7 @@ export default function App() {
         stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he'));
         break;
       case 'name_desc':
-        stationsToSort.sort((a, b) => b.name.localeCompare(b.name, 'he'));
+        stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he'));
         break;
       case 'category_style':
       case 'category_identity':
@@ -793,7 +794,7 @@ export default function App() {
       />
       {playerState.station && <NowPlaying
         isOpen={isNowPlayingOpen}
-        onClose={() => setIsNowPlayingOpen(false)}
+        onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)}
         station={playerState.station}
         isPlaying={playerState.status === 'PLAYING'}
         onPlayPause={handlePlayPause}
@@ -814,6 +815,8 @@ export default function App() {
         isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled}
         marqueeSpeed={marqueeSpeed}
         onOpenActionMenu={openActionMenu}
+        isVisualizerFullscreen={isVisualizerFullscreen}
+        setIsVisualizerFullscreen={setIsVisualizerFullscreen}
       />}
        <ActionMenu
         isOpen={actionMenuState.isOpen}

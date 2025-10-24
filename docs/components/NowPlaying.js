@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon } from './Icons.js';
 import Visualizer from './Visualizer.js';
 import InteractiveText from './InteractiveText.js';
@@ -10,10 +10,9 @@ const NowPlaying = ({
   visualizerStyle, isVisualizerEnabled, onCycleVisualizerStyle,
   isVolumeControlVisible, marqueeDelay,
   isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled, marqueeSpeed,
-  onOpenActionMenu
+  onOpenActionMenu,
+  isVisualizerFullscreen, setIsVisualizerFullscreen
 }) => {
-    const touchStartY = useRef(0);
-    const touchStartX = useRef(0);
     const dragRef = useRef(null);
     const [startAnimation, setStartAnimation] = useState(false);
     
@@ -22,7 +21,11 @@ const NowPlaying = ({
     const currentTrackRef = useRef(null);
     const nextTrackRef = useRef(null);
     const [marqueeConfig, setMarqueeConfig] = useState({ duration: 0, isOverflowing: [false, false, false, false] });
-
+    
+    // Refs for gesture detection
+    const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
+    const longPressTimerRef = useRef(null);
+    const pinchDistRef = useRef(0);
 
     useEffect(() => {
       setStartAnimation(false);
@@ -61,33 +64,79 @@ const NowPlaying = ({
         return () => clearTimeout(timeoutId);
     }, [station, trackInfo, showNextSong, marqueeSpeed, isOpen]);
 
+    const clearLongPressTimer = useCallback(() => {
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+    }, []);
+
     const handleTouchStart = (e) => {
-        touchStartX.current = e.targetTouches[0].clientX;
-        touchStartY.current = e.targetTouches[0].clientY;
+        clearLongPressTimer();
+        const target = e.target;
+        const isVisualizerArea = target.closest('.visualizer-interaction-area');
+
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+
+            if (isVisualizerArea && !isVisualizerFullscreen) {
+                longPressTimerRef.current = window.setTimeout(() => {
+                    setIsVisualizerFullscreen(true);
+                    longPressTimerRef.current = null;
+                }, 500);
+            }
+        } else if (e.touches.length === 2 && isVisualizerFullscreen) {
+            e.preventDefault();
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
+        }
     };
     
     const handleTouchMove = (e) => {
-        const deltaY = e.targetTouches[0].clientY - touchStartY.current;
-        if (deltaY > 0 && dragRef.current) {
-             dragRef.current.style.transform = `translateY(${deltaY}px)`;
-             dragRef.current.style.transition = 'none';
+        clearLongPressTimer();
+        if (e.touches.length === 2 && isVisualizerFullscreen && pinchDistRef.current > 0) {
+            e.preventDefault();
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const currentDist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (pinchDistRef.current - currentDist > 40) { // Pinch-in
+                setIsVisualizerFullscreen(false);
+                pinchDistRef.current = 0;
+            }
+        } else if (e.touches.length === 1 && !isVisualizerFullscreen) {
+            const touch = e.touches[0];
+            const deltaY = touch.clientY - touchStartRef.current.y;
+            if (deltaY > 0 && dragRef.current) {
+                 dragRef.current.style.transform = `translateY(${deltaY}px)`;
+                 dragRef.current.style.transition = 'none';
+            }
         }
     };
 
     const handleTouchEnd = (e) => {
-        const deltaX = e.changedTouches[0].clientX - touchStartX.current;
-        const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+        const touchDuration = Date.now() - touchStartRef.current.time;
+        const target = e.target;
+        const isVisualizerArea = target.closest('.visualizer-interaction-area');
 
-        if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
-            if (Math.abs(deltaX) > 50) {
-                if (deltaX > 0) {
-                    onPrev();
-                } else {
-                    onNext();
-                }
+        if (longPressTimerRef.current) {
+            clearLongPressTimer();
+            if (isVisualizerArea && touchDuration < 500) {
+                onCycleVisualizerStyle();
             }
-        } else {
-            if (deltaY > 70) {
+        }
+
+        if (!isVisualizerFullscreen) {
+            const touch = e.changedTouches[0];
+            const deltaX = touch.clientX - touchStartRef.current.x;
+            const deltaY = touch.clientY - touchStartRef.current.y;
+
+            if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5 && Math.abs(deltaX) > 50) {
+                if (deltaX > 0) onPrev();
+                else onNext();
+            } else if (deltaY > 70) {
                 onClose();
             }
         }
@@ -96,32 +145,30 @@ const NowPlaying = ({
             dragRef.current.style.transform = '';
             dragRef.current.style.transition = '';
         }
-
-        touchStartX.current = 0;
-        touchStartY.current = 0;
+        pinchDistRef.current = 0;
     };
 
     return (
       React.createElement("div", { 
         ref: dragRef,
-        className: `fixed inset-0 bg-bg-primary z-50 flex flex-col h-full transition-transform duration-300 ease-in-out ${isOpen ? 'translate-y-0' : 'translate-y-full'}`,
+        className: `fixed bg-bg-primary z-50 flex flex-col h-full transition-transform duration-300 ease-in-out ${isOpen ? 'translate-y-0' : 'translate-y-full'} ${isVisualizerFullscreen ? 'inset-0' : 'inset-x-0 bottom-0'}`,
         onTouchStart: handleTouchStart,
         onTouchMove: handleTouchMove,
         onTouchEnd: handleTouchEnd
       },
-        React.createElement("div", { className: "flex-shrink-0 text-center pt-4 px-4" },
+        React.createElement("div", { className: isVisualizerFullscreen ? 'hidden' : 'flex-shrink-0 text-center pt-4 px-4' },
             React.createElement("button", { onClick: onClose, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "סגור" },
                 React.createElement(ChevronDownIcon, { className: "w-8 h-8 mx-auto" })
             )
         ),
-        React.createElement("div", { className: "flex-grow flex flex-col items-center justify-center gap-4 text-center overflow-y-auto py-4 px-4" },
+        React.createElement("div", { className: `flex-grow flex flex-col items-center justify-center gap-4 text-center overflow-y-auto py-4 px-4 ${isVisualizerFullscreen ? 'h-full' : ''}` },
             React.createElement("img", { 
               src: station?.favicon || 'https://picsum.photos/256', 
               alt: station?.name || 'תחנה', 
-              className: "w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-2xl bg-gray-700 object-cover shadow-2xl flex-shrink-0",
+              className: `rounded-2xl bg-gray-700 object-cover shadow-2xl flex-shrink-0 transition-all duration-300 ${isVisualizerFullscreen ? 'hidden' : 'w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64'}`,
               onError: (e) => { e.currentTarget.src = 'https://picsum.photos/256'; }
             }),
-            React.createElement("div", { className: "flex-shrink-0 w-full", key: station?.stationuuid },
+            React.createElement("div", { className: `flex-shrink-0 w-full ${isVisualizerFullscreen ? 'hidden' : ''}`, key: station?.stationuuid },
                 React.createElement("div", { className: "w-full px-4" },
                     React.createElement(MarqueeText, { 
                         loopDelay: marqueeDelay,
@@ -191,17 +238,16 @@ const NowPlaying = ({
                     )
                 )
             ),
-            React.createElement("div", { className: "w-full max-w-sm px-4 flex-shrink-0" },
+            React.createElement("div", { className: `w-full max-w-sm px-4 flex-shrink-0 visualizer-interaction-area ${isVisualizerFullscreen ? 'w-full h-full max-w-none' : 'h-20'}` },
                 isVisualizerEnabled && (
                     React.createElement(Visualizer, { 
                         frequencyData: frequencyData,
-                        style: visualizerStyle,
-                        onClick: onCycleVisualizerStyle
+                        style: visualizerStyle
                     })
                 )
             )
         ),
-        React.createElement("div", { className: "flex-shrink-0 flex flex-col items-center gap-4 sm:gap-6 pb-4 sm:pb-8 px-4" },
+        React.createElement("div", { className: `flex-shrink-0 flex flex-col items-center gap-4 sm:gap-6 pb-4 sm:pb-8 px-4 ${isVisualizerFullscreen ? 'hidden' : ''}` },
             React.createElement("div", { className: "flex items-center justify-center gap-4" },
               React.createElement("button", { onClick: onPrev, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "הקודם" },
                 React.createElement(SkipNextIcon, { className: "w-12 h-12" })

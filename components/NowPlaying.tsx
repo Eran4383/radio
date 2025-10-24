@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Station, VisualizerStyle, StationTrackInfo } from '../types';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon } from './Icons';
 import Visualizer from './Visualizer';
@@ -28,6 +28,8 @@ interface NowPlayingProps {
   isMarqueeNextTrackEnabled: boolean;
   marqueeSpeed: number;
   onOpenActionMenu: (songTitle: string) => void;
+  isVisualizerFullscreen: boolean;
+  setIsVisualizerFullscreen: (isFull: boolean) => void;
 }
 
 const NowPlaying: React.FC<NowPlayingProps> = ({
@@ -36,20 +38,22 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
   visualizerStyle, isVisualizerEnabled, onCycleVisualizerStyle,
   isVolumeControlVisible, marqueeDelay,
   isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled, marqueeSpeed,
-  onOpenActionMenu
+  onOpenActionMenu,
+  isVisualizerFullscreen, setIsVisualizerFullscreen
 }) => {
-    const touchStartY = useRef(0);
-    const touchStartX = useRef(0);
     const dragRef = useRef<HTMLDivElement>(null);
     const [startAnimation, setStartAnimation] = useState(false);
     
-    // Refs for marquee synchronization
     const stationNameRef = useRef<HTMLSpanElement>(null);
     const programNameRef = useRef<HTMLSpanElement>(null);
     const currentTrackRef = useRef<HTMLSpanElement>(null);
     const nextTrackRef = useRef<HTMLSpanElement>(null);
     const [marqueeConfig, setMarqueeConfig] = useState<{ duration: number; isOverflowing: boolean[] }>({ duration: 0, isOverflowing: [false, false, false, false] });
-
+    
+    // Refs for gesture detection
+    const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
+    const longPressTimerRef = useRef<number | null>(null);
+    const pinchDistRef = useRef(0);
 
     useEffect(() => {
       setStartAnimation(false);
@@ -60,7 +64,6 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
       return () => clearTimeout(timer);
     }, [station?.stationuuid]);
     
-    // Effect for marquee synchronization
     useEffect(() => {
         const calculateMarquee = () => {
             const refs = [stationNameRef, programNameRef, currentTrackRef, nextTrackRef];
@@ -79,7 +82,6 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
             });
 
             const anyOverflowing = newIsOverflowing.some(Boolean);
-            // New exponential scale for speed (1-10). Gives finer control over slower speeds.
             const pixelsPerSecond = 3.668 * Math.pow(1.363, marqueeSpeed);
             const newDuration = anyOverflowing ? Math.max(5, maxContentWidth / pixelsPerSecond) : 0;
             
@@ -88,35 +90,81 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
 
         const timeoutId = setTimeout(calculateMarquee, 50);
         return () => clearTimeout(timeoutId);
-    }, [station, trackInfo, showNextSong, marqueeSpeed, isOpen]); // Rerun when panel opens too
+    }, [station, trackInfo, showNextSong, marqueeSpeed, isOpen]);
+
+    const clearLongPressTimer = useCallback(() => {
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+    }, []);
 
     const handleTouchStart = (e: React.TouchEvent) => {
-        touchStartX.current = e.targetTouches[0].clientX;
-        touchStartY.current = e.targetTouches[0].clientY;
+        clearLongPressTimer();
+        const target = e.target as HTMLElement;
+        const isVisualizerArea = target.closest('.visualizer-interaction-area');
+
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+
+            if (isVisualizerArea && !isVisualizerFullscreen) {
+                longPressTimerRef.current = window.setTimeout(() => {
+                    setIsVisualizerFullscreen(true);
+                    longPressTimerRef.current = null;
+                }, 500);
+            }
+        } else if (e.touches.length === 2 && isVisualizerFullscreen) {
+            e.preventDefault();
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
+        }
     };
     
     const handleTouchMove = (e: React.TouchEvent) => {
-        const deltaY = e.targetTouches[0].clientY - touchStartY.current;
-        if (deltaY > 0 && dragRef.current) { // only for swipe down
-             dragRef.current.style.transform = `translateY(${deltaY}px)`;
-             dragRef.current.style.transition = 'none';
+        clearLongPressTimer();
+        if (e.touches.length === 2 && isVisualizerFullscreen && pinchDistRef.current > 0) {
+            e.preventDefault();
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const currentDist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (pinchDistRef.current - currentDist > 40) { // Pinch-in
+                setIsVisualizerFullscreen(false);
+                pinchDistRef.current = 0;
+            }
+        } else if (e.touches.length === 1 && !isVisualizerFullscreen) {
+            const touch = e.touches[0];
+            const deltaY = touch.clientY - touchStartRef.current.y;
+            if (deltaY > 0 && dragRef.current) {
+                 dragRef.current.style.transform = `translateY(${deltaY}px)`;
+                 dragRef.current.style.transition = 'none';
+            }
         }
     };
 
     const handleTouchEnd = (e: React.TouchEvent) => {
-        const deltaX = e.changedTouches[0].clientX - touchStartX.current;
-        const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+        const touchDuration = Date.now() - touchStartRef.current.time;
+        const target = e.target as HTMLElement;
+        const isVisualizerArea = target.closest('.visualizer-interaction-area');
 
-        if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5) { // Horizontal swipe
-            if (Math.abs(deltaX) > 50) {
-                if (deltaX > 0) {
-                    onPrev();
-                } else {
-                    onNext();
-                }
+        if (longPressTimerRef.current) {
+            clearLongPressTimer();
+            if (isVisualizerArea && touchDuration < 500) {
+                onCycleVisualizerStyle();
             }
-        } else { // Vertical swipe
-            if (deltaY > 70) {
+        }
+
+        if (!isVisualizerFullscreen) {
+            const touch = e.changedTouches[0];
+            const deltaX = touch.clientX - touchStartRef.current.x;
+            const deltaY = touch.clientY - touchStartRef.current.y;
+
+            if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5 && Math.abs(deltaX) > 50) {
+                if (deltaX > 0) onPrev();
+                else onNext();
+            } else if (deltaY > 70) {
                 onClose();
             }
         }
@@ -125,35 +173,31 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
             dragRef.current.style.transform = '';
             dragRef.current.style.transition = '';
         }
-
-        touchStartX.current = 0;
-        touchStartY.current = 0;
+        pinchDistRef.current = 0;
     };
 
     return (
       <div 
         ref={dragRef}
-        className={`fixed inset-0 bg-bg-primary z-50 flex flex-col h-full transition-transform duration-300 ease-in-out ${isOpen ? 'translate-y-0' : 'translate-y-full'}`}
+        className={`fixed bg-bg-primary z-50 flex flex-col h-full transition-transform duration-300 ease-in-out ${isOpen ? 'translate-y-0' : 'translate-y-full'} ${isVisualizerFullscreen ? 'inset-0' : 'inset-x-0 bottom-0'}`}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {/* Header */}
-        <div className="flex-shrink-0 text-center pt-4 px-4">
+        <div className={isVisualizerFullscreen ? 'hidden' : 'flex-shrink-0 text-center pt-4 px-4'}>
             <button onClick={onClose} className="p-2 text-text-secondary hover:text-text-primary" aria-label="סגור">
                 <ChevronDownIcon className="w-8 h-8 mx-auto" />
             </button>
         </div>
 
-        {/* Main Content - Scrollable */}
-        <div className="flex-grow flex flex-col items-center justify-center gap-4 text-center overflow-y-auto py-4 px-4">
+        <div className={`flex-grow flex flex-col items-center justify-center gap-4 text-center overflow-y-auto py-4 px-4 ${isVisualizerFullscreen ? 'h-full' : ''}`}>
             <img 
               src={station?.favicon || 'https://picsum.photos/256'} 
               alt={station?.name || 'תחנה'} 
-              className="w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-2xl bg-gray-700 object-cover shadow-2xl flex-shrink-0"
+              className={`rounded-2xl bg-gray-700 object-cover shadow-2xl flex-shrink-0 transition-all duration-300 ${isVisualizerFullscreen ? 'hidden' : 'w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64'}`}
               onError={(e) => { e.currentTarget.src = 'https://picsum.photos/256'; }}
             />
-            <div className="flex-shrink-0 w-full" key={station?.stationuuid}>
+            <div className={`flex-shrink-0 w-full ${isVisualizerFullscreen ? 'hidden' : ''}`} key={station?.stationuuid}>
                 <div className="w-full px-4">
                     <MarqueeText 
                         loopDelay={marqueeDelay}
@@ -225,19 +269,17 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
                 </div>
             </div>
             
-            <div className="w-full max-w-sm px-4 flex-shrink-0">
+            <div className={`w-full max-w-sm px-4 flex-shrink-0 visualizer-interaction-area ${isVisualizerFullscreen ? 'w-full h-full max-w-none' : 'h-20'}`}>
                 {isVisualizerEnabled && (
                     <Visualizer 
                         frequencyData={frequencyData}
                         style={visualizerStyle}
-                        onClick={onCycleVisualizerStyle}
                     />
                 )}
             </div>
         </div>
         
-        {/* Controls */}
-        <div className="flex-shrink-0 flex flex-col items-center gap-4 sm:gap-6 pb-4 sm:pb-8 px-4">
+        <div className={`flex-shrink-0 flex flex-col items-center gap-4 sm:gap-6 pb-4 sm:pb-8 px-4 ${isVisualizerFullscreen ? 'hidden' : ''}`}>
             <div className="flex items-center justify-center gap-4">
               <button onClick={onPrev} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="הקודם">
                 <SkipNextIcon className="w-12 h-12" />

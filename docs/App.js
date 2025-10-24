@@ -122,6 +122,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
+  const [isVisualizerFullscreen, setIsVisualizerFullscreen] = useState(false);
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [trackInfo, setTrackInfo] = useState(null);
   const pinchDistRef = useRef(0);
@@ -771,7 +772,7 @@ export default function App() {
       }),
       playerState.station && React.createElement(NowPlaying, {
         isOpen: isNowPlayingOpen,
-        onClose: () => setIsNowPlayingOpen(false),
+        onClose: () => !isVisualizerFullscreen && setIsNowPlayingOpen(false),
         station: playerState.station,
         isPlaying: playerState.status === 'PLAYING',
         onPlayPause: handlePlayPause,
@@ -791,7 +792,9 @@ export default function App() {
         isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled,
         isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled,
         marqueeSpeed: marqueeSpeed,
-        onOpenActionMenu: openActionMenu
+        onOpenActionMenu: openActionMenu,
+        isVisualizerFullscreen: isVisualizerFullscreen,
+        setIsVisualizerFullscreen: setIsVisualizerFullscreen
       }),
        React.createElement(ActionMenu, {
         isOpen: actionMenuState.isOpen,
