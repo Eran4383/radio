@@ -1,8 +1,8 @@
-const CACHE_NAME = 'radio-premium-cache-v15'; // Bumped version for update mechanism
+const CACHE_NAME = 'radio-premium-cache-v16'; // Root cause fix for manifest updates
 const urlsToCache = [
   './',
   './index.html',
-  './manifest.json?v=1.9.4',
+  './manifest.json', // Caching the un-versioned file.
   './icon-192-v2.png',
   './icon-512-v2.png',
   './index.js',
@@ -29,22 +29,18 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', event => {
-  // We no longer call skipWaiting() here automatically.
-  // We wait for the user to confirm the update via a message.
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('Opened cache, caching assets.');
-        // When caching, we must cache the un-versioned manifest so it can be found.
+        console.log('Opened cache, caching assets for v16.');
         const cachePromises = urlsToCache.map(urlToCache => {
-            if (urlToCache.includes('manifest.json')) {
-                return cache.add(new Request('./manifest.json', { cache: 'reload' }));
-            }
-            return cache.add(urlToCache);
+          // Always fetch a fresh manifest during installation.
+          if (urlToCache.endsWith('manifest.json')) {
+            return cache.add(new Request(urlToCache, { cache: 'reload' }));
+          }
+          return cache.add(urlToCache);
         });
-        return Promise.all(cachePromises).catch(err => {
-          console.error('Failed to cache all required files during install:', err);
-        });
+        return Promise.all(cachePromises);
       })
   );
 });
@@ -66,50 +62,54 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
+  // Ignore non-http requests
   if (!event.request.url.startsWith('http')) {
     return;
   }
 
   const requestUrl = new URL(event.request.url);
 
-  // Special handling for the manifest file to ignore the query string when matching in cache
-  if (requestUrl.pathname.endsWith('/manifest.json')) {
-      event.respondWith(
-          caches.match('./manifest.json').then(response => {
-              return response || fetch(event.request);
-          })
-      );
-      return;
+  // Use a "Network first, falling back to cache" strategy for the manifest.
+  // This is the core fix to ensure the app is always installable with the latest icons.
+  if (requestUrl.pathname.endsWith('manifest.json')) {
+    event.respondWith(
+      fetch(event.request)
+        .then(networkResponse => {
+          // On success, update the cache with the fresh manifest
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, responseToCache);
+          });
+          return networkResponse;
+        })
+        .catch(() => {
+          // If the network fails, serve the manifest from the cache.
+          return caches.match(event.request);
+        })
+    );
+    return;
   }
 
-  // Use a cache-first strategy for all other requests
+  // Use a "Cache first, falling back to network" strategy for all other assets.
   event.respondWith(
     caches.match(event.request)
       .then(response => {
-        // Cache hit - return response
+        // Return from cache if found
         if (response) {
           return response;
         }
 
-        // Not in cache - fetch from network
+        // Fetch from network if not in cache
         return fetch(event.request).then(
           networkResponse => {
-            // Check if we received a valid response to cache
             if (!networkResponse || networkResponse.status !== 200 || (networkResponse.type !== 'basic' && networkResponse.type !== 'cors')) {
               return networkResponse;
             }
-
-            // IMPORTANT: Clone the response. A response is a stream
-            // and because we want the browser to consume the response
-            // as well as the cache consuming the response, we need
-            // to clone it so we have two streams.
             const responseToCache = networkResponse.clone();
-
             caches.open(CACHE_NAME)
               .then(cache => {
                 cache.put(event.request, responseToCache);
               });
-
             return networkResponse;
           }
         );
