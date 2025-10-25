@@ -1,6 +1,5 @@
-import firebase from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js';
-import 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js';
-import 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js';
+// Firebase is imported via <script> tags in index.html, creating a global 'firebase' object.
+// This file assumes 'firebase' is globally available.
 
 // User's actual Firebase project configuration
 const firebaseConfig = {

@@ -1,6 +1,6 @@
-import firebase from 'firebase/compat/app';
-import 'firebase/compat/auth';
-import 'firebase/compat/firestore';
+// Firebase is imported via <script> tags in index.html, creating a global 'firebase' object.
+// This declaration prevents TypeScript errors.
+declare const firebase: any;
 
 // User's actual Firebase project configuration
 const firebaseConfig = {
