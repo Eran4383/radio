@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
+import Auth from './Auth.js';
 
 const releaseNotes = [
   {
@@ -146,6 +147,7 @@ const releaseNotes = [
 
 const currentVersionInfo = releaseNotes[0];
 
+
 const SettingsButton = ({ label, isActive, onClick }) => (
     React.createElement("button", {
         onClick: onClick,
@@ -206,10 +208,11 @@ const SettingsPanel = ({
     isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange,
     marqueeSpeed, onMarqueeSpeedChange,
     marqueeDelay, onMarqueeDelayChange,
-    updateStatus, onManualUpdateCheck
+    updateStatus, onManualUpdateCheck,
+    user, onLogin, onLogout
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
-  
+
   const getUpdateStatusContent = () => {
       switch (updateStatus) {
         case 'checking':
@@ -241,12 +244,7 @@ const SettingsPanel = ({
         React.createElement("div", { className: "p-4 flex flex-col h-full overflow-y-auto" },
             React.createElement("div", { className: "flex justify-between items-center mb-6 flex-shrink-0" },
                 React.createElement("h2", { className: "text-xl font-bold text-text-primary" }, "הגדרות"),
-                React.createElement("div", { className: "text-center opacity-60 cursor-not-allowed" },
-                    React.createElement("div", { className: "w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center ring-2 ring-gray-600" },
-                        React.createElement("span", { className: "text-xl font-bold text-gray-300" }, "G")
-                    ),
-                    React.createElement("p", { className: "text-xs text-text-secondary mt-1" }, "התחברות")
-                )
+                React.createElement(Auth, { user, onLogin, onLogout })
             ),
 
             /* Theme Switcher */
@@ -277,7 +275,7 @@ const SettingsPanel = ({
                         })
                     ))
                 ),
-                currentEqPreset === 'custom' && (
+                 currentEqPreset === 'custom' && (
                     React.createElement("div", { className: "p-3 rounded-lg bg-bg-primary space-y-3" },
                         React.createElement(EqSlider, { 
                             label: "בס (Bass)",
@@ -307,7 +305,7 @@ const SettingsPanel = ({
                           React.createElement("div", { className: "flex justify-between text-sm font-medium text-text-primary" },
                               React.createElement("span", null, "גודל תצוגה")
                           ),
-                           React.createElement("div", { className: "flex justify-between text-xs text-text-secondary px-1" },
+                          React.createElement("div", { className: "flex justify-between text-xs text-text-secondary px-1" },
                             React.createElement("span", null, "קטן"),
                             React.createElement("span", null, "גדול")
                           ),
@@ -322,57 +320,59 @@ const SettingsPanel = ({
                           })
                       )
                     ),
+                    
                     React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-2 px-3" }, "טקסט נע"),
                     React.createElement(ToggleSwitch, { 
                         label: "שם תחנה / תוכנית",
                         enabled: isMarqueeProgramEnabled,
                         onChange: onMarqueeProgramEnabledChange
                     }),
-                    React.createElement(ToggleSwitch, { 
+                     React.createElement(ToggleSwitch, { 
                         label: "שם שיר נוכחי",
                         enabled: isMarqueeCurrentTrackEnabled,
                         onChange: onMarqueeCurrentTrackEnabledChange
                     }),
-                    React.createElement(ToggleSwitch, { 
+                     React.createElement(ToggleSwitch, { 
                         label: "שיר הבא",
                         enabled: isMarqueeNextTrackEnabled,
                         onChange: onMarqueeNextTrackEnabledChange
                     }),
                     React.createElement("div", { className: "p-3 rounded-lg bg-bg-primary space-y-3" },
                         React.createElement("div", { className: "flex flex-col gap-1" },
-                            React.createElement("div", { className: "flex justify-between text-sm font-medium text-text-primary" },
-                                React.createElement("span", null, "מהירות גלילה")
-                            ),
-                            React.createElement("div", { className: "flex justify-between text-xs text-text-secondary px-1" },
-                                React.createElement("span", null, "איטי"),
-                                React.createElement("span", null, "מהיר")
-                            ),
-                            React.createElement("input", {
-                                type: "range",
-                                min: "1",
-                                max: "10",
-                                step: "1",
-                                value: marqueeSpeed,
-                                onChange: (e) => onMarqueeSpeedChange(parseInt(e.target.value, 10)),
-                                className: "w-full accent-teal-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                            })
+                          React.createElement("div", { className: "flex justify-between text-sm font-medium text-text-primary" },
+                              React.createElement("span", null, "מהירות גלילה")
+                          ),
+                           React.createElement("div", { className: "flex justify-between text-xs text-text-secondary px-1" },
+                            React.createElement("span", null, "איטי"),
+                            React.createElement("span", null, "מהיר")
+                          ),
+                          React.createElement("input", {
+                              type: "range",
+                              min: "1",
+                              max: "10",
+                              step: "1",
+                              value: marqueeSpeed,
+                              onChange: (e) => onMarqueeSpeedChange(parseInt(e.target.value, 10)),
+                              className: "w-full accent-teal-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                          })
                         ),
                         React.createElement("div", { className: "flex flex-col gap-1" },
-                            React.createElement("div", { className: "flex justify-between text-sm font-medium text-text-primary" },
-                                React.createElement("span", null, "השהיה בין גלילות"),
-                                React.createElement("span", null, `${marqueeDelay} ש'`)
-                            ),
-                            React.createElement("input", {
-                                type: "range",
-                                min: "1",
-                                max: "10",
-                                step: "1",
-                                value: marqueeDelay,
-                                onChange: (e) => onMarqueeDelayChange(parseInt(e.target.value, 10)),
-                                className: "w-full accent-teal-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                            })
+                          React.createElement("div", { className: "flex justify-between text-sm font-medium text-text-primary" },
+                              React.createElement("span", null, "השהיה בין גלילות"),
+                              React.createElement("span", null, `${marqueeDelay} ש'`)
+                          ),
+                          React.createElement("input", {
+                              type: "range",
+                              min: "1",
+                              max: "10",
+                              step: "1",
+                              value: marqueeDelay,
+                              onChange: (e) => onMarqueeDelayChange(parseInt(e.target.value, 10)),
+                              className: "w-full accent-teal-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                          })
                         )
                     ),
+
                     React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-2 px-3" }, "כללי"),
                     React.createElement(ToggleSwitch, { 
                         label: "תצוגה גרפית (מסך מלא)", 
@@ -384,40 +384,42 @@ const SettingsPanel = ({
                         enabled: isPlayerBarVisualizerEnabled, 
                         onChange: onPlayerBarVisualizerEnabledChange 
                     }),
-                    React.createElement(ToggleSwitch, {
+                    React.createElement(ToggleSwitch, { 
                         label: "הצג חיווי מצב",
                         enabled: isStatusIndicatorEnabled,
                         onChange: onStatusIndicatorEnabledChange
                     }),
-                    React.createElement(ToggleSwitch, {
+                    React.createElement(ToggleSwitch, { 
                         label: "הצג בקרת עוצמה",
                         enabled: isVolumeControlVisible,
                         onChange: onVolumeControlVisibleChange
                     }),
-                    React.createElement(ToggleSwitch, {
+                    React.createElement(ToggleSwitch, { 
                         label: "הצג שיר הבא",
                         enabled: showNextSong,
                         onChange: onShowNextSongChange
                     })
                 )
             ),
-             React.createElement("div", { className: "mt-auto flex-shrink-0" },
-                isVersionHistoryVisible && React.createElement("div", { className: "mb-4 text-xs text-text-secondary" },
-                    React.createElement("h4", { className: "font-bold text-sm text-text-primary mb-2" }, "היסטוריית גרסאות"),
-                    React.createElement("div", { className: "space-y-3 max-h-48 overflow-y-auto pr-2" },
-                        releaseNotes.map(release => 
+
+            React.createElement("div", { className: "mt-auto flex-shrink-0" },
+                isVersionHistoryVisible && (
+                    React.createElement("div", { className: "mb-4 text-xs text-text-secondary" },
+                        React.createElement("h4", { className: "font-bold text-sm text-text-primary mb-2" }, "היסטוריית גרסאות"),
+                        React.createElement("div", { className: "space-y-3 max-h-48 overflow-y-auto pr-2" },
+                            releaseNotes.map(release => (
                             React.createElement("div", { key: release.version },
                                 React.createElement("p", { className: "font-semibold text-text-primary" }, `גרסה ${release.version} (${release.date})`),
                                 React.createElement("ul", { className: "list-disc list-inside space-y-1 mt-1" },
-                                    release.features.map((feature, index) => 
-                                        React.createElement("li", { key: index }, feature)
-                                    )
-                                )
-                            )
+                                release.features.map((feature, index) => (
+                                    React.createElement("li", { key: index }, feature)
+                                )))
+                            ))
+                            ))
                         )
                     )
                 ),
-                React.createElement("div", { className: "text-center text-xs text-text-secondary space-y-2" },
+                 React.createElement("div", { className: "text-center text-xs text-text-secondary space-y-2" },
                     React.createElement("div", {
                         className: `p-2 rounded-lg ${updateStatus === 'idle' ? 'cursor-pointer hover:bg-bg-primary' : 'cursor-default'}`,
                         onClick: updateStatus === 'idle' ? onManualUpdateCheck : undefined,

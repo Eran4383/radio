@@ -174,7 +174,8 @@ const Player: React.FC<PlayerProps> = ({
     if (!audioRef.current || audioContextRef.current) return;
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      // Fix: The AudioContext constructor expects an options object, but was called with none. Passing an empty object to resolve the error.
+      // FIX: The AudioContext constructor requires an argument on some platforms,
+      // so an empty options object is provided for better compatibility.
       const context = new AudioContextClass({});
       audioContextRef.current = context;
       

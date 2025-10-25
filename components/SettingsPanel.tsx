@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize } from '../types';
+import Auth from './Auth';
+import type firebase from 'firebase/compat/app';
 
 type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'found' | 'not-found' | 'error';
 
@@ -36,6 +38,9 @@ interface SettingsPanelProps {
   onMarqueeDelayChange: (delay: number) => void;
   updateStatus: UpdateStatus;
   onManualUpdateCheck: () => void;
+  user: firebase.User | null;
+  onLogin: () => void;
+  onLogout: () => void;
 }
 
 const releaseNotes = [
@@ -257,7 +262,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange,
     marqueeSpeed, onMarqueeSpeedChange,
     marqueeDelay, onMarqueeDelayChange,
-    updateStatus, onManualUpdateCheck
+    updateStatus, onManualUpdateCheck,
+    user, onLogin, onLogout
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
 
@@ -292,12 +298,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className="p-4 flex flex-col h-full overflow-y-auto">
             <div className="flex justify-between items-center mb-6 flex-shrink-0">
                 <h2 className="text-xl font-bold text-text-primary">הגדרות</h2>
-                <div className="text-center opacity-60 cursor-not-allowed">
-                    <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center ring-2 ring-gray-600">
-                        <span className="text-xl font-bold text-gray-300">G</span>
-                    </div>
-                    <p className="text-xs text-text-secondary mt-1">התחברות</p>
-                </div>
+                <Auth user={user} onLogin={onLogin} onLogout={onLogout} />
             </div>
 
             {/* Theme Switcher */}

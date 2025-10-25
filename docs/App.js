@@ -6,13 +6,13 @@ import StationList from './components/StationList.js';
 import SettingsPanel from './components/SettingsPanel.js';
 import NowPlaying from './components/NowPlaying.js';
 import ActionMenu from './components/ActionMenu.js';
-import { useFavorites } from './hooks/useFavorites.js';
 import { PRIORITY_STATIONS } from './constants.js';
 import { MenuIcon } from './components/Icons.js';
 import { getCurrentProgram } from './services/scheduleService.js';
 import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/stationSpecificService.js';
 import StationListSkeleton from './components/StationListSkeleton.js';
 import { getCategory } from './services/categoryService.js';
+import { auth, signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase.js';
 
 const StationFilter = {
   All: 'הכל',
@@ -57,44 +57,30 @@ function playerReducer(state, action) {
   }
 }
 
-// Helper function for safely parsing JSON from localStorage
 function safeJsonParse(jsonString, defaultValue) {
     if (jsonString === null) {
         return defaultValue;
     }
     try {
         const parsedValue = JSON.parse(jsonString);
-        // Don't return null if the default isn't null.
         if (parsedValue === null && defaultValue !== null) {
             return defaultValue;
         }
         return parsedValue;
     } catch (e) {
-        console.warn('Failed to parse JSON from localStorage. Returning default value.', e);
         return defaultValue;
     }
 }
 
-const CUSTOM_ORDER_KEY = 'radio-station-custom-order';
-const THEME_KEY = 'radio-theme';
-const EQ_KEY = 'radio-eq';
-const CUSTOM_EQ_KEY = 'radio-custom-eq';
-const LAST_STATION_KEY = 'radio-last-station-uuid';
-const LAST_FILTER_KEY = 'radio-last-filter';
-const LAST_SORT_KEY = 'radio-last-sort';
-const VOLUME_KEY = 'radio-volume';
-const NOW_PLAYING_VISUALIZER_ENABLED_KEY = 'radio-nowplaying-visualizer-enabled';
-const PLAYER_BAR_VISUALIZER_ENABLED_KEY = 'radio-playerbar-visualizer-enabled';
-const VISUALIZER_STYLE_KEY = 'radio-visualizer-style';
-const STATUS_INDICATOR_ENABLED_KEY = 'radio-status-indicator-enabled';
-const VOLUME_CONTROL_VISIBLE_KEY = 'radio-volume-control-visible';
-const SHOW_NEXT_SONG_KEY = 'radio-show-next-song';
-const GRID_SIZE_KEY = 'radio-grid-size';
-const MARQUEE_PROGRAM_ENABLED_KEY = 'radio-marquee-program-enabled';
-const MARQUEE_CURRENT_ENABLED_KEY = 'radio-marquee-current-enabled';
-const MARQUEE_NEXT_ENABLED_KEY = 'radio-marquee-next-enabled';
-const MARQUEE_SPEED_KEY = 'radio-marquee-speed';
-const MARQUEE_DELAY_KEY = 'radio-marquee-delay';
+const debounce = (func, waitFor) => {
+  let timeout = null;
+  return (...args) => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    timeout = setTimeout(() => func(...args), waitFor);
+  };
+};
 
 const SortButton = ({ label, order, currentOrder, setOrder }) => (
   React.createElement("button", {
@@ -102,9 +88,7 @@ const SortButton = ({ label, order, currentOrder, setOrder }) => (
     className: `px-3 py-1 text-xs font-medium rounded-full transition-colors ${
       currentOrder === order ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
     }`
-  },
-    label
-  )
+  }, label)
 );
 
 const CATEGORY_SORTS = [
@@ -129,121 +113,120 @@ export default function App() {
   const PINCH_THRESHOLD = 40;
   const [actionMenuState, setActionMenuState] = useState({ isOpen: false, songTitle: null });
 
-  const [customOrder, setCustomOrder] = useState(() => {
-    return safeJsonParse(localStorage.getItem(CUSTOM_ORDER_KEY), []);
-  });
+  const [user, setUser] = useState(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
 
+  const [favorites, setFavorites] = useState(() => safeJsonParse(localStorage.getItem('radio-favorites'), []));
+  const [customOrder, setCustomOrder] = useState(() => safeJsonParse(localStorage.getItem('radio-station-custom-order'), []));
+  const [theme, setTheme] = useState(() => safeJsonParse(localStorage.getItem('radio-theme'), 'dark'));
+  const [eqPreset, setEqPreset] = useState(() => safeJsonParse(localStorage.getItem('radio-eq'), 'flat'));
+  const [customEqSettings, setCustomEqSettings] = useState(() => safeJsonParse(localStorage.getItem('radio-custom-eq'), { bass: 0, mid: 0, treble: 0 }));
+  const [volume, setVolume] = useState(() => safeJsonParse(localStorage.getItem('radio-volume'), 1));
+  const [isNowPlayingVisualizerEnabled, setIsNowPlayingVisualizerEnabled] = useState(() => safeJsonParse(localStorage.getItem('radio-nowplaying-visualizer-enabled'), true));
+  const [isPlayerBarVisualizerEnabled, setIsPlayerBarVisualizerEnabled] = useState(() => safeJsonParse(localStorage.getItem('radio-playerbar-visualizer-enabled'), true));
+  const [visualizerStyle, setVisualizerStyle] = useState(() => safeJsonParse(localStorage.getItem('radio-visualizer-style'), 'bars'));
+  const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState(() => safeJsonParse(localStorage.getItem('radio-status-indicator-enabled'), true));
+  const [isVolumeControlVisible, setIsVolumeControlVisible] = useState(() => safeJsonParse(localStorage.getItem('radio-volume-control-visible'), true));
+  const [showNextSong, setShowNextSong] = useState(() => safeJsonParse(localStorage.getItem('radio-show-next-song'), true));
+  const [gridSize, setGridSize] = useState(() => safeJsonParse(localStorage.getItem('radio-grid-size'), 3));
+  const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState(() => safeJsonParse(localStorage.getItem('radio-marquee-program-enabled'), true));
+  const [isMarqueeCurrentTrackEnabled, setIsMarqueeCurrentTrackEnabled] = useState(() => safeJsonParse(localStorage.getItem('radio-marquee-current-enabled'), true));
+  const [isMarqueeNextTrackEnabled, setIsMarqueeNextTrackEnabled] = useState(() => safeJsonParse(localStorage.getItem('radio-marquee-next-enabled'), true));
+  const [marqueeSpeed, setMarqueeSpeed] = useState(() => safeJsonParse(localStorage.getItem('radio-marquee-speed'), 6));
+  const [marqueeDelay, setMarqueeDelay] = useState(() => safeJsonParse(localStorage.getItem('radio-marquee-delay'), 3));
+  
   const [filter, setFilter] = useState(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('filter') === 'favorites') {
-      return StationFilter.Favorites;
-    }
-    const saved = localStorage.getItem(LAST_FILTER_KEY);
+    const saved = localStorage.getItem('radio-last-filter');
     return (saved && Object.values(StationFilter).includes(saved)) ? saved : StationFilter.All;
   });
-
-  const [sortOrder, setSortOrder] = useState(() => {
-    const VALID_SORT_ORDERS = ['priority', 'name_asc', 'name_desc', 'custom', 'category_style', 'category_identity', 'category_region', 'category_nameStructure'];
-    
-    let savedSort = localStorage.getItem(LAST_SORT_KEY);
-    
-    // Migration for old values from previous versions
-    if (savedSort === 'name') savedSort = 'name_asc';
-    if (savedSort === 'tags') savedSort = 'category_style';
-    
-    const customOrderFromStorage = safeJsonParse(localStorage.getItem(CUSTOM_ORDER_KEY), []);
-    const customOrderExists = customOrderFromStorage.length > 0;
-    
-    // Validate the saved sort order
-    if (savedSort && VALID_SORT_ORDERS.includes(savedSort)) {
-      // If 'custom' is saved but no custom order exists, fall back.
-      if (savedSort === 'custom' && !customOrderExists) {
-        return 'priority';
-      }
-      return savedSort;
-    }
-    
-    // Default logic if nothing valid is saved
-    return customOrderExists ? 'custom' : 'priority';
-  });
   
-  const [theme, setTheme] = useState(() => {
-      const saved = localStorage.getItem(THEME_KEY);
-      return (saved && THEMES.includes(saved)) ? saved : 'dark';
-  });
+  const [sortOrder, setSortOrder] = useState(() => safeJsonParse(localStorage.getItem('radio-last-sort'), 'priority'));
 
-  const [eqPreset, setEqPreset] = useState(() => {
-      const saved = localStorage.getItem(EQ_KEY);
-      return (saved && EQ_PRESET_KEYS.includes(saved)) ? saved : 'flat';
-  });
-  
-  const [customEqSettings, setCustomEqSettings] = useState(() => {
-    return safeJsonParse(localStorage.getItem(CUSTOM_EQ_KEY), { bass: 0, mid: 0, treble: 0 });
-  });
+  const isFavorite = useCallback((stationUuid) => favorites.includes(stationUuid), [favorites]);
 
-  const [volume, setVolume] = useState(() => {
-    const saved = localStorage.getItem(VOLUME_KEY);
-    if (saved === null) return 1;
-    const parsed = parseFloat(saved);
-    return isNaN(parsed) ? 1 : parsed;
-  });
-
-  const [isNowPlayingVisualizerEnabled, setIsNowPlayingVisualizerEnabled] = useState(() => {
-      return safeJsonParse(localStorage.getItem(NOW_PLAYING_VISUALIZER_ENABLED_KEY), true);
-  });
-
-  const [isPlayerBarVisualizerEnabled, setIsPlayerBarVisualizerEnabled] = useState(() => {
-      return safeJsonParse(localStorage.getItem(PLAYER_BAR_VISUALIZER_ENABLED_KEY), true);
-  });
-
-  const [visualizerStyle, setVisualizerStyle] = useState(() => {
-      const saved = localStorage.getItem(VISUALIZER_STYLE_KEY);
-      return (saved && VISUALIZER_STYLES.includes(saved)) ? saved : 'bars';
-  });
-  
-  const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState(() => {
-    return safeJsonParse(localStorage.getItem(STATUS_INDICATOR_ENABLED_KEY), true);
-  });
-
-  const [isVolumeControlVisible, setIsVolumeControlVisible] = useState(() => {
-      return safeJsonParse(localStorage.getItem(VOLUME_CONTROL_VISIBLE_KEY), true);
-  });
-  
-  const [showNextSong, setShowNextSong] = useState(() => {
-      return safeJsonParse(localStorage.getItem(SHOW_NEXT_SONG_KEY), true);
-  });
-    
-  const [gridSize, setGridSize] = useState(() => {
-    const size = safeJsonParse(localStorage.getItem(GRID_SIZE_KEY), 3);
-    return GRID_SIZES.includes(size) ? size : 3;
-  });
-  
-  const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState(() => {
-    return safeJsonParse(localStorage.getItem(MARQUEE_PROGRAM_ENABLED_KEY), true);
-  });
-
-  const [isMarqueeCurrentTrackEnabled, setIsMarqueeCurrentTrackEnabled] = useState(() => {
-    return safeJsonParse(localStorage.getItem(MARQUEE_CURRENT_ENABLED_KEY), true);
-  });
-  
-  const [isMarqueeNextTrackEnabled, setIsMarqueeNextTrackEnabled] = useState(() => {
-    return safeJsonParse(localStorage.getItem(MARQUEE_NEXT_ENABLED_KEY), true);
-  });
-  
-  const [marqueeSpeed, setMarqueeSpeed] = useState(() => {
-    return safeJsonParse(localStorage.getItem(MARQUEE_SPEED_KEY), 6);
-  });
-
-  const [marqueeDelay, setMarqueeDelay] = useState(() => {
-      return safeJsonParse(localStorage.getItem(MARQUEE_DELAY_KEY), 3);
-  });
-
-
-  const { favorites, toggleFavorite, isFavorite } = useFavorites();
-  
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
   const waitingWorkerRef = useRef(null);
   const [updateStatus, setUpdateStatus] = useState('idle');
+
+  const allSettings = useMemo(() => ({
+    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
+    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
+    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
+    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
+    marqueeSpeed, marqueeDelay, filter, sortOrder
+  }), [
+    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
+    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
+    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
+    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
+    marqueeSpeed, marqueeDelay, filter, sortOrder
+  ]);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
+      setIsAuthLoading(true);
+      if (firebaseUser) {
+        const userSettings = await loadUserSettings(firebaseUser.uid);
+        if (userSettings) {
+          setFavorites(userSettings.favorites || []);
+          setCustomOrder(userSettings.customOrder || []);
+          setTheme(userSettings.theme || 'dark');
+          setEqPreset(userSettings.eqPreset || 'flat');
+          setCustomEqSettings(userSettings.customEqSettings || { bass: 0, mid: 0, treble: 0 });
+          setVolume(userSettings.volume ?? 1);
+          setIsNowPlayingVisualizerEnabled(userSettings.isNowPlayingVisualizerEnabled ?? true);
+          setIsPlayerBarVisualizerEnabled(userSettings.isPlayerBarVisualizerEnabled ?? true);
+          setVisualizerStyle(userSettings.visualizerStyle || 'bars');
+          setIsStatusIndicatorEnabled(userSettings.isStatusIndicatorEnabled ?? true);
+          setIsVolumeControlVisible(userSettings.isVolumeControlVisible ?? true);
+          setShowNextSong(userSettings.showNextSong ?? true);
+          setGridSize(userSettings.gridSize || 3);
+          setIsMarqueeProgramEnabled(userSettings.isMarqueeProgramEnabled ?? true);
+          setIsMarqueeCurrentTrackEnabled(userSettings.isMarqueeCurrentTrackEnabled ?? true);
+          setIsMarqueeNextTrackEnabled(userSettings.isMarqueeNextTrackEnabled ?? true);
+          setMarqueeSpeed(userSettings.marqueeSpeed || 6);
+          setMarqueeDelay(userSettings.marqueeDelay || 3);
+          setFilter(userSettings.filter || StationFilter.All);
+          setSortOrder(userSettings.sortOrder || 'priority');
+        } else {
+          await saveUserSettings(firebaseUser.uid, allSettings);
+        }
+      } else {
+        setFavorites(safeJsonParse(localStorage.getItem('radio-favorites'), []));
+        setCustomOrder(safeJsonParse(localStorage.getItem('radio-station-custom-order'), []));
+        setTheme(safeJsonParse(localStorage.getItem('radio-theme'), 'dark'));
+      }
+      setUser(firebaseUser);
+      setIsAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const debouncedSave = useCallback(debounce((settings, userId) => {
+    saveUserSettings(userId, settings);
+  }, 2000), []);
+
+  useEffect(() => {
+    if (user && !isAuthLoading) {
+      debouncedSave(allSettings, user.uid);
+    }
+    Object.entries(allSettings).forEach(([key, value]) => {
+      const lsKey = `radio-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
+      localStorage.setItem(lsKey, JSON.stringify(value));
+    });
+    localStorage.setItem('radio-last-filter', filter);
+    localStorage.setItem('radio-last-sort', sortOrder);
+    localStorage.setItem('radio-favorites', JSON.stringify(favorites));
+  }, [allSettings, user, isAuthLoading, debouncedSave, filter, sortOrder, favorites]);
+  
+  const handleLogin = async () => signInWithGoogle();
+  
+  const handleLogout = async () => {
+    if (user) {
+      await saveUserSettings(user.uid, allSettings);
+    }
+    await signOut();
+  };
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -254,7 +237,6 @@ export default function App() {
           if (installingWorker) {
             installingWorker.onstatechange = () => {
               if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                // A new service worker is ready and waiting.
                 waitingWorkerRef.current = installingWorker;
                 setIsUpdateAvailable(true);
                 setUpdateStatus('found');
@@ -262,10 +244,7 @@ export default function App() {
             };
           }
         };
-      }).catch(error => {
-        console.error('Error during service worker registration:', error);
-      });
-
+      }).catch(error => console.error('SW reg failed:', error));
       let refreshing = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (!refreshing) {
@@ -278,38 +257,23 @@ export default function App() {
 
   const handleManualUpdateCheck = useCallback(async () => {
     if (!('serviceWorker' in navigator) || !navigator.serviceWorker.ready) {
-      console.warn('Service Worker not available to check for updates.');
       setUpdateStatus('error');
       setTimeout(() => setUpdateStatus('idle'), 3000);
       return;
     }
-
     setUpdateStatus('checking');
-
     try {
       const registration = await navigator.serviceWorker.ready;
       await registration.update();
-
-      // After triggering update, wait a few seconds. If the `onupdatefound` event
-      // hasn't fired and changed our status, we assume there's no update.
       setTimeout(() => {
-        setUpdateStatus(currentStatus => {
-          if (currentStatus === 'checking') {
-            // No update was found
-            setTimeout(() => setUpdateStatus('idle'), 3000);
-            return 'not-found';
-          }
-          // An update was found and status is now 'downloading' or 'found'. Leave it as is.
-          return currentStatus;
-        });
-      }, 5000); // 5 second timeout.
-
+        setUpdateStatus(cs => cs === 'checking' ? 'not-found' : cs);
+        if (updateStatus === 'not-found') setTimeout(() => setUpdateStatus('idle'), 3000);
+      }, 5000);
     } catch (error) {
-      console.error('Error during manual update check:', error);
       setUpdateStatus('error');
       setTimeout(() => setUpdateStatus('idle'), 3000);
     }
-  }, []);
+  }, [updateStatus]);
 
   const handleUpdateClick = () => {
     if (waitingWorkerRef.current) {
@@ -317,18 +281,15 @@ export default function App() {
       setIsUpdateAvailable(false);
     }
   };
-
+  
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
       setError(null);
       try {
         const fetchedStations = await fetchIsraeliStations();
-        if (fetchedStations.length === 0) {
-          setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
-        } else {
-          setStations(fetchedStations);
-        }
+        if (fetchedStations.length === 0) setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
+        else setStations(fetchedStations);
       } catch (err) {
         setError('אירעה שגיאה בטעינת התחנות.');
         console.error(err);
@@ -341,19 +302,17 @@ export default function App() {
 
   useEffect(() => {
     if (stations.length > 0 && playerState.status === 'IDLE') {
-        const lastStationUuid = localStorage.getItem(LAST_STATION_KEY);
+        const lastStationUuid = localStorage.getItem('radio-last-station-uuid');
         if (lastStationUuid) {
             const station = stations.find(s => s.stationuuid === lastStationUuid);
-            if (station) {
-                dispatch({ type: 'SELECT_STATION', payload: station });
-            }
+            if (station) dispatch({ type: 'SELECT_STATION', payload: station });
         }
     }
   }, [stations, playerState.status]);
 
   useEffect(() => {
       if (playerState.station) {
-          localStorage.setItem(LAST_STATION_KEY, playerState.station.stationuuid);
+          localStorage.setItem('radio-last-station-uuid', playerState.station.stationuuid);
       }
   }, [playerState.station]);
 
@@ -362,24 +321,16 @@ export default function App() {
     const fetchAndSetInfo = async () => {
       if (!playerState.station) return;
       const { name, stationuuid } = playerState.station;
-      
       let finalInfo = null;
-      
       if (hasSpecificHandler(name)) {
         const specificInfo = await fetchStationSpecificTrackInfo(name);
         finalInfo = specificInfo ? { ...specificInfo } : { program: null, current: null, next: null };
-        if (!finalInfo.program) {
-            finalInfo.program = getCurrentProgram(name);
-        }
+        if (!finalInfo.program) finalInfo.program = getCurrentProgram(name);
       } else {
-        const [songTitle, programName] = await Promise.all([
-          fetchLiveTrackInfo(stationuuid),
-          getCurrentProgram(name)
-        ]);
+        const [songTitle, programName] = await Promise.all([ fetchLiveTrackInfo(stationuuid), getCurrentProgram(name) ]);
         const current = songTitle && songTitle.toLowerCase() !== name.toLowerCase() ? songTitle : null;
         finalInfo = { program: programName, current, next: null };
       }
-      
       setTrackInfo(finalInfo);
     };
 
@@ -389,126 +340,32 @@ export default function App() {
     } else {
       setTrackInfo(null);
     }
-
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
+    return () => clearInterval(intervalId);
   }, [playerState.station]);
 
   useEffect(() => {
     document.documentElement.className = theme;
-    localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('filter') !== 'favorites') {
-        localStorage.setItem(LAST_FILTER_KEY, filter);
-    }
-  }, [filter]);
-
-  useEffect(() => {
-    localStorage.setItem(LAST_SORT_KEY, sortOrder);
-  }, [sortOrder]);
-  
-  const handleSetVolume = (newVolume) => {
-    setVolume(newVolume);
-    localStorage.setItem(VOLUME_KEY, newVolume.toString());
-  };
-
-  const handleSetEqPreset = (preset) => {
-    setEqPreset(preset);
-    localStorage.setItem(EQ_KEY, preset);
-  };
-  
-  const handleSetCustomEqSettings = (settings) => {
-    setCustomEqSettings(settings);
-    localStorage.setItem(CUSTOM_EQ_KEY, JSON.stringify(settings));
-  };
-  
-  const handleSetIsNowPlayingVisualizerEnabled = (enabled) => {
-    setIsNowPlayingVisualizerEnabled(enabled);
-    localStorage.setItem(NOW_PLAYING_VISUALIZER_ENABLED_KEY, JSON.stringify(enabled));
-  };
-
-  const handleSetIsPlayerBarVisualizerEnabled = (enabled) => {
-    setIsPlayerBarVisualizerEnabled(enabled);
-    localStorage.setItem(PLAYER_BAR_VISUALIZER_ENABLED_KEY, JSON.stringify(enabled));
-  };
-  
-  const handleSetStatusIndicatorEnabled = (enabled) => {
-    setIsStatusIndicatorEnabled(enabled);
-    localStorage.setItem(STATUS_INDICATOR_ENABLED_KEY, JSON.stringify(enabled));
-  };
-
-  const handleSetIsVolumeControlVisible = (visible) => {
-    setIsVolumeControlVisible(visible);
-    localStorage.setItem(VOLUME_CONTROL_VISIBLE_KEY, JSON.stringify(visible));
-  };
-
-  const handleSetShowNextSong = (enabled) => {
-    setShowNextSong(enabled);
-    localStorage.setItem(SHOW_NEXT_SONG_KEY, JSON.stringify(enabled));
-  };
-    
-  const handleSetGridSize = useCallback((size) => {
-    setGridSize(size);
-    localStorage.setItem(GRID_SIZE_KEY, JSON.stringify(size));
+  const toggleFavorite = useCallback((stationUuid) => {
+    setFavorites(currentFavorites =>
+      currentFavorites.includes(stationUuid)
+        ? currentFavorites.filter(uuid => uuid !== stationUuid)
+        : [...currentFavorites, stationUuid]
+    );
   }, []);
-  
-  const handleSetIsMarqueeProgramEnabled = (enabled) => {
-    setIsMarqueeProgramEnabled(enabled);
-    localStorage.setItem(MARQUEE_PROGRAM_ENABLED_KEY, JSON.stringify(enabled));
-  };
-
-  const handleSetIsMarqueeCurrentTrackEnabled = (enabled) => {
-    setIsMarqueeCurrentTrackEnabled(enabled);
-    localStorage.setItem(MARQUEE_CURRENT_ENABLED_KEY, JSON.stringify(enabled));
-  };
-  
-  const handleSetIsMarqueeNextTrackEnabled = (enabled) => {
-    setIsMarqueeNextTrackEnabled(enabled);
-    localStorage.setItem(MARQUEE_NEXT_ENABLED_KEY, JSON.stringify(enabled));
-  };
-
-  const handleSetMarqueeSpeed = (speed) => {
-      setMarqueeSpeed(speed);
-      localStorage.setItem(MARQUEE_SPEED_KEY, JSON.stringify(speed));
-  };
-
-  const handleSetMarqueeDelay = (delay) => {
-      setMarqueeDelay(delay);
-      localStorage.setItem(MARQUEE_DELAY_KEY, JSON.stringify(delay));
-  };
-
-  const handleCycleVisualizerStyle = useCallback(() => {
-    const currentIndex = VISUALIZER_STYLES.indexOf(visualizerStyle);
-    const nextIndex = (currentIndex + 1) % VISUALIZER_STYLES.length;
-    const newStyle = VISUALIZER_STYLES[nextIndex];
-    setVisualizerStyle(newStyle);
-    localStorage.setItem(VISUALIZER_STYLE_KEY, newStyle);
-  }, [visualizerStyle]);
-
 
   const saveCustomOrder = (newOrder) => {
       setCustomOrder(newOrder);
-      localStorage.setItem(CUSTOM_ORDER_KEY, JSON.stringify(newOrder));
+      setSortOrder('custom');
   };
 
   const handleReorder = (reorderedDisplayedUuids) => {
       const allStationUuids = stations.map(s => s.stationuuid);
-      const currentOrder = customOrder.length > 0 ? customOrder : allStationUuids;
+      const currentOrderUuids = customOrder.length > 0 ? customOrder : allStationUuids;
       const reorderedSet = new Set(reorderedDisplayedUuids);
-      const newOrder = [...reorderedDisplayedUuids];
-      currentOrder.forEach(uuid => {
-        if (!reorderedSet.has(uuid)) {
-          newOrder.push(uuid);
-        }
-      });
+      const newOrder = [...reorderedDisplayedUuids, ...currentOrderUuids.filter(uuid => !reorderedSet.has(uuid))];
       saveCustomOrder(newOrder);
-      setSortOrder('custom');
   };
 
   const filteredStations = useMemo(() => {
@@ -532,12 +389,8 @@ export default function App() {
             return a.name.localeCompare(b.name, 'he');
         });
         break;
-      case 'name_asc':
-        stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he'));
-        break;
-      case 'name_desc':
-        stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he'));
-        break;
+      case 'name_asc': stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he')); break;
+      case 'name_desc': stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he')); break;
       case 'category_style':
       case 'category_identity':
       case 'category_region':
@@ -553,126 +406,67 @@ export default function App() {
         break;
       case 'priority':
       default:
-        const getPriorityIndex = (stationName) => {
-          const lowerCaseName = stationName.toLowerCase();
-          return PRIORITY_STATIONS.findIndex(priorityStation => 
-            priorityStation.aliases.some(alias => 
-              lowerCaseName.includes(alias.toLowerCase())
-            )
-          );
-        };
+        const getPriorityIndex = (stationName) => PRIORITY_STATIONS.findIndex(ps => ps.aliases.some(alias => stationName.toLowerCase().includes(alias.toLowerCase())));
         stationsToSort.sort((a, b) => {
-          let aPriority = getPriorityIndex(a.name);
-          let bPriority = getPriorityIndex(b.name);
-          if (aPriority === -1) aPriority = Infinity;
-          if (bPriority === -1) bPriority = Infinity;
-          if (aPriority !== bPriority) {
-            return aPriority - bPriority;
-          }
-          return a.name.localeCompare(b.name, 'he');
+          let aP = getPriorityIndex(a.name); let bP = getPriorityIndex(b.name);
+          if (aP === -1) aP = Infinity; if (bP === -1) bP = Infinity;
+          return aP !== bP ? aP - bP : a.name.localeCompare(b.name, 'he');
         });
         break;
     }
     return stationsToSort;
   }, [filteredStations, sortOrder, customOrder]);
 
-  const handleSelectStation = useCallback((station) => {
-      dispatch({ type: 'SELECT_STATION', payload: station });
-  }, []);
-
+  const handleSelectStation = useCallback((station) => dispatch({ type: 'SELECT_STATION', payload: station }), []);
   const handlePlayPause = useCallback(() => {
-    if (playerState.station) {
-      dispatch({ type: 'TOGGLE_PAUSE' });
-    } else if (displayedStations.length > 0) {
-      dispatch({ type: 'PLAY', payload: displayedStations[0] });
-    }
+    if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' });
+    else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] });
   }, [playerState.station, displayedStations]);
-  
   const handlePlay = useCallback(async () => {
     if (playerState.status === 'PLAYING') return;
-    if (playerState.station) {
-        dispatch({ type: 'TOGGLE_PAUSE' });
-    } else if (displayedStations.length > 0) {
-        dispatch({ type: 'PLAY', payload: displayedStations[0] });
-    }
+    if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' });
+    else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] });
   }, [playerState.status, playerState.station, displayedStations]);
-  
-  const handlePause = useCallback(async () => {
-    if (playerState.status === 'PLAYING') {
-      dispatch({ type: 'TOGGLE_PAUSE' });
-    }
-  }, [playerState.status]);
-
+  const handlePause = useCallback(async () => { if (playerState.status === 'PLAYING') dispatch({ type: 'TOGGLE_PAUSE' }); }, [playerState.status]);
   const handleNext = useCallback(async () => {
       if (displayedStations.length === 0) return;
       const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station.stationuuid) : -1;
-      const nextIndex = (currentIndex + 1) % displayedStations.length;
-      handleSelectStation(displayedStations[nextIndex]);
+      handleSelectStation(displayedStations[(currentIndex + 1) % displayedStations.length]);
   }, [displayedStations, playerState.station, handleSelectStation]);
-
   const handlePrev = useCallback(async () => {
       if (displayedStations.length === 0) return;
       const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station.stationuuid) : -1;
-      const prevIndex = (currentIndex - 1 + displayedStations.length) % displayedStations.length;
-      handleSelectStation(displayedStations[prevIndex]);
+      handleSelectStation(displayedStations[(currentIndex - 1 + displayedStations.length) % displayedStations.length]);
   }, [displayedStations, playerState.station, handleSelectStation]);
     
-  const handleTouchStart = useCallback((e) => {
-      if (e.touches.length === 2) {
-          e.preventDefault();
-          const dx = e.touches[0].clientX - e.touches[1].clientX;
-          const dy = e.touches[0].clientY - e.touches[1].clientY;
-          pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
-      }
-  }, []);
-
+  const handleTouchStart = useCallback((e) => { if (e.touches.length === 2) { e.preventDefault(); const dx = e.touches[0].clientX - e.touches[1].clientX; const dy = e.touches[0].clientY - e.touches[1].clientY; pinchDistRef.current = Math.sqrt(dx * dx + dy * dy); } }, []);
   const handleTouchMove = useCallback((e) => {
-      if (e.touches.length === 2 && pinchDistRef.current > 0) {
-          e.preventDefault();
-          const dx = e.touches[0].clientX - e.touches[1].clientX;
-          const dy = e.touches[0].clientY - e.touches[1].clientY;
-          const currentDist = Math.sqrt(dx * dx + dy * dy);
-          const delta = currentDist - pinchDistRef.current;
-
-          if (Math.abs(delta) > PINCH_THRESHOLD) {
-              if (delta > 0) {
-                  const newSize = Math.min(5, gridSize + 1);
-                  handleSetGridSize(newSize);
-              } else {
-                  const newSize = Math.max(1, gridSize - 1);
-                  handleSetGridSize(newSize);
-              }
-              pinchDistRef.current = currentDist;
-          }
+    if (e.touches.length === 2 && pinchDistRef.current > 0) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const currentDist = Math.sqrt(dx * dx + dy * dy);
+      const delta = currentDist - pinchDistRef.current;
+      if (Math.abs(delta) > PINCH_THRESHOLD) {
+        setGridSize(gs => delta > 0 ? Math.min(5, gs + 1) : Math.max(1, gs - 1));
+        pinchDistRef.current = currentDist;
       }
-  }, [gridSize, handleSetGridSize]);
-
-  const handleTouchEnd = useCallback(() => {
-      pinchDistRef.current = 0;
+    }
   }, []);
+  const handleTouchEnd = useCallback(() => { pinchDistRef.current = 0; }, []);
   
   const handleCategorySortClick = () => {
     const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
-    const isCategorySortActive = currentCategoryIndex !== -1;
-    if (isCategorySortActive) {
-        const nextIndex = (currentCategoryIndex + 1) % CATEGORY_SORTS.length;
-        setSortOrder(CATEGORY_SORTS[nextIndex].order);
-    } else {
-        setSortOrder(CATEGORY_SORTS[0].order);
-    }
+    const nextIndex = currentCategoryIndex !== -1 ? (currentCategoryIndex + 1) % CATEGORY_SORTS.length : 0;
+    setSortOrder(CATEGORY_SORTS[nextIndex].order);
   };
 
-  const openActionMenu = useCallback((songTitle) => {
-    setActionMenuState({ isOpen: true, songTitle });
-  }, []);
-
-  const closeActionMenu = useCallback(() => {
-    setActionMenuState({ isOpen: false, songTitle: null });
-  }, []);
-
+  const openActionMenu = useCallback((songTitle) => setActionMenuState({ isOpen: true, songTitle }), []);
+  const closeActionMenu = useCallback(() => setActionMenuState({ isOpen: false, songTitle: null }), []);
+  const handleCycleVisualizerStyle = useCallback(() => setVisualizerStyle(vs => VISUALIZER_STYLES[(VISUALIZER_STYLES.indexOf(vs) + 1) % VISUALIZER_STYLES.length]), []);
+  
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
-  const isCategorySortActive = currentCategoryIndex !== -1;
-  const categoryButtonLabel = isCategorySortActive ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
+  const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
   return (
     React.createElement("div", { className: "min-h-screen bg-bg-primary text-text-primary flex flex-col" },
@@ -682,8 +476,8 @@ export default function App() {
               React.createElement(MenuIcon, { className: "w-6 h-6" })
             ),
             React.createElement("div", { className: "flex items-center bg-gray-700 rounded-full p-1" },
-              React.createElement("button", { onClick: () => setFilter(StationFilter.All), className: `px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.All ? 'bg-accent text-white' : 'text-gray-300'}`}, StationFilter.All),
-              React.createElement("button", { onClick: () => setFilter(StationFilter.Favorites), className: `px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.Favorites ? 'bg-accent text-white' : 'text-gray-300'}`}, StationFilter.Favorites)
+              React.createElement("button", { onClick: () => setFilter(StationFilter.All), className: `px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.All ? 'bg-accent text-white' : 'text-gray-300'}` }, StationFilter.All),
+              React.createElement("button", { onClick: () => setFilter(StationFilter.Favorites), className: `px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.Favorites ? 'bg-accent text-white' : 'text-gray-300'}` }, StationFilter.Favorites)
             ),
             React.createElement("h1", { className: "text-xl sm:text-2xl font-bold text-accent" }, "רדיו פרימיום")
         ),
@@ -693,145 +487,29 @@ export default function App() {
                 React.createElement("div", { className: "flex items-center bg-gray-700 rounded-full p-1 gap-1 flex-wrap justify-center" },
                     React.createElement(SortButton, { label: "שלי", order: "custom", currentOrder: sortOrder, setOrder: setSortOrder }),
                     React.createElement(SortButton, { label: "פופולריות", order: "priority", currentOrder: sortOrder, setOrder: setSortOrder }),
-                    React.createElement("button", {
-                      onClick: () => sortOrder === 'name_asc' ? setSortOrder('name_desc') : setSortOrder('name_asc'),
-                      className: `px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-                        sortOrder.startsWith('name_') ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                      }`
-                    }, sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'),
-                    React.createElement("button", {
-                      onClick: handleCategorySortClick,
-                      className: `px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-                        isCategorySortActive ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                      }`
-                    }, categoryButtonLabel)
+                    React.createElement("button", { onClick: () => setSortOrder(so => so === 'name_asc' ? 'name_desc' : 'name_asc'), className: `px-3 py-1 text-xs font-medium rounded-full transition-colors ${sortOrder.startsWith('name_') ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}` }, sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'),
+                    React.createElement("button", { onClick: handleCategorySortClick, className: `px-3 py-1 text-xs font-medium rounded-full transition-colors ${currentCategoryIndex !== -1 ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}` }, categoryButtonLabel)
                 )
             )
         )
       ),
-      React.createElement("main", { className: "flex-grow pb-48", onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd }, 
-        isLoading ? (
-          null
-        ) : error ? (
-          React.createElement("p", { className: "text-center text-red-400 p-4" }, error)
-        ) : (
-            displayedStations.length > 0 ? (
-                React.createElement(StationList, {
-                    stations: displayedStations,
-                    currentStation: playerState.station,
-                    onSelectStation: handleSelectStation,
-                    isFavorite: isFavorite,
-                    toggleFavorite: toggleFavorite,
-                    onReorder: handleReorder,
-                    isStreamActive: playerState.status === 'PLAYING',
-                    isStatusIndicatorEnabled: isStatusIndicatorEnabled,
-                    gridSize: gridSize,
-                    sortOrder: sortOrder
-                })
-            ) : (
-                React.createElement("div", { className: "text-center p-8 text-text-secondary" },
-                    React.createElement("h2", { className: "text-xl font-semibold" }, filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'),
-                    React.createElement("p", null, filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.')
-                )
+      React.createElement("main", { className: "flex-grow pb-48", onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd },
+        isLoading ? React.createElement(StationListSkeleton, null) :
+        error ? React.createElement("p", { className: "text-center text-red-400 p-4" }, error) :
+        displayedStations.length > 0 ?
+            React.createElement(StationList, { stations: displayedStations, currentStation: playerState.station, onSelectStation: handleSelectStation, isFavorite: isFavorite, toggleFavorite: toggleFavorite, onReorder: handleReorder, isStreamActive: playerState.status === 'PLAYING', isStatusIndicatorEnabled: isStatusIndicatorEnabled, gridSize: gridSize, sortOrder: sortOrder }) :
+            React.createElement("div", { className: "text-center p-8 text-text-secondary" },
+                React.createElement("h2", { className: "text-xl font-semibold" }, filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'),
+                React.createElement("p", null, filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.')
             )
-        )
       ),
-      React.createElement(SettingsPanel, {
-        isOpen: isSettingsOpen,
-        onClose: () => setIsSettingsOpen(false),
-        currentTheme: theme,
-        onThemeChange: setTheme,
-        currentEqPreset: eqPreset,
-        onEqPresetChange: handleSetEqPreset,
-        isNowPlayingVisualizerEnabled: isNowPlayingVisualizerEnabled,
-        onNowPlayingVisualizerEnabledChange: handleSetIsNowPlayingVisualizerEnabled,
-        isPlayerBarVisualizerEnabled: isPlayerBarVisualizerEnabled,
-        onPlayerBarVisualizerEnabledChange: handleSetIsPlayerBarVisualizerEnabled,
-        isStatusIndicatorEnabled: isStatusIndicatorEnabled,
-        onStatusIndicatorEnabledChange: handleSetStatusIndicatorEnabled,
-        isVolumeControlVisible: isVolumeControlVisible,
-        onVolumeControlVisibleChange: handleSetIsVolumeControlVisible,
-        showNextSong: showNextSong,
-        onShowNextSongChange: handleSetShowNextSong,
-        customEqSettings: customEqSettings,
-        onCustomEqChange: handleSetCustomEqSettings,
-        gridSize: gridSize,
-        onGridSizeChange: handleSetGridSize,
-        isMarqueeProgramEnabled: isMarqueeProgramEnabled,
-        onMarqueeProgramEnabledChange: handleSetIsMarqueeProgramEnabled,
-        isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled,
-        onMarqueeCurrentTrackEnabledChange: handleSetIsMarqueeCurrentTrackEnabled,
-        isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled,
-        onMarqueeNextTrackEnabledChange: handleSetIsMarqueeNextTrackEnabled,
-        marqueeSpeed: marqueeSpeed,
-        onMarqueeSpeedChange: handleSetMarqueeSpeed,
-        marqueeDelay: marqueeDelay,
-        onMarqueeDelayChange: handleSetMarqueeDelay,
-        updateStatus: updateStatus,
-        onManualUpdateCheck: handleManualUpdateCheck
-      }),
-      playerState.station && React.createElement(NowPlaying, {
-        isOpen: isNowPlayingOpen,
-        onClose: () => !isVisualizerFullscreen && setIsNowPlayingOpen(false),
-        station: playerState.station,
-        isPlaying: playerState.status === 'PLAYING',
-        onPlayPause: handlePlayPause,
-        onNext: handleNext,
-        onPrev: handlePrev,
-        volume: volume,
-        onVolumeChange: handleSetVolume,
-        trackInfo: trackInfo,
-        showNextSong: showNextSong,
-        frequencyData: frequencyData,
-        visualizerStyle: visualizerStyle,
-        isVisualizerEnabled: isNowPlayingVisualizerEnabled,
-        onCycleVisualizerStyle: handleCycleVisualizerStyle,
-        isVolumeControlVisible: isVolumeControlVisible,
-        marqueeDelay: marqueeDelay,
-        isMarqueeProgramEnabled: isMarqueeProgramEnabled,
-        isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled,
-        isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled,
-        marqueeSpeed: marqueeSpeed,
-        onOpenActionMenu: openActionMenu,
-        isVisualizerFullscreen: isVisualizerFullscreen,
-        setIsVisualizerFullscreen: setIsVisualizerFullscreen
-      }),
-       React.createElement(ActionMenu, {
-        isOpen: actionMenuState.isOpen,
-        onClose: closeActionMenu,
-        songTitle: actionMenuState.songTitle
-      }),
-      React.createElement(Player, {
-        playerState: playerState,
-        onPlay: handlePlay,
-        onPause: handlePause,
-        onPlayPause: handlePlayPause,
-        onNext: handleNext,
-        onPrev: handlePrev,
-        onPlayerEvent: (event) => dispatch(event),
-        eqPreset: eqPreset,
-        customEqSettings: customEqSettings,
-        volume: volume,
-        onVolumeChange: handleSetVolume,
-        trackInfo: trackInfo,
-        showNextSong: showNextSong,
-        onOpenNowPlaying: () => setIsNowPlayingOpen(true),
-        setFrequencyData: setFrequencyData,
-        frequencyData: frequencyData,
-        isVisualizerEnabled: isPlayerBarVisualizerEnabled,
-        marqueeDelay: marqueeDelay,
-        isMarqueeProgramEnabled: isMarqueeProgramEnabled,
-        isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled,
-        isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled,
-        marqueeSpeed: marqueeSpeed,
-        onOpenActionMenu: openActionMenu
-      }),
+      React.createElement(SettingsPanel, { isOpen: isSettingsOpen, onClose: () => setIsSettingsOpen(false), currentTheme: theme, onThemeChange: setTheme, currentEqPreset: eqPreset, onEqPresetChange: setEqPreset, isNowPlayingVisualizerEnabled: isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange: setIsNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled: isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange: setIsPlayerBarVisualizerEnabled, isStatusIndicatorEnabled: isStatusIndicatorEnabled, onStatusIndicatorEnabledChange: setIsStatusIndicatorEnabled, isVolumeControlVisible: isVolumeControlVisible, onVolumeControlVisibleChange: setIsVolumeControlVisible, showNextSong: showNextSong, onShowNextSongChange: setShowNextSong, customEqSettings: customEqSettings, onCustomEqChange: setCustomEqSettings, gridSize: gridSize, onGridSizeChange: setGridSize, isMarqueeProgramEnabled: isMarqueeProgramEnabled, onMarqueeProgramEnabledChange: setIsMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange: setIsMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange: setIsMarqueeNextTrackEnabled, marqueeSpeed: marqueeSpeed, onMarqueeSpeedChange: setMarqueeSpeed, marqueeDelay: marqueeDelay, onMarqueeDelayChange: setMarqueeDelay, updateStatus: updateStatus, onManualUpdateCheck: handleManualUpdateCheck, user: user, onLogin: handleLogin, onLogout: handleLogout }),
+      playerState.station && React.createElement(NowPlaying, { isOpen: isNowPlayingOpen, onClose: () => !isVisualizerFullscreen && setIsNowPlayingOpen(false), station: playerState.station, isPlaying: playerState.status === 'PLAYING', onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, volume: volume, onVolumeChange: setVolume, trackInfo: trackInfo, showNextSong: showNextSong, frequencyData: frequencyData, visualizerStyle: visualizerStyle, isVisualizerEnabled: isNowPlayingVisualizerEnabled, onCycleVisualizerStyle: handleCycleVisualizerStyle, isVolumeControlVisible: isVolumeControlVisible, marqueeDelay: marqueeDelay, isMarqueeProgramEnabled: isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled, marqueeSpeed: marqueeSpeed, onOpenActionMenu: openActionMenu, isVisualizerFullscreen: isVisualizerFullscreen, setIsVisualizerFullscreen: setIsVisualizerFullscreen }),
+      React.createElement(ActionMenu, { isOpen: actionMenuState.isOpen, onClose: closeActionMenu, songTitle: actionMenuState.songTitle }),
+      React.createElement(Player, { playerState: playerState, onPlay: handlePlay, onPause: handlePause, onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, onPlayerEvent: (event) => dispatch(event), eqPreset: eqPreset, customEqSettings: customEqSettings, volume: volume, onVolumeChange: setVolume, trackInfo: trackInfo, showNextSong: showNextSong, onOpenNowPlaying: () => setIsNowPlayingOpen(true), setFrequencyData: setFrequencyData, frequencyData: frequencyData, isVisualizerEnabled: isPlayerBarVisualizerEnabled, marqueeDelay: marqueeDelay, isMarqueeProgramEnabled: isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled, marqueeSpeed: marqueeSpeed, onOpenActionMenu: openActionMenu }),
       isUpdateAvailable && React.createElement("div", { className: "fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up" },
         React.createElement("p", { className: "text-sm font-semibold" }, "עדכון חדש זמין"),
-        React.createElement("button", { 
-          onClick: handleUpdateClick,
-          className: "py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold"
-        }, "רענן")
+        React.createElement("button", { onClick: handleUpdateClick, className: "py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold" }, "רענן")
       )
     )
   );
