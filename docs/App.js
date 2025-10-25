@@ -161,6 +161,11 @@ export default function App() {
     isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
     marqueeSpeed, marqueeDelay, filter, sortOrder
   ]);
+  
+  const settingsRef = useRef(allSettings);
+  useEffect(() => {
+    settingsRef.current = allSettings;
+  }, [allSettings]);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
@@ -189,12 +194,30 @@ export default function App() {
           setFilter(userSettings.filter || StationFilter.All);
           setSortOrder(userSettings.sortOrder || 'priority');
         } else {
-          await saveUserSettings(firebaseUser.uid, allSettings);
+          await saveUserSettings(firebaseUser.uid, settingsRef.current);
         }
       } else {
         setFavorites(safeJsonParse(localStorage.getItem('radio-favorites'), []));
         setCustomOrder(safeJsonParse(localStorage.getItem('radio-station-custom-order'), []));
         setTheme(safeJsonParse(localStorage.getItem('radio-theme'), 'dark'));
+        setEqPreset(safeJsonParse(localStorage.getItem('radio-eq'), 'flat'));
+        setCustomEqSettings(safeJsonParse(localStorage.getItem('radio-custom-eq'), { bass: 0, mid: 0, treble: 0 }));
+        setVolume(safeJsonParse(localStorage.getItem('radio-volume'), 1));
+        setIsNowPlayingVisualizerEnabled(safeJsonParse(localStorage.getItem('radio-nowplaying-visualizer-enabled'), true));
+        setIsPlayerBarVisualizerEnabled(safeJsonParse(localStorage.getItem('radio-playerbar-visualizer-enabled'), true));
+        setVisualizerStyle(safeJsonParse(localStorage.getItem('radio-visualizer-style'), 'bars'));
+        setIsStatusIndicatorEnabled(safeJsonParse(localStorage.getItem('radio-status-indicator-enabled'), true));
+        setIsVolumeControlVisible(safeJsonParse(localStorage.getItem('radio-volume-control-visible'), true));
+        setShowNextSong(safeJsonParse(localStorage.getItem('radio-show-next-song'), true));
+        setGridSize(safeJsonParse(localStorage.getItem('radio-grid-size'), 3));
+        setIsMarqueeProgramEnabled(safeJsonParse(localStorage.getItem('radio-marquee-program-enabled'), true));
+        setIsMarqueeCurrentTrackEnabled(safeJsonParse(localStorage.getItem('radio-marquee-current-enabled'), true));
+        setIsMarqueeNextTrackEnabled(safeJsonParse(localStorage.getItem('radio-marquee-next-enabled'), true));
+        setMarqueeSpeed(safeJsonParse(localStorage.getItem('radio-marquee-speed'), 6));
+        setMarqueeDelay(safeJsonParse(localStorage.getItem('radio-marquee-delay'), 3));
+        const savedFilter = localStorage.getItem('radio-last-filter');
+        setFilter((savedFilter && Object.values(StationFilter).includes(savedFilter)) ? savedFilter : StationFilter.All);
+        setSortOrder(safeJsonParse(localStorage.getItem('radio-last-sort'), 'priority'));
       }
       setUser(firebaseUser);
       setIsAuthLoading(false);
@@ -219,7 +242,12 @@ export default function App() {
     localStorage.setItem('radio-favorites', JSON.stringify(favorites));
   }, [allSettings, user, isAuthLoading, debouncedSave, filter, sortOrder, favorites]);
   
-  const handleLogin = async () => signInWithGoogle();
+  const handleLogin = async () => {
+    const loggedInUser = await signInWithGoogle();
+    if (loggedInUser) {
+      setUser(loggedInUser);
+    }
+  };
   
   const handleLogout = async () => {
     if (user) {

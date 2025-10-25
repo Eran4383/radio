@@ -188,10 +188,17 @@ export default function App() {
     isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
     marqueeSpeed, marqueeDelay, filter, sortOrder
   ]);
+  
+  // Ref to hold the latest settings to avoid stale closure in auth listener
+  const settingsRef = useRef(allSettings);
+  useEffect(() => {
+    settingsRef.current = allSettings;
+  }, [allSettings]);
+
 
   // Auth listener effect
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
+    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser: firebase.User | null) => {
       setIsAuthLoading(true);
       if (firebaseUser) {
         const userSettings = await loadUserSettings(firebaseUser.uid);
@@ -219,14 +226,31 @@ export default function App() {
           setSortOrder(userSettings.sortOrder || 'priority');
         } else {
           // First login: save current local settings to Firestore
-          await saveUserSettings(firebaseUser.uid, allSettings);
+          await saveUserSettings(firebaseUser.uid, settingsRef.current);
         }
       } else {
-        // User is logged out, reload all settings from localStorage to reset to guest state
+        // User is logged out, reload ALL settings from localStorage to reset to guest state
         setFavorites(safeJsonParse(localStorage.getItem('radio-favorites'), []));
         setCustomOrder(safeJsonParse(localStorage.getItem('radio-station-custom-order'), []));
-        setTheme(safeJsonParse(localStorage.getItem('radio-theme'), 'dark'));
-        // ... and so on for all settings
+        setTheme(safeJsonParse(localStorage.getItem('radio-theme'), 'dark') as Theme);
+        setEqPreset(safeJsonParse(localStorage.getItem('radio-eq'), 'flat') as EqPreset);
+        setCustomEqSettings(safeJsonParse(localStorage.getItem('radio-custom-eq'), { bass: 0, mid: 0, treble: 0 }));
+        setVolume(safeJsonParse(localStorage.getItem('radio-volume'), 1));
+        setIsNowPlayingVisualizerEnabled(safeJsonParse(localStorage.getItem('radio-nowplaying-visualizer-enabled'), true));
+        setIsPlayerBarVisualizerEnabled(safeJsonParse(localStorage.getItem('radio-playerbar-visualizer-enabled'), true));
+        setVisualizerStyle(safeJsonParse(localStorage.getItem('radio-visualizer-style'), 'bars') as VisualizerStyle);
+        setIsStatusIndicatorEnabled(safeJsonParse(localStorage.getItem('radio-status-indicator-enabled'), true));
+        setIsVolumeControlVisible(safeJsonParse(localStorage.getItem('radio-volume-control-visible'), true));
+        setShowNextSong(safeJsonParse(localStorage.getItem('radio-show-next-song'), true));
+        setGridSize(safeJsonParse(localStorage.getItem('radio-grid-size'), 3) as GridSize);
+        setIsMarqueeProgramEnabled(safeJsonParse(localStorage.getItem('radio-marquee-program-enabled'), true));
+        setIsMarqueeCurrentTrackEnabled(safeJsonParse(localStorage.getItem('radio-marquee-current-enabled'), true));
+        setIsMarqueeNextTrackEnabled(safeJsonParse(localStorage.getItem('radio-marquee-next-enabled'), true));
+        setMarqueeSpeed(safeJsonParse(localStorage.getItem('radio-marquee-speed'), 6));
+        setMarqueeDelay(safeJsonParse(localStorage.getItem('radio-marquee-delay'), 3));
+        const savedFilter = localStorage.getItem('radio-last-filter');
+        setFilter((savedFilter && Object.values(StationFilter).includes(savedFilter as StationFilter)) ? savedFilter as StationFilter : StationFilter.All);
+        setSortOrder(safeJsonParse(localStorage.getItem('radio-last-sort'), 'priority') as SortOrder);
       }
       setUser(firebaseUser);
       setIsAuthLoading(false);
@@ -243,7 +267,7 @@ export default function App() {
     if (user && !isAuthLoading) {
       debouncedSave(allSettings, user.uid);
     }
-    // Always update localStorage immediately
+    // Always update localStorage immediately for guest users or as a backup
     Object.entries(allSettings).forEach(([key, value]) => {
       const lsKey = `radio-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
       localStorage.setItem(lsKey, JSON.stringify(value));
@@ -254,10 +278,16 @@ export default function App() {
 
   }, [allSettings, user, isAuthLoading, debouncedSave, filter, sortOrder, favorites]);
   
-  const handleLogin = async () => signInWithGoogle();
+  const handleLogin = async () => {
+    const loggedInUser = await signInWithGoogle();
+    if (loggedInUser) {
+      setUser(loggedInUser); // Update UI immediately
+    }
+  };
   
   const handleLogout = async () => {
     if (user) {
+      // Save latest settings before signing out
       await saveUserSettings(user.uid, allSettings);
     }
     await signOut();
