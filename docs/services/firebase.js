@@ -6,7 +6,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyCtTn2euDrfnD5mJrY0mASVOXPaJLDOHbo",
   authDomain: "radio-premium-il-6a22b.firebaseapp.com",
   projectId: "radio-premium-il-6a22b",
-  storageBucket: "radio-premium-il-6a22b.appspot.com",
+  storageBucket: "radio-premium-il-6a22b.firebasestorage.app",
   messagingSenderId: "201862743073",
   appId: "1:201862743073:web:2c84cbb2b1443d87884f60"
 };
