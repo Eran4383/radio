@@ -17,28 +17,38 @@ let db: any;
 let isInitialized = false;
 
 export const initFirebase = (): Promise<void> => {
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
         if (isInitialized) return resolve();
 
         if (typeof firebase === 'undefined') {
             return reject(new Error("Firebase scripts not loaded."));
         }
 
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
-        }
-    
-        auth = firebase.auth();
-        db = firebase.firestore();
-
         try {
-            await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-            isInitialized = true;
-            resolve();
-        } catch (error: any) {
-            console.error("Firebase persistence error:", error.code, error.message);
-            isInitialized = true;
-            resolve(); // Resolve even on persistence error to not block the app
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+        
+            auth = firebase.auth();
+            db = firebase.firestore();
+
+            // Explicitly setting persistence to LOCAL is the key to keeping the user logged in.
+            // We must wait for this to complete before the app continues.
+            auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+                .then(() => {
+                    isInitialized = true;
+                    resolve();
+                })
+                .catch((error: any) => {
+                    // This can fail in some environments (e.g., private browsing).
+                    // The app can still run, but the user won't stay logged in.
+                    console.warn("Firebase persistence error:", error.message);
+                    isInitialized = true;
+                    resolve(); // Resolve anyway to not block the app.
+                });
+
+        } catch (error) {
+            reject(error);
         }
     });
 };

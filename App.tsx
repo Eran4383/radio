@@ -307,7 +307,9 @@ export default function App() {
     if (user) {
       try {
         await signOut();
-        // State will update via onAuthStateChanged listener, no reload needed.
+        // Force a reload to ensure a clean state and load guest settings correctly from localStorage.
+        // This fixes an issue where the UI would visually remain logged in until a manual refresh.
+        window.location.reload();
       } catch (error) {
         console.error("Error during logout:", error);
       }

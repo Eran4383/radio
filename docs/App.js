@@ -273,6 +273,7 @@ export default function App() {
     if (user) {
       try {
         await signOut();
+        window.location.reload();
       } catch (error) {
         console.error("Error during logout:", error);
       }
