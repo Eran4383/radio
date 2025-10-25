@@ -287,10 +287,16 @@ export default function App() {
   
   const handleLogout = async () => {
     if (user) {
-      // Save latest settings before signing out
-      await saveUserSettings(user.uid, allSettings);
+      try {
+        // Save latest settings before signing out
+        await saveUserSettings(user.uid, allSettings);
+        await signOut();
+        // Force a reload to ensure the UI updates and resets to the guest state from localStorage.
+        window.location.reload();
+      } catch (error) {
+        console.error("Error during logout:", error);
+      }
     }
-    await signOut();
   };
 
   useEffect(() => {

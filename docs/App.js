@@ -251,9 +251,16 @@ export default function App() {
   
   const handleLogout = async () => {
     if (user) {
-      await saveUserSettings(user.uid, allSettings);
+      try {
+        // Save latest settings before signing out
+        await saveUserSettings(user.uid, allSettings);
+        await signOut();
+        // Force a reload to ensure the UI updates and resets to the guest state from localStorage.
+        window.location.reload();
+      } catch (error) {
+        console.error("Error during logout:", error);
+      }
     }
-    await signOut();
   };
 
   useEffect(() => {
@@ -534,7 +541,7 @@ export default function App() {
       React.createElement(SettingsPanel, { isOpen: isSettingsOpen, onClose: () => setIsSettingsOpen(false), currentTheme: theme, onThemeChange: setTheme, currentEqPreset: eqPreset, onEqPresetChange: setEqPreset, isNowPlayingVisualizerEnabled: isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange: setIsNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled: isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange: setIsPlayerBarVisualizerEnabled, isStatusIndicatorEnabled: isStatusIndicatorEnabled, onStatusIndicatorEnabledChange: setIsStatusIndicatorEnabled, isVolumeControlVisible: isVolumeControlVisible, onVolumeControlVisibleChange: setIsVolumeControlVisible, showNextSong: showNextSong, onShowNextSongChange: setShowNextSong, customEqSettings: customEqSettings, onCustomEqChange: setCustomEqSettings, gridSize: gridSize, onGridSizeChange: setGridSize, isMarqueeProgramEnabled: isMarqueeProgramEnabled, onMarqueeProgramEnabledChange: setIsMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange: setIsMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange: setIsMarqueeNextTrackEnabled, marqueeSpeed: marqueeSpeed, onMarqueeSpeedChange: setMarqueeSpeed, marqueeDelay: marqueeDelay, onMarqueeDelayChange: setMarqueeDelay, updateStatus: updateStatus, onManualUpdateCheck: handleManualUpdateCheck, user: user, onLogin: handleLogin, onLogout: handleLogout }),
       playerState.station && React.createElement(NowPlaying, { isOpen: isNowPlayingOpen, onClose: () => !isVisualizerFullscreen && setIsNowPlayingOpen(false), station: playerState.station, isPlaying: playerState.status === 'PLAYING', onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, volume: volume, onVolumeChange: setVolume, trackInfo: trackInfo, showNextSong: showNextSong, frequencyData: frequencyData, visualizerStyle: visualizerStyle, isVisualizerEnabled: isNowPlayingVisualizerEnabled, onCycleVisualizerStyle: handleCycleVisualizerStyle, isVolumeControlVisible: isVolumeControlVisible, marqueeDelay: marqueeDelay, isMarqueeProgramEnabled: isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled, marqueeSpeed: marqueeSpeed, onOpenActionMenu: openActionMenu, isVisualizerFullscreen: isVisualizerFullscreen, setIsVisualizerFullscreen: setIsVisualizerFullscreen }),
       React.createElement(ActionMenu, { isOpen: actionMenuState.isOpen, onClose: closeActionMenu, songTitle: actionMenuState.songTitle }),
-      React.createElement(Player, { playerState: playerState, onPlay: handlePlay, onPause: handlePause, onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, onPlayerEvent: (event) => dispatch(event), eqPreset: eqPreset, customEqSettings: customEqSettings, volume: volume, onVolumeChange: setVolume, trackInfo: trackInfo, showNextSong: showNextSong, onOpenNowPlaying: () => setIsNowPlayingOpen(true), setFrequencyData: setFrequencyData, frequencyData: frequencyData, isVisualizerEnabled: isPlayerBarVisualizerEnabled, marqueeDelay: marqueeDelay, isMarqueeProgramEnabled: isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled, marqueeSpeed: marqueeSpeed, onOpenActionMenu: openActionMenu }),
+      React.createElement(Player, { playerState: playerState, onPlay: handlePlay, onPause: handlePause, onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, onPlayerEvent: (event) => dispatch(event), eqPreset: eqPreset, customEqSettings: customEqSettings, volume: volume, onVolumeChange: setVolume, trackInfo: trackInfo, showNextSong: showNextSong, onOpenNowPlaying: () => setIsNowPlayingOpen(true), setFrequencyData: setFrequencyData, frequencyData: frequencyData, isVisualizerEnabled: isPlayerBarVisualizerEnabled, marqueeDelay: marqueeDelay, isMarqueeProgramEnabled: isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled, marqueeSpeed: marqueeSpeed, onOpenActionMenu: onOpenActionMenu }),
       isUpdateAvailable && React.createElement("div", { className: "fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up" },
         React.createElement("p", { className: "text-sm font-semibold" }, "עדכון חדש זמין"),
         React.createElement("button", { onClick: handleUpdateClick, className: "py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold" }, "רענן")

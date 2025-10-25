@@ -19,6 +19,13 @@ if (!firebase.apps.length) {
 export const auth = firebase.auth();
 export const db = firebase.firestore();
 
+// Set persistence to 'local' to keep the user signed in across browser sessions.
+// This is often the default, but we set it explicitly to ensure the behavior.
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+  .catch((error) => {
+    console.error("Firebase persistence error:", error.code, error.message);
+  });
+
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 
 export const signInWithGoogle = async () => {
