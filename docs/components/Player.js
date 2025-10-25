@@ -131,7 +131,7 @@ const Player = ({
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       // The AudioContext constructor is inconsistent across browsers.
       // Passing an empty object {} ensures compatibility with browsers that require an options object.
-      // FIX: Pass an empty object to the AudioContext constructor for cross-browser compatibility.
+      // FIX: The AudioContext constructor requires an options object on some browsers. Passing an empty object ensures compatibility.
       const context = new AudioContextClass({});
       audioContextRef.current = context;
       

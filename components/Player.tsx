@@ -177,7 +177,7 @@ const Player: React.FC<PlayerProps> = ({
       // The AudioContext constructor is inconsistent across browsers.
       // Some, like older Safari versions, may throw an error if no options object is provided.
       // Passing an empty object `{}` is the safest way to ensure compatibility.
-      // FIX: Pass an empty object to the AudioContext constructor for cross-browser compatibility.
+      // FIX: The AudioContext constructor requires an options object on some browsers. Passing an empty object ensures compatibility.
       const context = new AudioContextClass({});
       audioContextRef.current = context;
       

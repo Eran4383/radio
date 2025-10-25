@@ -408,13 +408,14 @@ const SettingsPanel = ({
                         React.createElement("h4", { className: "font-bold text-sm text-text-primary mb-2" }, "היסטוריית גרסאות"),
                         React.createElement("div", { className: "space-y-3 max-h-48 overflow-y-auto pr-2" },
                             releaseNotes.map(release => (
-                            React.createElement("div", { key: release.version },
-                                React.createElement("p", { className: "font-semibold text-text-primary" }, `גרסה ${release.version} (${release.date})`),
-                                React.createElement("ul", { className: "list-disc list-inside space-y-1 mt-1" },
-                                release.features.map((feature, index) => (
-                                    React.createElement("li", { key: index }, feature)
-                                )))
-                            ))
+                                React.createElement("div", { key: release.version },
+                                    React.createElement("p", { className: "font-semibold text-text-primary" }, `גרסה ${release.version} (${release.date})`),
+                                    React.createElement("ul", { className: "list-disc list-inside space-y-1 mt-1" },
+                                        release.features.map((feature, index) => (
+                                            React.createElement("li", { key: index }, feature)
+                                        ))
+                                    )
+                                )
                             ))
                         )
                     )
