@@ -11,11 +11,11 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 
 initFirebase().then(() => {
-    root.render(
-        React.createElement(React.StrictMode, null,
-            React.createElement(App, null)
-        )
-    );
+  root.render(
+    React.createElement(React.StrictMode, null,
+      React.createElement(App, null)
+    )
+  );
 }).catch(error => {
     console.error("Failed to initialize application:", error);
     root.render(

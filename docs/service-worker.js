@@ -27,6 +27,7 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', event => {
+  self.skipWaiting(); // Force the new service worker to activate immediately
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
@@ -67,27 +68,40 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  if (!event.request.url.startsWith('http')) {
+  const req = event.request;
+  
+  // Don't cache anything that's not a GET request or not http/https
+  if (req.method !== 'GET' || !req.url.startsWith('http')) {
     return;
   }
+  
+  const requestUrl = new URL(req.url);
 
-  const requestUrl = new URL(event.request.url);
+  // For proxy requests, always go to network first to get fresh data
+  if (requestUrl.hostname.includes('corsproxy.io')) {
+      event.respondWith(
+          fetch(req).catch(() => {
+              // Optional: return a generic error response if network fails
+          })
+      );
+      return;
+  }
 
   // Network first for manifest.json to ensure PWA metadata is always fresh.
   if (requestUrl.pathname.endsWith('/manifest.json')) {
     event.respondWith(
-      fetch(event.request)
+      fetch(req)
         .then(networkResponse => {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
-            const urlToCache = new URL(event.request.url);
+            const urlToCache = new URL(req.url);
             urlToCache.search = '?v=21';
             cache.put(urlToCache.href, responseToCache);
           });
           return networkResponse;
         })
         .catch(() => {
-           const urlToMatch = new URL(event.request.url);
+           const urlToMatch = new URL(req.url);
            urlToMatch.search = '?v=21';
           return caches.match(urlToMatch.href);
         })
@@ -95,14 +109,14 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Cache first for all other requests.
+  // Cache first, then network for all other static assets
   event.respondWith(
-    caches.match(event.request)
+    caches.match(req)
       .then(response => {
         if (response) {
           return response;
         }
-        return fetch(event.request).then(
+        return fetch(req).then(
           networkResponse => {
             if (!networkResponse || networkResponse.status !== 200 || (networkResponse.type !== 'basic' && networkResponse.type !== 'cors')) {
               return networkResponse;
@@ -110,7 +124,7 @@ self.addEventListener('fetch', event => {
             const responseToCache = networkResponse.clone();
             caches.open(CACHE_NAME)
               .then(cache => {
-                cache.put(event.request, responseToCache);
+                cache.put(req, responseToCache);
               });
             return networkResponse;
           }

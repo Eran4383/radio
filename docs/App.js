@@ -265,19 +265,17 @@ export default function App() {
   const handleLogin = async () => {
     const loggedInUser = await signInWithGoogle();
     if (loggedInUser) {
-      setUser(loggedInUser);
+      // The onAuthStateChanged listener will handle the state update.
     }
   };
   
   const handleLogout = async () => {
-    if (user) {
       try {
         await signOut();
-        window.location.reload();
+        // onAuthStateChanged will handle resetting the state to guest.
       } catch (error) {
         console.error("Error during logout:", error);
       }
-    }
   };
 
   useEffect(() => {
