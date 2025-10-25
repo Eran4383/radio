@@ -12,7 +12,7 @@ import { getCurrentProgram } from './services/scheduleService.js';
 import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/stationSpecificService.js';
 import StationListSkeleton from './components/StationListSkeleton.js';
 import { getCategory } from './services/categoryService.js';
-import { auth, signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase.js';
+import { getAuth, signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase.js';
 
 const StationFilter = {
   All: 'הכל',
@@ -148,26 +148,8 @@ export default function App() {
   const waitingWorkerRef = useRef(null);
   const [updateStatus, setUpdateStatus] = useState('idle');
 
-  const allSettings = useMemo(() => ({
-    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-    marqueeSpeed, marqueeDelay, filter, sortOrder
-  }), [
-    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-    marqueeSpeed, marqueeDelay, filter, sortOrder
-  ]);
-  
-  const settingsRef = useRef(allSettings);
   useEffect(() => {
-    settingsRef.current = allSettings;
-  }, [allSettings]);
-
-  useEffect(() => {
+    const auth = getAuth();
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
       setIsAuthLoading(true);
       if (firebaseUser) {
@@ -194,7 +176,14 @@ export default function App() {
           setFilter(userSettings.filter || StationFilter.All);
           setSortOrder(userSettings.sortOrder || 'priority');
         } else {
-          await saveUserSettings(firebaseUser.uid, settingsRef.current);
+          const localSettings = {
+            favorites, customOrder, theme, eqPreset, customEqSettings, volume,
+            isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
+            isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
+            isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
+            marqueeSpeed, marqueeDelay, filter, sortOrder
+          };
+          await saveUserSettings(firebaseUser.uid, localSettings);
         }
       } else {
         setFavorites(safeJsonParse(localStorage.getItem('radio-favorites'), []));
@@ -230,17 +219,48 @@ export default function App() {
   }, 2000), []);
 
   useEffect(() => {
-    if (user && !isAuthLoading) {
-      debouncedSave(allSettings, user.uid);
+    if (isAuthLoading) return;
+
+    const currentSettings = {
+        favorites, customOrder, theme, eqPreset, customEqSettings, volume,
+        isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
+        isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
+        isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
+        marqueeSpeed, marqueeDelay, filter, sortOrder
+    };
+
+    if (user) {
+        debouncedSave(currentSettings, user.uid);
+    } else {
+        localStorage.setItem('radio-favorites', JSON.stringify(favorites));
+        localStorage.setItem('radio-station-custom-order', JSON.stringify(customOrder));
+        localStorage.setItem('radio-theme', theme);
+        localStorage.setItem('radio-eq', eqPreset);
+        localStorage.setItem('radio-custom-eq', JSON.stringify(customEqSettings));
+        localStorage.setItem('radio-volume', JSON.stringify(volume));
+        localStorage.setItem('radio-nowplaying-visualizer-enabled', JSON.stringify(isNowPlayingVisualizerEnabled));
+        localStorage.setItem('radio-playerbar-visualizer-enabled', JSON.stringify(isPlayerBarVisualizerEnabled));
+        localStorage.setItem('radio-visualizer-style', visualizerStyle);
+        localStorage.setItem('radio-status-indicator-enabled', JSON.stringify(isStatusIndicatorEnabled));
+        localStorage.setItem('radio-volume-control-visible', JSON.stringify(isVolumeControlVisible));
+        localStorage.setItem('radio-show-next-song', JSON.stringify(showNextSong));
+        localStorage.setItem('radio-grid-size', JSON.stringify(gridSize));
+        localStorage.setItem('radio-marquee-program-enabled', JSON.stringify(isMarqueeProgramEnabled));
+        localStorage.setItem('radio-marquee-current-enabled', JSON.stringify(isMarqueeCurrentTrackEnabled));
+        localStorage.setItem('radio-marquee-next-enabled', JSON.stringify(isMarqueeNextTrackEnabled));
+        localStorage.setItem('radio-marquee-speed', JSON.stringify(marqueeSpeed));
+        localStorage.setItem('radio-marquee-delay', JSON.stringify(marqueeDelay));
+        localStorage.setItem('radio-last-filter', filter);
+        localStorage.setItem('radio-last-sort', sortOrder);
     }
-    Object.entries(allSettings).forEach(([key, value]) => {
-      const lsKey = `radio-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
-      localStorage.setItem(lsKey, JSON.stringify(value));
-    });
-    localStorage.setItem('radio-last-filter', filter);
-    localStorage.setItem('radio-last-sort', sortOrder);
-    localStorage.setItem('radio-favorites', JSON.stringify(favorites));
-  }, [allSettings, user, isAuthLoading, debouncedSave, filter, sortOrder, favorites]);
+  }, [
+      favorites, customOrder, theme, eqPreset, customEqSettings, volume,
+      isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
+      isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
+      isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
+      marqueeSpeed, marqueeDelay, filter, sortOrder,
+      user, isAuthLoading, debouncedSave
+  ]);
   
   const handleLogin = async () => {
     const loggedInUser = await signInWithGoogle();
@@ -252,11 +272,7 @@ export default function App() {
   const handleLogout = async () => {
     if (user) {
       try {
-        // Save latest settings before signing out
-        await saveUserSettings(user.uid, allSettings);
         await signOut();
-        // Force a reload to ensure the UI updates and resets to the guest state from localStorage.
-        window.location.reload();
       } catch (error) {
         console.error("Error during logout:", error);
       }
@@ -529,7 +545,7 @@ export default function App() {
         )
       ),
       React.createElement("main", { className: "flex-grow pb-48", onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd },
-        isLoading ? React.createElement(StationListSkeleton, null) :
+        isLoading || isAuthLoading ? React.createElement(StationListSkeleton, null) :
         error ? React.createElement("p", { className: "text-center text-red-400 p-4" }, error) :
         displayedStations.length > 0 ?
             React.createElement(StationList, { stations: displayedStations, currentStation: playerState.station, onSelectStation: handleSelectStation, isFavorite: isFavorite, toggleFavorite: toggleFavorite, onReorder: handleReorder, isStreamActive: playerState.status === 'PLAYING', isStatusIndicatorEnabled: isStatusIndicatorEnabled, gridSize: gridSize, sortOrder: sortOrder }) :

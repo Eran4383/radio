@@ -12,27 +12,54 @@ const firebaseConfig = {
   appId: "1:201862743073:web:2c84cbb2b1443d87884f60"
 };
 
-// Initialize Firebase
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
+let auth: any;
+let db: any;
+let isInitialized = false;
+
+export const initFirebase = (): Promise<void> => {
+    return new Promise(async (resolve, reject) => {
+        if (isInitialized) return resolve();
+
+        if (typeof firebase === 'undefined') {
+            return reject(new Error("Firebase scripts not loaded."));
+        }
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+    
+        auth = firebase.auth();
+        db = firebase.firestore();
+
+        try {
+            await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+            isInitialized = true;
+            resolve();
+        } catch (error: any) {
+            console.error("Firebase persistence error:", error.code, error.message);
+            isInitialized = true;
+            resolve(); // Resolve even on persistence error to not block the app
+        }
+    });
+};
+
+export const getAuth = () => {
+    if (!isInitialized) throw new Error("Firebase not initialized!");
+    return auth;
 }
 
-export const auth = firebase.auth();
-export const db = firebase.firestore();
-
-// Set persistence to 'local' to keep the user signed in across browser sessions.
-// This is often the default, but we set it explicitly to ensure the behavior.
-auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
-  .catch((error: any) => {
-    console.error("Firebase persistence error:", error.code, error.message);
-  });
+export const getDb = () => {
+    if (!isInitialized) throw new Error("Firebase not initialized!");
+    return db;
+}
 
 
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 
 export const signInWithGoogle = async () => {
+  const authInstance = getAuth();
   try {
-    const res = await auth.signInWithPopup(googleProvider);
+    const res = await authInstance.signInWithPopup(googleProvider);
     return res.user;
   } catch (err) {
     console.error("Google sign-in error:", err);
@@ -42,15 +69,16 @@ export const signInWithGoogle = async () => {
 };
 
 export const signOut = async () => {
-  await auth.signOut();
+  const authInstance = getAuth();
+  await authInstance.signOut();
 };
 
 export const saveUserSettings = async (userId: string, settings: any) => {
   if (!userId) return;
+  const dbInstance = getDb();
   try {
-    // We remove undefined values as Firestore doesn't support them.
     const cleanSettings = JSON.parse(JSON.stringify(settings));
-    await db.collection('users').doc(userId).set(cleanSettings, { merge: true });
+    await dbInstance.collection('users').doc(userId).set(cleanSettings, { merge: true });
   } catch (error) {
     console.error("Error saving user settings to Firestore:", error);
   }
@@ -58,8 +86,9 @@ export const saveUserSettings = async (userId: string, settings: any) => {
 
 export const loadUserSettings = async (userId: string) => {
   if (!userId) return null;
+  const dbInstance = getDb();
   try {
-    const doc = await db.collection('users').doc(userId).get();
+    const doc = await dbInstance.collection('users').doc(userId).get();
     return doc.exists ? doc.data() : null;
   } catch (error) {
     console.error("Error loading user settings from Firestore:", error);

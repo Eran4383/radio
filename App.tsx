@@ -12,7 +12,7 @@ import { getCurrentProgram } from './services/scheduleService';
 import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/stationSpecificService';
 import StationListSkeleton from './components/StationListSkeleton';
 import { getCategory, CategoryType } from './services/categoryService';
-import { auth, signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase';
+import { getAuth, signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase';
 import type firebase from 'firebase/compat/app';
 
 
@@ -174,30 +174,9 @@ export default function App() {
   const waitingWorkerRef = useRef<ServiceWorker | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
 
-  // Combine all settings into a single object for easier saving
-  const allSettings = useMemo(() => ({
-    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-    marqueeSpeed, marqueeDelay, filter, sortOrder
-  }), [
-    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-    marqueeSpeed, marqueeDelay, filter, sortOrder
-  ]);
-  
-  // Ref to hold the latest settings to avoid stale closure in auth listener
-  const settingsRef = useRef(allSettings);
-  useEffect(() => {
-    settingsRef.current = allSettings;
-  }, [allSettings]);
-
-
   // Auth listener effect
   useEffect(() => {
+    const auth = getAuth();
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser: firebase.User | null) => {
       setIsAuthLoading(true);
       if (firebaseUser) {
@@ -226,7 +205,14 @@ export default function App() {
           setSortOrder(userSettings.sortOrder || 'priority');
         } else {
           // First login: save current local settings to Firestore
-          await saveUserSettings(firebaseUser.uid, settingsRef.current);
+          const localSettings = {
+            favorites, customOrder, theme, eqPreset, customEqSettings, volume,
+            isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
+            isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
+            isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
+            marqueeSpeed, marqueeDelay, filter, sortOrder
+          };
+          await saveUserSettings(firebaseUser.uid, localSettings);
         }
       } else {
         // User is logged out, reload ALL settings from localStorage to reset to guest state
@@ -263,20 +249,52 @@ export default function App() {
     saveUserSettings(userId, settings);
   }, 2000), []);
 
+  // Effect for persisting settings
   useEffect(() => {
-    if (user && !isAuthLoading) {
-      debouncedSave(allSettings, user.uid);
-    }
-    // Always update localStorage immediately for guest users or as a backup
-    Object.entries(allSettings).forEach(([key, value]) => {
-      const lsKey = `radio-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
-      localStorage.setItem(lsKey, JSON.stringify(value));
-    });
-    localStorage.setItem('radio-last-filter', filter);
-    localStorage.setItem('radio-last-sort', sortOrder);
-    localStorage.setItem('radio-favorites', JSON.stringify(favorites));
+    if (isAuthLoading) return; // Wait until auth state is confirmed
 
-  }, [allSettings, user, isAuthLoading, debouncedSave, filter, sortOrder, favorites]);
+    const currentSettings = {
+        favorites, customOrder, theme, eqPreset, customEqSettings, volume,
+        isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
+        isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
+        isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
+        marqueeSpeed, marqueeDelay, filter, sortOrder
+    };
+
+    if (user) {
+        // User is logged in: save to Firestore
+        debouncedSave(currentSettings, user.uid);
+    } else {
+        // User is logged out: save to localStorage
+        localStorage.setItem('radio-favorites', JSON.stringify(favorites));
+        localStorage.setItem('radio-station-custom-order', JSON.stringify(customOrder));
+        localStorage.setItem('radio-theme', theme);
+        localStorage.setItem('radio-eq', eqPreset);
+        localStorage.setItem('radio-custom-eq', JSON.stringify(customEqSettings));
+        localStorage.setItem('radio-volume', JSON.stringify(volume));
+        localStorage.setItem('radio-nowplaying-visualizer-enabled', JSON.stringify(isNowPlayingVisualizerEnabled));
+        localStorage.setItem('radio-playerbar-visualizer-enabled', JSON.stringify(isPlayerBarVisualizerEnabled));
+        localStorage.setItem('radio-visualizer-style', visualizerStyle);
+        localStorage.setItem('radio-status-indicator-enabled', JSON.stringify(isStatusIndicatorEnabled));
+        localStorage.setItem('radio-volume-control-visible', JSON.stringify(isVolumeControlVisible));
+        localStorage.setItem('radio-show-next-song', JSON.stringify(showNextSong));
+        localStorage.setItem('radio-grid-size', JSON.stringify(gridSize));
+        localStorage.setItem('radio-marquee-program-enabled', JSON.stringify(isMarqueeProgramEnabled));
+        localStorage.setItem('radio-marquee-current-enabled', JSON.stringify(isMarqueeCurrentTrackEnabled));
+        localStorage.setItem('radio-marquee-next-enabled', JSON.stringify(isMarqueeNextTrackEnabled));
+        localStorage.setItem('radio-marquee-speed', JSON.stringify(marqueeSpeed));
+        localStorage.setItem('radio-marquee-delay', JSON.stringify(marqueeDelay));
+        localStorage.setItem('radio-last-filter', filter);
+        localStorage.setItem('radio-last-sort', sortOrder);
+    }
+  }, [
+      favorites, customOrder, theme, eqPreset, customEqSettings, volume,
+      isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
+      isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
+      isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
+      marqueeSpeed, marqueeDelay, filter, sortOrder,
+      user, isAuthLoading, debouncedSave
+  ]);
   
   const handleLogin = async () => {
     const loggedInUser = await signInWithGoogle();
@@ -288,11 +306,8 @@ export default function App() {
   const handleLogout = async () => {
     if (user) {
       try {
-        // Save latest settings before signing out
-        await saveUserSettings(user.uid, allSettings);
         await signOut();
-        // Force a reload to ensure the UI updates and resets to the guest state from localStorage.
-        window.location.reload();
+        // State will update via onAuthStateChanged listener, no reload needed.
       } catch (error) {
         console.error("Error during logout:", error);
       }
@@ -565,7 +580,7 @@ export default function App() {
         </div>
       </header>
       <main className="flex-grow pb-48" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-        {isLoading ? (
+        {isLoading || isAuthLoading ? (
           <StationListSkeleton />
         ) : error ? (
           <p className="text-center text-red-400 p-4">{error}</p>
