@@ -63,13 +63,17 @@ export const saveUserSettings = async (userId, settings) => {
 };
 
 export const loadUserSettings = async (userId) => {
-  if (!userId) return null;
+  if (!userId) return { status: 'error' };
   try {
     const loadPromise = db.collection('users').doc(userId).get();
     const doc = await withTimeout(loadPromise, 8000); // 8-second timeout
-    return doc.exists ? doc.data() : null;
+    if (doc.exists) {
+        return { status: 'success', data: doc.data() };
+    } else {
+        return { status: 'not-found' };
+    }
   } catch (error) {
     console.error("Error loading user settings from Firestore:", error);
-    return null;
+    return { status: 'error' };
   }
 };

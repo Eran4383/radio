@@ -66,14 +66,23 @@ export const saveUserSettings = async (userId: string, settings: any): Promise<v
   }
 };
 
-export const loadUserSettings = async (userId: string): Promise<any | null> => {
-  if (!userId) return null;
+interface LoadUserSettingsResult {
+  status: 'success' | 'not-found' | 'error';
+  data?: any;
+}
+
+export const loadUserSettings = async (userId: string): Promise<LoadUserSettingsResult> => {
+  if (!userId) return { status: 'error' };
   try {
     const loadPromise: Promise<firebase.firestore.DocumentSnapshot> = db.collection('users').doc(userId).get();
     const doc = await withTimeout(loadPromise, 8000); // 8-second timeout
-    return doc.exists ? doc.data() : null;
+    if (doc.exists) {
+        return { status: 'success', data: doc.data() };
+    } else {
+        return { status: 'not-found' };
+    }
   } catch (error) {
     console.error("Error loading user settings from Firestore:", error);
-    return null;
+    return { status: 'error' };
   }
 };

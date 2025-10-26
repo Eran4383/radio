@@ -186,45 +186,47 @@ export default function App({ initialUser }) {
     const loadAllSettings = async () => {
       setSettingsLoaded(false);
       if (user) {
-        const userSettings = await loadUserSettings(user.uid);
-        if (userSettings) {
-          setFavorites(userSettings.favorites || []);
-          setCustomOrder(userSettings.customOrder || []);
-          setTheme(userSettings.theme || 'dark');
-          setEqPreset(userSettings.eqPreset || 'flat');
-          setCustomEqSettings(userSettings.customEqSettings || { bass: 0, mid: 0, treble: 0 });
-          setVolume(userSettings.volume ?? 1);
-          setIsNowPlayingVisualizerEnabled(userSettings.isNowPlayingVisualizerEnabled ?? true);
-          setIsPlayerBarVisualizerEnabled(userSettings.isPlayerBarVisualizerEnabled ?? true);
-          setVisualizerStyle(userSettings.visualizerStyle || 'bars');
-          setIsStatusIndicatorEnabled(userSettings.isStatusIndicatorEnabled ?? true);
-          setIsVolumeControlVisible(userSettings.isVolumeControlVisible ?? true);
-          setShowNextSong(userSettings.showNextSong ?? true);
-          setGridSize(userSettings.gridSize || 3);
-          setIsMarqueeProgramEnabled(userSettings.isMarqueeProgramEnabled ?? true);
-          setIsMarqueeCurrentTrackEnabled(userSettings.isMarqueeCurrentTrackEnabled ?? true);
-          setIsMarqueeNextTrackEnabled(userSettings.isMarqueeNextTrackEnabled ?? true);
-          setMarqueeSpeed(userSettings.marqueeSpeed || 6);
-          setMarqueeDelay(userSettings.marqueeDelay || 3);
-          setFilter(userSettings.filter || StationFilter.All);
-          setSortOrder(userSettings.sortOrder || 'priority');
-        } else {
-          const guestSettings = {
-            favorites: safeJsonParse(localStorage.getItem('radio-favorites'), []),
-            customOrder: safeJsonParse(localStorage.getItem('radio-station-custom-order'), []),
-            theme: safeJsonParse(localStorage.getItem('radio-theme'), 'dark'),
-          };
-          await saveUserSettings(user.uid, guestSettings);
-          setFavorites(guestSettings.favorites);
-          setCustomOrder(guestSettings.customOrder);
-          setTheme(guestSettings.theme);
+        const result = await loadUserSettings(user.uid);
+  
+        switch (result.status) {
+          case 'success':
+            if (result.data) {
+                setFavorites(result.data.favorites || []);
+                setCustomOrder(result.data.customOrder || []);
+                setTheme(result.data.theme || 'dark');
+                setEqPreset(result.data.eqPreset || 'flat');
+                setCustomEqSettings(result.data.customEqSettings || { bass: 0, mid: 0, treble: 0 });
+                setVolume(result.data.volume ?? 1);
+                setIsNowPlayingVisualizerEnabled(result.data.isNowPlayingVisualizerEnabled ?? true);
+                setIsPlayerBarVisualizerEnabled(result.data.isPlayerBarVisualizerEnabled ?? true);
+                setVisualizerStyle(result.data.visualizerStyle || 'bars');
+                setIsStatusIndicatorEnabled(result.data.isStatusIndicatorEnabled ?? true);
+                setIsVolumeControlVisible(result.data.isVolumeControlVisible ?? true);
+                setShowNextSong(result.data.showNextSong ?? true);
+                setGridSize(result.data.gridSize || 3);
+                setIsMarqueeProgramEnabled(result.data.isMarqueeProgramEnabled ?? true);
+                setIsMarqueeCurrentTrackEnabled(result.data.isMarqueeCurrentTrackEnabled ?? true);
+                setIsMarqueeNextTrackEnabled(result.data.isMarqueeNextTrackEnabled ?? true);
+                setMarqueeSpeed(result.data.marqueeSpeed || 6);
+                setMarqueeDelay(result.data.marqueeDelay || 3);
+                setFilter(result.data.filter || StationFilter.All);
+                setSortOrder(result.data.sortOrder || 'priority');
+            }
+            break;
+          case 'not-found':
+            console.log("New user detected. Migrating local settings to cloud.");
+            await saveUserSettings(user.uid, allSettings);
+            break;
+          case 'error':
+            console.warn("Could not load user settings from cloud. Using local settings as fallback.");
+            break;
         }
       } else {
         loadGuestSettings();
       }
       setSettingsLoaded(true);
     };
-
+  
     loadAllSettings();
   }, [user, loadGuestSettings]);
 

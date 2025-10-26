@@ -221,51 +221,57 @@ export default function App({ initialUser }: AppProps) {
     const loadAllSettings = async () => {
       setSettingsLoaded(false);
       if (user) {
-        const userSettings = await loadUserSettings(user.uid);
-        if (userSettings) {
-          // Apply settings from Firestore
-          setFavorites(userSettings.favorites || []);
-          setCustomOrder(userSettings.customOrder || []);
-          setTheme(userSettings.theme || 'dark');
-          setEqPreset(userSettings.eqPreset || 'flat');
-          setCustomEqSettings(userSettings.customEqSettings || { bass: 0, mid: 0, treble: 0 });
-          setVolume(userSettings.volume ?? 1);
-          setIsNowPlayingVisualizerEnabled(userSettings.isNowPlayingVisualizerEnabled ?? true);
-          setIsPlayerBarVisualizerEnabled(userSettings.isPlayerBarVisualizerEnabled ?? true);
-          setVisualizerStyle(userSettings.visualizerStyle || 'bars');
-          setIsStatusIndicatorEnabled(userSettings.isStatusIndicatorEnabled ?? true);
-          setIsVolumeControlVisible(userSettings.isVolumeControlVisible ?? true);
-          setShowNextSong(userSettings.showNextSong ?? true);
-          setGridSize(userSettings.gridSize || 3);
-          setIsMarqueeProgramEnabled(userSettings.isMarqueeProgramEnabled ?? true);
-          setIsMarqueeCurrentTrackEnabled(userSettings.isMarqueeCurrentTrackEnabled ?? true);
-          setIsMarqueeNextTrackEnabled(userSettings.isMarqueeNextTrackEnabled ?? true);
-          setMarqueeSpeed(userSettings.marqueeSpeed || 6);
-          setMarqueeDelay(userSettings.marqueeDelay || 3);
-          setFilter(userSettings.filter || StationFilter.All);
-          setSortOrder(userSettings.sortOrder || 'priority');
-        } else {
-          // First login: migrate local settings to Firestore
-          const guestSettings = {
-            favorites: safeJsonParse(localStorage.getItem('radio-favorites'), []),
-            customOrder: safeJsonParse(localStorage.getItem('radio-station-custom-order'), []),
-            theme: safeJsonParse(localStorage.getItem('radio-theme'), 'dark'),
-            // ... load all other settings from localStorage
-          };
-          await saveUserSettings(user.uid, guestSettings);
-          // And apply them to the current state
-          setFavorites(guestSettings.favorites);
-          setCustomOrder(guestSettings.customOrder);
-          setTheme(guestSettings.theme as Theme);
+        // A user is logged in. Attempt to load their settings from the cloud.
+        const result = await loadUserSettings(user.uid);
+  
+        switch (result.status) {
+          case 'success':
+            // Successfully loaded settings from Firestore. Apply them.
+            if (result.data) {
+                setFavorites(result.data.favorites || []);
+                setCustomOrder(result.data.customOrder || []);
+                setTheme(result.data.theme || 'dark');
+                setEqPreset(result.data.eqPreset || 'flat');
+                setCustomEqSettings(result.data.customEqSettings || { bass: 0, mid: 0, treble: 0 });
+                setVolume(result.data.volume ?? 1);
+                setIsNowPlayingVisualizerEnabled(result.data.isNowPlayingVisualizerEnabled ?? true);
+                setIsPlayerBarVisualizerEnabled(result.data.isPlayerBarVisualizerEnabled ?? true);
+                setVisualizerStyle(result.data.visualizerStyle || 'bars');
+                setIsStatusIndicatorEnabled(result.data.isStatusIndicatorEnabled ?? true);
+                setIsVolumeControlVisible(result.data.isVolumeControlVisible ?? true);
+                setShowNextSong(result.data.showNextSong ?? true);
+                setGridSize(result.data.gridSize || 3);
+                setIsMarqueeProgramEnabled(result.data.isMarqueeProgramEnabled ?? true);
+                setIsMarqueeCurrentTrackEnabled(result.data.isMarqueeCurrentTrackEnabled ?? true);
+                setIsMarqueeNextTrackEnabled(result.data.isMarqueeNextTrackEnabled ?? true);
+                setMarqueeSpeed(result.data.marqueeSpeed || 6);
+                setMarqueeDelay(result.data.marqueeDelay || 3);
+                setFilter(result.data.filter || StationFilter.All);
+                setSortOrder(result.data.sortOrder || 'priority');
+            }
+            break;
+          case 'not-found':
+            // This is the user's first login. Migrate their current (guest) settings to the cloud.
+            console.log("New user detected. Migrating local settings to cloud.");
+            await saveUserSettings(user.uid, allSettings);
+            break;
+          case 'error':
+            // Failed to load from Firestore (e.g., timeout, network error).
+            // CRITICAL: Do nothing. The app will continue to use the existing state,
+            // which are the guest settings loaded from localStorage. This prevents the black screen.
+            console.warn("Could not load user settings from cloud. Using local settings as fallback.");
+            break;
         }
       } else {
-        // User is logged out, load from localStorage
+        // No user is logged in. Load settings from localStorage for the guest.
         loadGuestSettings();
       }
       setSettingsLoaded(true);
     };
-
+  
     loadAllSettings();
+    // The dependency array is intentionally minimal. `allSettings` is omitted to prevent loops.
+    // The `allSettings` used for migration will be the state at the time of login, which is correct.
   }, [user, loadGuestSettings]);
 
 
