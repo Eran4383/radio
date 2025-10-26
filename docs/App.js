@@ -114,8 +114,8 @@ export default function App({ initialUser }) {
   const [actionMenuState, setActionMenuState] = useState({ isOpen: false, songTitle: null });
 
   const [user, setUser] = useState(initialUser);
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
-
+  const [isSyncing, setIsSyncing] = useState(false);
+  
   const [favorites, setFavorites] = useState([]);
   const [customOrder, setCustomOrder] = useState([]);
   const [theme, setTheme] = useState('dark');
@@ -179,54 +179,52 @@ export default function App({ initialUser }) {
     const savedFilter = localStorage.getItem('radio-last-filter');
     setFilter((savedFilter && Object.values(StationFilter).includes(savedFilter)) ? savedFilter : StationFilter.All);
     setSortOrder(safeJsonParse(localStorage.getItem('radio-last-sort'), 'priority'));
-    setSettingsLoaded(true);
   }, []);
 
   useEffect(() => {
     const loadAllSettings = async () => {
-      setSettingsLoaded(false);
-      if (user) {
-        const result = await loadUserSettings(user.uid);
-  
-        switch (result.status) {
-          case 'success':
-            if (result.data) {
-                setFavorites(result.data.favorites || []);
-                setCustomOrder(result.data.customOrder || []);
-                setTheme(result.data.theme || 'dark');
-                setEqPreset(result.data.eqPreset || 'flat');
-                setCustomEqSettings(result.data.customEqSettings || { bass: 0, mid: 0, treble: 0 });
-                setVolume(result.data.volume ?? 1);
-                setIsNowPlayingVisualizerEnabled(result.data.isNowPlayingVisualizerEnabled ?? true);
-                setIsPlayerBarVisualizerEnabled(result.data.isPlayerBarVisualizerEnabled ?? true);
-                setVisualizerStyle(result.data.visualizerStyle || 'bars');
-                setIsStatusIndicatorEnabled(result.data.isStatusIndicatorEnabled ?? true);
-                setIsVolumeControlVisible(result.data.isVolumeControlVisible ?? true);
-                setShowNextSong(result.data.showNextSong ?? true);
-                setGridSize(result.data.gridSize || 3);
-                setIsMarqueeProgramEnabled(result.data.isMarqueeProgramEnabled ?? true);
-                setIsMarqueeCurrentTrackEnabled(result.data.isMarqueeCurrentTrackEnabled ?? true);
-                setIsMarqueeNextTrackEnabled(result.data.isMarqueeNextTrackEnabled ?? true);
-                setMarqueeSpeed(result.data.marqueeSpeed || 6);
-                setMarqueeDelay(result.data.marqueeDelay || 3);
-                setFilter(result.data.filter || StationFilter.All);
-                setSortOrder(result.data.sortOrder || 'priority');
+        setIsSyncing(true); // Show syncing overlay
+        if (user) {
+            const result = await loadUserSettings(user.uid);
+            switch (result.status) {
+                case 'success':
+                    if (result.data) {
+                        setFavorites(result.data.favorites || []);
+                        setCustomOrder(result.data.customOrder || []);
+                        setTheme(result.data.theme || 'dark');
+                        setEqPreset(result.data.eqPreset || 'flat');
+                        setCustomEqSettings(result.data.customEqSettings || { bass: 0, mid: 0, treble: 0 });
+                        setVolume(result.data.volume ?? 1);
+                        setIsNowPlayingVisualizerEnabled(result.data.isNowPlayingVisualizerEnabled ?? true);
+                        setIsPlayerBarVisualizerEnabled(result.data.isPlayerBarVisualizerEnabled ?? true);
+                        setVisualizerStyle(result.data.visualizerStyle || 'bars');
+                        setIsStatusIndicatorEnabled(result.data.isStatusIndicatorEnabled ?? true);
+                        setIsVolumeControlVisible(result.data.isVolumeControlVisible ?? true);
+                        setShowNextSong(result.data.showNextSong ?? true);
+                        setGridSize(result.data.gridSize || 3);
+                        setIsMarqueeProgramEnabled(result.data.isMarqueeProgramEnabled ?? true);
+                        setIsMarqueeCurrentTrackEnabled(result.data.isMarqueeCurrentTrackEnabled ?? true);
+                        setIsMarqueeNextTrackEnabled(result.data.isMarqueeNextTrackEnabled ?? true);
+                        setMarqueeSpeed(result.data.marqueeSpeed || 6);
+                        setMarqueeDelay(result.data.marqueeDelay || 3);
+                        setFilter(result.data.filter || StationFilter.All);
+                        setSortOrder(result.data.sortOrder || 'priority');
+                    }
+                    break;
+                case 'not-found':
+                    console.log("New user detected. Migrating local settings to cloud.");
+                    await saveUserSettings(user.uid, allSettings);
+                    break;
+                case 'error':
+                    console.warn("Could not load user settings from cloud. Using local settings as fallback.");
+                    break;
             }
-            break;
-          case 'not-found':
-            console.log("New user detected. Migrating local settings to cloud.");
-            await saveUserSettings(user.uid, allSettings);
-            break;
-          case 'error':
-            console.warn("Could not load user settings from cloud. Using local settings as fallback.");
-            break;
+        } else {
+            loadGuestSettings();
         }
-      } else {
-        loadGuestSettings();
-      }
-      setSettingsLoaded(true);
+        setIsSyncing(false); // Hide syncing overlay
     };
-  
+
     loadAllSettings();
   }, [user, loadGuestSettings]);
 
@@ -235,7 +233,8 @@ export default function App({ initialUser }) {
   }, 2000), []);
 
   useEffect(() => {
-    if (!settingsLoaded) return;
+    if (isSyncing) return; // Don't save while a sync/load operation is in progress
+
     if (user) {
       debouncedSave(allSettings, user.uid);
     } else {
@@ -247,23 +246,28 @@ export default function App({ initialUser }) {
       localStorage.setItem('radio-last-sort', sortOrder);
       localStorage.setItem('radio-favorites', JSON.stringify(favorites));
     }
-  }, [allSettings, user, settingsLoaded, debouncedSave, filter, sortOrder, favorites]);
+  }, [allSettings, user, isSyncing, debouncedSave, filter, sortOrder, favorites]);
   
   const handleLogin = async () => {
+    setIsSyncing(true);
     const loggedInUser = await signInWithGoogle();
     if (loggedInUser) {
       setUser(loggedInUser);
+    } else {
+      setIsSyncing(false); // User cancelled login
     }
   };
   
   const handleLogout = async () => {
     if (user) {
+      setIsSyncing(true);
       try {
         await saveUserSettings(user.uid, allSettings);
         await signOut();
         setUser(null);
       } catch (error) {
         console.error("Error during logout:", error);
+        setIsSyncing(false);
       }
     }
   };
@@ -339,16 +343,22 @@ export default function App({ initialUser }) {
     };
     loadData();
   }, []);
+  
+  useEffect(() => {
+    if (!user) {
+        loadGuestSettings();
+    }
+  }, []);
 
   useEffect(() => {
-    if (stations.length > 0 && playerState.status === 'IDLE' && settingsLoaded) {
+    if (stations.length > 0 && playerState.status === 'IDLE' && !isSyncing) {
         const lastStationUuid = localStorage.getItem('radio-last-station-uuid');
         if (lastStationUuid) {
             const station = stations.find(s => s.stationuuid === lastStationUuid);
             if (station) dispatch({ type: 'SELECT_STATION', payload: station });
         }
     }
-  }, [stations, playerState.status, settingsLoaded]);
+  }, [stations, playerState.status, isSyncing]);
 
   useEffect(() => {
       if (playerState.station) {
@@ -508,10 +518,6 @@ export default function App({ initialUser }) {
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
-  if (!settingsLoaded) {
-    return null;
-  }
-
   return (
     React.createElement("div", { className: "min-h-screen bg-bg-primary text-text-primary flex flex-col" },
       React.createElement("header", { className: "p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md" },
@@ -554,6 +560,11 @@ export default function App({ initialUser }) {
       isUpdateAvailable && React.createElement("div", { className: "fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up" },
         React.createElement("p", { className: "text-sm font-semibold" }, "עדכון חדש זמין"),
         React.createElement("button", { onClick: handleUpdateClick, className: "py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold" }, "רענן")
+      ),
+       isSyncing && (
+        React.createElement("div", { className: "fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center transition-opacity duration-300" },
+            React.createElement("div", { className: "loader-spinner" })
+        )
       )
     )
   );

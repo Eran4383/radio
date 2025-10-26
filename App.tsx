@@ -143,10 +143,8 @@ export default function App({ initialUser }: AppProps) {
   const [actionMenuState, setActionMenuState] = useState<{isOpen: boolean; songTitle: string | null}>({ isOpen: false, songTitle: null });
 
   const [user, setUser] = useState<firebase.User | null>(initialUser);
+  const [isSyncing, setIsSyncing] = useState(false);
   
-  // Flag to indicate if initial settings have been loaded, preventing race conditions
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
-
   // --- Centralized Settings State with default values for guest user ---
   const [favorites, setFavorites] = useState<string[]>([]);
   const [customOrder, setCustomOrder] = useState<string[]>([]);
@@ -213,65 +211,54 @@ export default function App({ initialUser }: AppProps) {
     const savedFilter = localStorage.getItem('radio-last-filter');
     setFilter((savedFilter && Object.values(StationFilter).includes(savedFilter as StationFilter)) ? savedFilter as StationFilter : StationFilter.All);
     setSortOrder(safeJsonParse(localStorage.getItem('radio-last-sort'), 'priority') as SortOrder);
-    setSettingsLoaded(true);
   }, []);
 
   // Effect to load settings based on user state. This is the core of the new data separation logic.
   useEffect(() => {
     const loadAllSettings = async () => {
-      setSettingsLoaded(false);
-      if (user) {
-        // A user is logged in. Attempt to load their settings from the cloud.
-        const result = await loadUserSettings(user.uid);
-  
-        switch (result.status) {
-          case 'success':
-            // Successfully loaded settings from Firestore. Apply them.
-            if (result.data) {
-                setFavorites(result.data.favorites || []);
-                setCustomOrder(result.data.customOrder || []);
-                setTheme(result.data.theme || 'dark');
-                setEqPreset(result.data.eqPreset || 'flat');
-                setCustomEqSettings(result.data.customEqSettings || { bass: 0, mid: 0, treble: 0 });
-                setVolume(result.data.volume ?? 1);
-                setIsNowPlayingVisualizerEnabled(result.data.isNowPlayingVisualizerEnabled ?? true);
-                setIsPlayerBarVisualizerEnabled(result.data.isPlayerBarVisualizerEnabled ?? true);
-                setVisualizerStyle(result.data.visualizerStyle || 'bars');
-                setIsStatusIndicatorEnabled(result.data.isStatusIndicatorEnabled ?? true);
-                setIsVolumeControlVisible(result.data.isVolumeControlVisible ?? true);
-                setShowNextSong(result.data.showNextSong ?? true);
-                setGridSize(result.data.gridSize || 3);
-                setIsMarqueeProgramEnabled(result.data.isMarqueeProgramEnabled ?? true);
-                setIsMarqueeCurrentTrackEnabled(result.data.isMarqueeCurrentTrackEnabled ?? true);
-                setIsMarqueeNextTrackEnabled(result.data.isMarqueeNextTrackEnabled ?? true);
-                setMarqueeSpeed(result.data.marqueeSpeed || 6);
-                setMarqueeDelay(result.data.marqueeDelay || 3);
-                setFilter(result.data.filter || StationFilter.All);
-                setSortOrder(result.data.sortOrder || 'priority');
+        setIsSyncing(true); // Show syncing overlay
+        if (user) {
+            const result = await loadUserSettings(user.uid);
+            switch (result.status) {
+                case 'success':
+                    if (result.data) {
+                        setFavorites(result.data.favorites || []);
+                        setCustomOrder(result.data.customOrder || []);
+                        setTheme(result.data.theme || 'dark');
+                        setEqPreset(result.data.eqPreset || 'flat');
+                        setCustomEqSettings(result.data.customEqSettings || { bass: 0, mid: 0, treble: 0 });
+                        setVolume(result.data.volume ?? 1);
+                        setIsNowPlayingVisualizerEnabled(result.data.isNowPlayingVisualizerEnabled ?? true);
+                        setIsPlayerBarVisualizerEnabled(result.data.isPlayerBarVisualizerEnabled ?? true);
+                        setVisualizerStyle(result.data.visualizerStyle || 'bars');
+                        setIsStatusIndicatorEnabled(result.data.isStatusIndicatorEnabled ?? true);
+                        setIsVolumeControlVisible(result.data.isVolumeControlVisible ?? true);
+                        setShowNextSong(result.data.showNextSong ?? true);
+                        setGridSize(result.data.gridSize || 3);
+                        setIsMarqueeProgramEnabled(result.data.isMarqueeProgramEnabled ?? true);
+                        setIsMarqueeCurrentTrackEnabled(result.data.isMarqueeCurrentTrackEnabled ?? true);
+                        setIsMarqueeNextTrackEnabled(result.data.isMarqueeNextTrackEnabled ?? true);
+                        setMarqueeSpeed(result.data.marqueeSpeed || 6);
+                        setMarqueeDelay(result.data.marqueeDelay || 3);
+                        setFilter(result.data.filter || StationFilter.All);
+                        setSortOrder(result.data.sortOrder || 'priority');
+                    }
+                    break;
+                case 'not-found':
+                    console.log("New user detected. Migrating local settings to cloud.");
+                    await saveUserSettings(user.uid, allSettings);
+                    break;
+                case 'error':
+                    console.warn("Could not load user settings from cloud. Using local settings as fallback.");
+                    break;
             }
-            break;
-          case 'not-found':
-            // This is the user's first login. Migrate their current (guest) settings to the cloud.
-            console.log("New user detected. Migrating local settings to cloud.");
-            await saveUserSettings(user.uid, allSettings);
-            break;
-          case 'error':
-            // Failed to load from Firestore (e.g., timeout, network error).
-            // CRITICAL: Do nothing. The app will continue to use the existing state,
-            // which are the guest settings loaded from localStorage. This prevents the black screen.
-            console.warn("Could not load user settings from cloud. Using local settings as fallback.");
-            break;
+        } else {
+            loadGuestSettings();
         }
-      } else {
-        // No user is logged in. Load settings from localStorage for the guest.
-        loadGuestSettings();
-      }
-      setSettingsLoaded(true);
+        setIsSyncing(false); // Hide syncing overlay
     };
-  
+
     loadAllSettings();
-    // The dependency array is intentionally minimal. `allSettings` is omitted to prevent loops.
-    // The `allSettings` used for migration will be the state at the time of login, which is correct.
   }, [user, loadGuestSettings]);
 
 
@@ -282,40 +269,41 @@ export default function App({ initialUser }: AppProps) {
 
   // Effect to save settings whenever they change
   useEffect(() => {
-    // Only save if the initial settings have been loaded to prevent overwriting
-    if (!settingsLoaded) return;
+    if (isSyncing) return; // Don't save while a sync/load operation is in progress
 
     if (user) {
-      // User is logged in, save to Firestore
       debouncedSave(allSettings, user.uid);
     } else {
-      // User is a guest, save to localStorage
       Object.entries(allSettings).forEach(([key, value]) => {
         const lsKey = `radio-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
         localStorage.setItem(lsKey, JSON.stringify(value));
       });
-      // Legacy keys for simpler settings
       localStorage.setItem('radio-last-filter', filter);
       localStorage.setItem('radio-last-sort', sortOrder);
       localStorage.setItem('radio-favorites', JSON.stringify(favorites));
     }
-  }, [allSettings, user, settingsLoaded, debouncedSave, filter, sortOrder, favorites]);
+  }, [allSettings, user, isSyncing, debouncedSave, filter, sortOrder, favorites]);
   
   const handleLogin = async () => {
+    setIsSyncing(true);
     const loggedInUser = await signInWithGoogle();
     if (loggedInUser) {
-      setUser(loggedInUser); // This state change will trigger the useEffect to load user settings
+      setUser(loggedInUser); // This will trigger the useEffect to load user settings
+    } else {
+      setIsSyncing(false); // User cancelled login
     }
   };
   
   const handleLogout = async () => {
     if (user) {
+      setIsSyncing(true);
       try {
         await saveUserSettings(user.uid, allSettings); // Final save before logging out
         await signOut();
-        setUser(null); // This state change will trigger the useEffect to load guest settings. No page reload needed.
+        setUser(null); // This state change will trigger the useEffect to load guest settings.
       } catch (error) {
         console.error("Error during logout:", error);
+        setIsSyncing(false);
       }
     }
   };
@@ -392,16 +380,25 @@ export default function App({ initialUser }: AppProps) {
     };
     loadData();
   }, []);
+  
+  // Load initial guest settings and last played station on first load
+  useEffect(() => {
+    if (!user) {
+        loadGuestSettings();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 
   useEffect(() => {
-    if (stations.length > 0 && playerState.status === 'IDLE' && settingsLoaded) {
+    if (stations.length > 0 && playerState.status === 'IDLE' && !isSyncing) {
         const lastStationUuid = localStorage.getItem('radio-last-station-uuid');
         if (lastStationUuid) {
             const station = stations.find(s => s.stationuuid === lastStationUuid);
             if (station) dispatch({ type: 'SELECT_STATION', payload: station });
         }
     }
-  }, [stations, playerState.status, settingsLoaded]);
+  }, [stations, playerState.status, isSyncing]);
 
   useEffect(() => {
       if (playerState.station) {
@@ -561,12 +558,6 @@ export default function App({ initialUser }: AppProps) {
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
-  if (!settingsLoaded) {
-    // While settings are loading for the first time, don't render the main UI
-    // to prevent flicker. The loader in index.html covers this.
-    return null;
-  }
-
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col">
       <header className="p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md">
@@ -603,11 +594,15 @@ export default function App({ initialUser }: AppProps) {
         )}
       </main>
       <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} currentTheme={theme} onThemeChange={setTheme} currentEqPreset={eqPreset} onEqPresetChange={setEqPreset} isNowPlayingVisualizerEnabled={isNowPlayingVisualizerEnabled} onNowPlayingVisualizerEnabledChange={setIsNowPlayingVisualizerEnabled} isPlayerBarVisualizerEnabled={isPlayerBarVisualizerEnabled} onPlayerBarVisualizerEnabledChange={setIsPlayerBarVisualizerEnabled} isStatusIndicatorEnabled={isStatusIndicatorEnabled} onStatusIndicatorEnabledChange={setIsStatusIndicatorEnabled} isVolumeControlVisible={isVolumeControlVisible} onVolumeControlVisibleChange={setIsVolumeControlVisible} showNextSong={showNextSong} onShowNextSongChange={setShowNextSong} customEqSettings={customEqSettings} onCustomEqChange={setCustomEqSettings} gridSize={gridSize} onGridSizeChange={setGridSize} isMarqueeProgramEnabled={isMarqueeProgramEnabled} onMarqueeProgramEnabledChange={setIsMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} onMarqueeCurrentTrackEnabledChange={setIsMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} onMarqueeNextTrackEnabledChange={setIsMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onMarqueeSpeedChange={setMarqueeSpeed} marqueeDelay={marqueeDelay} onMarqueeDelayChange={setMarqueeDelay} updateStatus={updateStatus} onManualUpdateCheck={handleManualUpdateCheck} user={user} onLogin={handleLogin} onLogout={handleLogout} />
-      {/* FIX: Pass the correct 'openActionMenu' function to the 'onOpenActionMenu' prop to resolve the ReferenceError. */}
       {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={volume} onVolumeChange={setVolume} trackInfo={trackInfo} showNextSong={showNextSong} frequencyData={frequencyData} visualizerStyle={visualizerStyle} isVisualizerEnabled={isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={isVolumeControlVisible} marqueeDelay={marqueeDelay} isMarqueeProgramEnabled={isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
-       <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
+      <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
       <Player playerState={playerState} onPlay={handlePlay} onPause={handlePause} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} onPlayerEvent={(event) => dispatch(event)} eqPreset={eqPreset} customEqSettings={customEqSettings} volume={volume} onVolumeChange={setVolume} trackInfo={trackInfo} showNextSong={showNextSong} onOpenNowPlaying={() => setIsNowPlayingOpen(true)} setFrequencyData={setFrequencyData} frequencyData={frequencyData} isVisualizerEnabled={isPlayerBarVisualizerEnabled} marqueeDelay={marqueeDelay} isMarqueeProgramEnabled={isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onOpenActionMenu={openActionMenu} />
       {isUpdateAvailable && ( <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up"><p className="text-sm font-semibold">עדכון חדש זמין</p><button onClick={handleUpdateClick} className="py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold">רענן</button></div> )}
+       {isSyncing && (
+        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center transition-opacity duration-300">
+            <div className="loader-spinner"></div>
+        </div>
+      )}
     </div>
   );
 }
