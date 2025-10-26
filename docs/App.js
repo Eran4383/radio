@@ -12,7 +12,7 @@ import { getCurrentProgram } from './services/scheduleService.js';
 import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/stationSpecificService.js';
 import StationListSkeleton from './components/StationListSkeleton.js';
 import { getCategory } from './services/categoryService.js';
-import { auth, signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase.js';
+import { signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase.js';
 
 const StationFilter = {
   All: 'הכל',
@@ -98,7 +98,7 @@ const CATEGORY_SORTS = [
     { order: 'category_nameStructure', label: 'שם' },
 ];
 
-export default function App() {
+export default function App({ initialUser }) {
   const [stations, setStations] = useState([]);
   const [playerState, dispatch] = useReducer(playerReducer, initialPlayerState);
   
@@ -113,34 +113,29 @@ export default function App() {
   const PINCH_THRESHOLD = 40;
   const [actionMenuState, setActionMenuState] = useState({ isOpen: false, songTitle: null });
 
-  const [user, setUser] = useState(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [user, setUser] = useState(initialUser);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
-  const [favorites, setFavorites] = useState(() => safeJsonParse(localStorage.getItem('radio-favorites'), []));
-  const [customOrder, setCustomOrder] = useState(() => safeJsonParse(localStorage.getItem('radio-station-custom-order'), []));
-  const [theme, setTheme] = useState(() => safeJsonParse(localStorage.getItem('radio-theme'), 'dark'));
-  const [eqPreset, setEqPreset] = useState(() => safeJsonParse(localStorage.getItem('radio-eq'), 'flat'));
-  const [customEqSettings, setCustomEqSettings] = useState(() => safeJsonParse(localStorage.getItem('radio-custom-eq'), { bass: 0, mid: 0, treble: 0 }));
-  const [volume, setVolume] = useState(() => safeJsonParse(localStorage.getItem('radio-volume'), 1));
-  const [isNowPlayingVisualizerEnabled, setIsNowPlayingVisualizerEnabled] = useState(() => safeJsonParse(localStorage.getItem('radio-nowplaying-visualizer-enabled'), true));
-  const [isPlayerBarVisualizerEnabled, setIsPlayerBarVisualizerEnabled] = useState(() => safeJsonParse(localStorage.getItem('radio-playerbar-visualizer-enabled'), true));
-  const [visualizerStyle, setVisualizerStyle] = useState(() => safeJsonParse(localStorage.getItem('radio-visualizer-style'), 'bars'));
-  const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState(() => safeJsonParse(localStorage.getItem('radio-status-indicator-enabled'), true));
-  const [isVolumeControlVisible, setIsVolumeControlVisible] = useState(() => safeJsonParse(localStorage.getItem('radio-volume-control-visible'), true));
-  const [showNextSong, setShowNextSong] = useState(() => safeJsonParse(localStorage.getItem('radio-show-next-song'), true));
-  const [gridSize, setGridSize] = useState(() => safeJsonParse(localStorage.getItem('radio-grid-size'), 3));
-  const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState(() => safeJsonParse(localStorage.getItem('radio-marquee-program-enabled'), true));
-  const [isMarqueeCurrentTrackEnabled, setIsMarqueeCurrentTrackEnabled] = useState(() => safeJsonParse(localStorage.getItem('radio-marquee-current-enabled'), true));
-  const [isMarqueeNextTrackEnabled, setIsMarqueeNextTrackEnabled] = useState(() => safeJsonParse(localStorage.getItem('radio-marquee-next-enabled'), true));
-  const [marqueeSpeed, setMarqueeSpeed] = useState(() => safeJsonParse(localStorage.getItem('radio-marquee-speed'), 6));
-  const [marqueeDelay, setMarqueeDelay] = useState(() => safeJsonParse(localStorage.getItem('radio-marquee-delay'), 3));
-  
-  const [filter, setFilter] = useState(() => {
-    const saved = localStorage.getItem('radio-last-filter');
-    return (saved && Object.values(StationFilter).includes(saved)) ? saved : StationFilter.All;
-  });
-  
-  const [sortOrder, setSortOrder] = useState(() => safeJsonParse(localStorage.getItem('radio-last-sort'), 'priority'));
+  const [favorites, setFavorites] = useState([]);
+  const [customOrder, setCustomOrder] = useState([]);
+  const [theme, setTheme] = useState('dark');
+  const [eqPreset, setEqPreset] = useState('flat');
+  const [customEqSettings, setCustomEqSettings] = useState({ bass: 0, mid: 0, treble: 0 });
+  const [volume, setVolume] = useState(1);
+  const [isNowPlayingVisualizerEnabled, setIsNowPlayingVisualizerEnabled] = useState(true);
+  const [isPlayerBarVisualizerEnabled, setIsPlayerBarVisualizerEnabled] = useState(true);
+  const [visualizerStyle, setVisualizerStyle] = useState('bars');
+  const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState(true);
+  const [isVolumeControlVisible, setIsVolumeControlVisible] = useState(true);
+  const [showNextSong, setShowNextSong] = useState(true);
+  const [gridSize, setGridSize] = useState(3);
+  const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState(true);
+  const [isMarqueeCurrentTrackEnabled, setIsMarqueeCurrentTrackEnabled] = useState(true);
+  const [isMarqueeNextTrackEnabled, setIsMarqueeNextTrackEnabled] = useState(true);
+  const [marqueeSpeed, setMarqueeSpeed] = useState(6);
+  const [marqueeDelay, setMarqueeDelay] = useState(3);
+  const [filter, setFilter] = useState(StationFilter.All);
+  const [sortOrder, setSortOrder] = useState('priority');
 
   const isFavorite = useCallback((stationUuid) => favorites.includes(stationUuid), [favorites]);
 
@@ -161,17 +156,37 @@ export default function App() {
     isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
     marqueeSpeed, marqueeDelay, filter, sortOrder
   ]);
-  
-  const settingsRef = useRef(allSettings);
-  useEffect(() => {
-    settingsRef.current = allSettings;
-  }, [allSettings]);
+
+  const loadGuestSettings = useCallback(() => {
+    setFavorites(safeJsonParse(localStorage.getItem('radio-favorites'), []));
+    setCustomOrder(safeJsonParse(localStorage.getItem('radio-station-custom-order'), []));
+    setTheme(safeJsonParse(localStorage.getItem('radio-theme'), 'dark'));
+    setEqPreset(safeJsonParse(localStorage.getItem('radio-eq'), 'flat'));
+    setCustomEqSettings(safeJsonParse(localStorage.getItem('radio-custom-eq'), { bass: 0, mid: 0, treble: 0 }));
+    setVolume(safeJsonParse(localStorage.getItem('radio-volume'), 1));
+    setIsNowPlayingVisualizerEnabled(safeJsonParse(localStorage.getItem('radio-nowplaying-visualizer-enabled'), true));
+    setIsPlayerBarVisualizerEnabled(safeJsonParse(localStorage.getItem('radio-playerbar-visualizer-enabled'), true));
+    setVisualizerStyle(safeJsonParse(localStorage.getItem('radio-visualizer-style'), 'bars'));
+    setIsStatusIndicatorEnabled(safeJsonParse(localStorage.getItem('radio-status-indicator-enabled'), true));
+    setIsVolumeControlVisible(safeJsonParse(localStorage.getItem('radio-volume-control-visible'), true));
+    setShowNextSong(safeJsonParse(localStorage.getItem('radio-show-next-song'), true));
+    setGridSize(safeJsonParse(localStorage.getItem('radio-grid-size'), 3));
+    setIsMarqueeProgramEnabled(safeJsonParse(localStorage.getItem('radio-marquee-program-enabled'), true));
+    setIsMarqueeCurrentTrackEnabled(safeJsonParse(localStorage.getItem('radio-marquee-current-enabled'), true));
+    setIsMarqueeNextTrackEnabled(safeJsonParse(localStorage.getItem('radio-marquee-next-enabled'), true));
+    setMarqueeSpeed(safeJsonParse(localStorage.getItem('radio-marquee-speed'), 6));
+    setMarqueeDelay(safeJsonParse(localStorage.getItem('radio-marquee-delay'), 3));
+    const savedFilter = localStorage.getItem('radio-last-filter');
+    setFilter((savedFilter && Object.values(StationFilter).includes(savedFilter)) ? savedFilter : StationFilter.All);
+    setSortOrder(safeJsonParse(localStorage.getItem('radio-last-sort'), 'priority'));
+    setSettingsLoaded(true);
+  }, []);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
-      setIsAuthLoading(true);
-      if (firebaseUser) {
-        const userSettings = await loadUserSettings(firebaseUser.uid);
+    const loadAllSettings = async () => {
+      setSettingsLoaded(false);
+      if (user) {
+        const userSettings = await loadUserSettings(user.uid);
         if (userSettings) {
           setFavorites(userSettings.favorites || []);
           setCustomOrder(userSettings.customOrder || []);
@@ -194,53 +209,43 @@ export default function App() {
           setFilter(userSettings.filter || StationFilter.All);
           setSortOrder(userSettings.sortOrder || 'priority');
         } else {
-          await saveUserSettings(firebaseUser.uid, settingsRef.current);
+          const guestSettings = {
+            favorites: safeJsonParse(localStorage.getItem('radio-favorites'), []),
+            customOrder: safeJsonParse(localStorage.getItem('radio-station-custom-order'), []),
+            theme: safeJsonParse(localStorage.getItem('radio-theme'), 'dark'),
+          };
+          await saveUserSettings(user.uid, guestSettings);
+          setFavorites(guestSettings.favorites);
+          setCustomOrder(guestSettings.customOrder);
+          setTheme(guestSettings.theme);
         }
       } else {
-        setFavorites(safeJsonParse(localStorage.getItem('radio-favorites'), []));
-        setCustomOrder(safeJsonParse(localStorage.getItem('radio-station-custom-order'), []));
-        setTheme(safeJsonParse(localStorage.getItem('radio-theme'), 'dark'));
-        setEqPreset(safeJsonParse(localStorage.getItem('radio-eq'), 'flat'));
-        setCustomEqSettings(safeJsonParse(localStorage.getItem('radio-custom-eq'), { bass: 0, mid: 0, treble: 0 }));
-        setVolume(safeJsonParse(localStorage.getItem('radio-volume'), 1));
-        setIsNowPlayingVisualizerEnabled(safeJsonParse(localStorage.getItem('radio-nowplaying-visualizer-enabled'), true));
-        setIsPlayerBarVisualizerEnabled(safeJsonParse(localStorage.getItem('radio-playerbar-visualizer-enabled'), true));
-        setVisualizerStyle(safeJsonParse(localStorage.getItem('radio-visualizer-style'), 'bars'));
-        setIsStatusIndicatorEnabled(safeJsonParse(localStorage.getItem('radio-status-indicator-enabled'), true));
-        setIsVolumeControlVisible(safeJsonParse(localStorage.getItem('radio-volume-control-visible'), true));
-        setShowNextSong(safeJsonParse(localStorage.getItem('radio-show-next-song'), true));
-        setGridSize(safeJsonParse(localStorage.getItem('radio-grid-size'), 3));
-        setIsMarqueeProgramEnabled(safeJsonParse(localStorage.getItem('radio-marquee-program-enabled'), true));
-        setIsMarqueeCurrentTrackEnabled(safeJsonParse(localStorage.getItem('radio-marquee-current-enabled'), true));
-        setIsMarqueeNextTrackEnabled(safeJsonParse(localStorage.getItem('radio-marquee-next-enabled'), true));
-        setMarqueeSpeed(safeJsonParse(localStorage.getItem('radio-marquee-speed'), 6));
-        setMarqueeDelay(safeJsonParse(localStorage.getItem('radio-marquee-delay'), 3));
-        const savedFilter = localStorage.getItem('radio-last-filter');
-        setFilter((savedFilter && Object.values(StationFilter).includes(savedFilter)) ? savedFilter : StationFilter.All);
-        setSortOrder(safeJsonParse(localStorage.getItem('radio-last-sort'), 'priority'));
+        loadGuestSettings();
       }
-      setUser(firebaseUser);
-      setIsAuthLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
+      setSettingsLoaded(true);
+    };
+
+    loadAllSettings();
+  }, [user, loadGuestSettings]);
 
   const debouncedSave = useCallback(debounce((settings, userId) => {
     saveUserSettings(userId, settings);
   }, 2000), []);
 
   useEffect(() => {
-    if (user && !isAuthLoading) {
+    if (!settingsLoaded) return;
+    if (user) {
       debouncedSave(allSettings, user.uid);
+    } else {
+      Object.entries(allSettings).forEach(([key, value]) => {
+        const lsKey = `radio-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
+        localStorage.setItem(lsKey, JSON.stringify(value));
+      });
+      localStorage.setItem('radio-last-filter', filter);
+      localStorage.setItem('radio-last-sort', sortOrder);
+      localStorage.setItem('radio-favorites', JSON.stringify(favorites));
     }
-    Object.entries(allSettings).forEach(([key, value]) => {
-      const lsKey = `radio-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
-      localStorage.setItem(lsKey, JSON.stringify(value));
-    });
-    localStorage.setItem('radio-last-filter', filter);
-    localStorage.setItem('radio-last-sort', sortOrder);
-    localStorage.setItem('radio-favorites', JSON.stringify(favorites));
-  }, [allSettings, user, isAuthLoading, debouncedSave, filter, sortOrder, favorites]);
+  }, [allSettings, user, settingsLoaded, debouncedSave, filter, sortOrder, favorites]);
   
   const handleLogin = async () => {
     const loggedInUser = await signInWithGoogle();
@@ -252,11 +257,9 @@ export default function App() {
   const handleLogout = async () => {
     if (user) {
       try {
-        // Save latest settings before signing out
         await saveUserSettings(user.uid, allSettings);
         await signOut();
-        // Force a reload to ensure the UI updates and resets to the guest state from localStorage.
-        window.location.reload();
+        setUser(null);
       } catch (error) {
         console.error("Error during logout:", error);
       }
@@ -336,14 +339,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (stations.length > 0 && playerState.status === 'IDLE') {
+    if (stations.length > 0 && playerState.status === 'IDLE' && settingsLoaded) {
         const lastStationUuid = localStorage.getItem('radio-last-station-uuid');
         if (lastStationUuid) {
             const station = stations.find(s => s.stationuuid === lastStationUuid);
             if (station) dispatch({ type: 'SELECT_STATION', payload: station });
         }
     }
-  }, [stations, playerState.status]);
+  }, [stations, playerState.status, settingsLoaded]);
 
   useEffect(() => {
       if (playerState.station) {
@@ -502,6 +505,10 @@ export default function App() {
   
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
+
+  if (!settingsLoaded) {
+    return null;
+  }
 
   return (
     React.createElement("div", { className: "min-h-screen bg-bg-primary text-text-primary flex flex-col" },
