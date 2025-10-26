@@ -12,7 +12,7 @@ import { getCurrentProgram } from './services/scheduleService.js';
 import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/stationSpecificService.js';
 import StationListSkeleton from './components/StationListSkeleton.js';
 import { getCategory } from './services/categoryService.js';
-import { getAuth, signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase.js';
+import { auth, signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase.js';
 
 const StationFilter = {
   All: 'הכל',
@@ -148,8 +148,26 @@ export default function App() {
   const waitingWorkerRef = useRef(null);
   const [updateStatus, setUpdateStatus] = useState('idle');
 
+  const allSettings = useMemo(() => ({
+    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
+    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
+    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
+    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
+    marqueeSpeed, marqueeDelay, filter, sortOrder
+  }), [
+    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
+    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
+    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
+    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
+    marqueeSpeed, marqueeDelay, filter, sortOrder
+  ]);
+  
+  const settingsRef = useRef(allSettings);
   useEffect(() => {
-    const auth = getAuth();
+    settingsRef.current = allSettings;
+  }, [allSettings]);
+
+  useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
       setIsAuthLoading(true);
       if (firebaseUser) {
@@ -176,14 +194,7 @@ export default function App() {
           setFilter(userSettings.filter || StationFilter.All);
           setSortOrder(userSettings.sortOrder || 'priority');
         } else {
-          const localSettings = {
-            favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-            isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-            isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-            isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-            marqueeSpeed, marqueeDelay, filter, sortOrder
-          };
-          await saveUserSettings(firebaseUser.uid, localSettings);
+          await saveUserSettings(firebaseUser.uid, settingsRef.current);
         }
       } else {
         setFavorites(safeJsonParse(localStorage.getItem('radio-favorites'), []));
@@ -219,63 +230,37 @@ export default function App() {
   }, 2000), []);
 
   useEffect(() => {
-    if (isAuthLoading) return;
-
-    const currentSettings = {
-        favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-        isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-        isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-        isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-        marqueeSpeed, marqueeDelay, filter, sortOrder
-    };
-
-    if (user) {
-        debouncedSave(currentSettings, user.uid);
-    } else {
-        localStorage.setItem('radio-favorites', JSON.stringify(favorites));
-        localStorage.setItem('radio-station-custom-order', JSON.stringify(customOrder));
-        localStorage.setItem('radio-theme', theme);
-        localStorage.setItem('radio-eq', eqPreset);
-        localStorage.setItem('radio-custom-eq', JSON.stringify(customEqSettings));
-        localStorage.setItem('radio-volume', JSON.stringify(volume));
-        localStorage.setItem('radio-nowplaying-visualizer-enabled', JSON.stringify(isNowPlayingVisualizerEnabled));
-        localStorage.setItem('radio-playerbar-visualizer-enabled', JSON.stringify(isPlayerBarVisualizerEnabled));
-        localStorage.setItem('radio-visualizer-style', visualizerStyle);
-        localStorage.setItem('radio-status-indicator-enabled', JSON.stringify(isStatusIndicatorEnabled));
-        localStorage.setItem('radio-volume-control-visible', JSON.stringify(isVolumeControlVisible));
-        localStorage.setItem('radio-show-next-song', JSON.stringify(showNextSong));
-        localStorage.setItem('radio-grid-size', JSON.stringify(gridSize));
-        localStorage.setItem('radio-marquee-program-enabled', JSON.stringify(isMarqueeProgramEnabled));
-        localStorage.setItem('radio-marquee-current-enabled', JSON.stringify(isMarqueeCurrentTrackEnabled));
-        localStorage.setItem('radio-marquee-next-enabled', JSON.stringify(isMarqueeNextTrackEnabled));
-        localStorage.setItem('radio-marquee-speed', JSON.stringify(marqueeSpeed));
-        localStorage.setItem('radio-marquee-delay', JSON.stringify(marqueeDelay));
-        localStorage.setItem('radio-last-filter', filter);
-        localStorage.setItem('radio-last-sort', sortOrder);
+    if (user && !isAuthLoading) {
+      debouncedSave(allSettings, user.uid);
     }
-  }, [
-      favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-      isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-      isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-      isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-      marqueeSpeed, marqueeDelay, filter, sortOrder,
-      user, isAuthLoading, debouncedSave
-  ]);
+    Object.entries(allSettings).forEach(([key, value]) => {
+      const lsKey = `radio-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
+      localStorage.setItem(lsKey, JSON.stringify(value));
+    });
+    localStorage.setItem('radio-last-filter', filter);
+    localStorage.setItem('radio-last-sort', sortOrder);
+    localStorage.setItem('radio-favorites', JSON.stringify(favorites));
+  }, [allSettings, user, isAuthLoading, debouncedSave, filter, sortOrder, favorites]);
   
   const handleLogin = async () => {
     const loggedInUser = await signInWithGoogle();
     if (loggedInUser) {
-      // The onAuthStateChanged listener will handle the state update.
+      setUser(loggedInUser);
     }
   };
   
   const handleLogout = async () => {
+    if (user) {
       try {
+        // Save latest settings before signing out
+        await saveUserSettings(user.uid, allSettings);
         await signOut();
-        // onAuthStateChanged will handle resetting the state to guest.
+        // Force a reload to ensure the UI updates and resets to the guest state from localStorage.
+        window.location.reload();
       } catch (error) {
         console.error("Error during logout:", error);
       }
+    }
   };
 
   useEffect(() => {
@@ -544,7 +529,7 @@ export default function App() {
         )
       ),
       React.createElement("main", { className: "flex-grow pb-48", onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd },
-        isLoading || isAuthLoading ? React.createElement(StationListSkeleton, null) :
+        isLoading ? React.createElement(StationListSkeleton, null) :
         error ? React.createElement("p", { className: "text-center text-red-400 p-4" }, error) :
         displayedStations.length > 0 ?
             React.createElement(StationList, { stations: displayedStations, currentStation: playerState.station, onSelectStation: handleSelectStation, isFavorite: isFavorite, toggleFavorite: toggleFavorite, onReorder: handleReorder, isStreamActive: playerState.status === 'PLAYING', isStatusIndicatorEnabled: isStatusIndicatorEnabled, gridSize: gridSize, sortOrder: sortOrder }) :
@@ -556,7 +541,7 @@ export default function App() {
       React.createElement(SettingsPanel, { isOpen: isSettingsOpen, onClose: () => setIsSettingsOpen(false), currentTheme: theme, onThemeChange: setTheme, currentEqPreset: eqPreset, onEqPresetChange: setEqPreset, isNowPlayingVisualizerEnabled: isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange: setIsNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled: isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange: setIsPlayerBarVisualizerEnabled, isStatusIndicatorEnabled: isStatusIndicatorEnabled, onStatusIndicatorEnabledChange: setIsStatusIndicatorEnabled, isVolumeControlVisible: isVolumeControlVisible, onVolumeControlVisibleChange: setIsVolumeControlVisible, showNextSong: showNextSong, onShowNextSongChange: setShowNextSong, customEqSettings: customEqSettings, onCustomEqChange: setCustomEqSettings, gridSize: gridSize, onGridSizeChange: setGridSize, isMarqueeProgramEnabled: isMarqueeProgramEnabled, onMarqueeProgramEnabledChange: setIsMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange: setIsMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange: setIsMarqueeNextTrackEnabled, marqueeSpeed: marqueeSpeed, onMarqueeSpeedChange: setMarqueeSpeed, marqueeDelay: marqueeDelay, onMarqueeDelayChange: setMarqueeDelay, updateStatus: updateStatus, onManualUpdateCheck: handleManualUpdateCheck, user: user, onLogin: handleLogin, onLogout: handleLogout }),
       playerState.station && React.createElement(NowPlaying, { isOpen: isNowPlayingOpen, onClose: () => !isVisualizerFullscreen && setIsNowPlayingOpen(false), station: playerState.station, isPlaying: playerState.status === 'PLAYING', onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, volume: volume, onVolumeChange: setVolume, trackInfo: trackInfo, showNextSong: showNextSong, frequencyData: frequencyData, visualizerStyle: visualizerStyle, isVisualizerEnabled: isNowPlayingVisualizerEnabled, onCycleVisualizerStyle: handleCycleVisualizerStyle, isVolumeControlVisible: isVolumeControlVisible, marqueeDelay: marqueeDelay, isMarqueeProgramEnabled: isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled, marqueeSpeed: marqueeSpeed, onOpenActionMenu: openActionMenu, isVisualizerFullscreen: isVisualizerFullscreen, setIsVisualizerFullscreen: setIsVisualizerFullscreen }),
       React.createElement(ActionMenu, { isOpen: actionMenuState.isOpen, onClose: closeActionMenu, songTitle: actionMenuState.songTitle }),
-      React.createElement(Player, { playerState: playerState, onPlay: handlePlay, onPause: handlePause, onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, onPlayerEvent: (event) => dispatch(event), eqPreset: eqPreset, customEqSettings: customEqSettings, volume: volume, onVolumeChange: setVolume, trackInfo: trackInfo, showNextSong: showNextSong, onOpenNowPlaying: () => setIsNowPlayingOpen(true), setFrequencyData: setFrequencyData, frequencyData: frequencyData, isVisualizerEnabled: isPlayerBarVisualizerEnabled, marqueeDelay: marqueeDelay, isMarqueeProgramEnabled: isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled, marqueeSpeed: marqueeSpeed, onOpenActionMenu: openActionMenu }),
+      React.createElement(Player, { playerState: playerState, onPlay: handlePlay, onPause: handlePause, onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, onPlayerEvent: (event) => dispatch(event), eqPreset: eqPreset, customEqSettings: customEqSettings, volume: volume, onVolumeChange: setVolume, trackInfo: trackInfo, showNextSong: showNextSong, onOpenNowPlaying: () => setIsNowPlayingOpen(true), setFrequencyData: setFrequencyData, frequencyData: frequencyData, isVisualizerEnabled: isPlayerBarVisualizerEnabled, marqueeDelay: marqueeDelay, isMarqueeProgramEnabled: isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: isMarqueeNextTrackEnabled, marqueeSpeed: marqueeSpeed, onOpenActionMenu: onOpenActionMenu }),
       isUpdateAvailable && React.createElement("div", { className: "fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up" },
         React.createElement("p", { className: "text-sm font-semibold" }, "עדכון חדש זמין"),
         React.createElement("button", { onClick: handleUpdateClick, className: "py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold" }, "רענן")

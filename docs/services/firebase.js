@@ -11,63 +11,26 @@ const firebaseConfig = {
   appId: "1:201862743073:web:2c84cbb2b1443d87884f60"
 };
 
-let auth;
-let db;
-let isInitialized = false;
-
-export const initFirebase = () => {
-    return new Promise((resolve, reject) => {
-        if (isInitialized) return resolve();
-
-        if (typeof firebase === 'undefined') {
-            return reject(new Error("Firebase scripts not loaded."));
-        }
-
-        try {
-            if (!firebase.apps.length) {
-                firebase.initializeApp(firebaseConfig);
-            }
-        
-            auth = firebase.auth();
-            db = firebase.firestore();
-
-            // Explicitly setting persistence to LOCAL is the key to keeping the user logged in.
-            // We must wait for this to complete before the app continues.
-            auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
-                .then(() => {
-                    isInitialized = true;
-                    resolve();
-                })
-                .catch((error) => {
-                    // This can fail in some environments (e.g., private browsing).
-                    // The app can still run, but the user won't stay logged in.
-                    console.warn("Firebase persistence error:", error.message);
-                    isInitialized = true;
-                    resolve(); // Resolve anyway to not block the app.
-                });
-
-        } catch (error) {
-            reject(error);
-        }
-    });
-};
-
-export const getAuth = () => {
-    if (!isInitialized) throw new Error("Firebase not initialized!");
-    return auth;
+// Initialize Firebase
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
 }
 
-export const getDb = () => {
-    if (!isInitialized) throw new Error("Firebase not initialized!");
-    return db;
-}
+export const auth = firebase.auth();
+export const db = firebase.firestore();
+
+// Set persistence to 'local' to keep the user signed in across browser sessions.
+// This is often the default, but we set it explicitly to ensure the behavior.
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+  .catch((error) => {
+    console.error("Firebase persistence error:", error.code, error.message);
+  });
 
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 
 export const signInWithGoogle = async () => {
-  const authInstance = getAuth();
   try {
-    const res = await authInstance.signInWithPopup(googleProvider);
+    const res = await auth.signInWithPopup(googleProvider);
     return res.user;
   } catch (err) {
     console.error("Google sign-in error:", err);
@@ -77,17 +40,15 @@ export const signInWithGoogle = async () => {
 };
 
 export const signOut = async () => {
-  const authInstance = getAuth();
-  await authInstance.signOut();
+  await auth.signOut();
 };
 
 export const saveUserSettings = async (userId, settings) => {
   if (!userId) return;
-  const dbInstance = getDb();
   try {
     // We remove undefined values as Firestore doesn't support them.
     const cleanSettings = JSON.parse(JSON.stringify(settings));
-    await dbInstance.collection('users').doc(userId).set(cleanSettings, { merge: true });
+    await db.collection('users').doc(userId).set(cleanSettings, { merge: true });
   } catch (error) {
     console.error("Error saving user settings to Firestore:", error);
   }
@@ -95,9 +56,8 @@ export const saveUserSettings = async (userId, settings) => {
 
 export const loadUserSettings = async (userId) => {
   if (!userId) return null;
-  const dbInstance = getDb();
   try {
-    const doc = await dbInstance.collection('users').doc(userId).get();
+    const doc = await db.collection('users').doc(userId).get();
     return doc.exists ? doc.data() : null;
   } catch (error) {
     console.error("Error loading user settings from Firestore:", error);

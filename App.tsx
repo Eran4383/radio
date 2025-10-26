@@ -12,7 +12,7 @@ import { getCurrentProgram } from './services/scheduleService';
 import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/stationSpecificService';
 import StationListSkeleton from './components/StationListSkeleton';
 import { getCategory, CategoryType } from './services/categoryService';
-import { getAuth, signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase';
+import { auth, signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase';
 import type firebase from 'firebase/compat/app';
 
 
@@ -174,9 +174,30 @@ export default function App() {
   const waitingWorkerRef = useRef<ServiceWorker | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
 
+  // Combine all settings into a single object for easier saving
+  const allSettings = useMemo(() => ({
+    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
+    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
+    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
+    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
+    marqueeSpeed, marqueeDelay, filter, sortOrder
+  }), [
+    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
+    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
+    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
+    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
+    marqueeSpeed, marqueeDelay, filter, sortOrder
+  ]);
+  
+  // Ref to hold the latest settings to avoid stale closure in auth listener
+  const settingsRef = useRef(allSettings);
+  useEffect(() => {
+    settingsRef.current = allSettings;
+  }, [allSettings]);
+
+
   // Auth listener effect
   useEffect(() => {
-    const auth = getAuth();
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser: firebase.User | null) => {
       setIsAuthLoading(true);
       if (firebaseUser) {
@@ -205,14 +226,7 @@ export default function App() {
           setSortOrder(userSettings.sortOrder || 'priority');
         } else {
           // First login: save current local settings to Firestore
-          const localSettings = {
-            favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-            isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-            isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-            isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-            marqueeSpeed, marqueeDelay, filter, sortOrder
-          };
-          await saveUserSettings(firebaseUser.uid, localSettings);
+          await saveUserSettings(firebaseUser.uid, settingsRef.current);
         }
       } else {
         // User is logged out, reload ALL settings from localStorage to reset to guest state
@@ -249,67 +263,40 @@ export default function App() {
     saveUserSettings(userId, settings);
   }, 2000), []);
 
-  // Effect for persisting settings
   useEffect(() => {
-    if (isAuthLoading) return; // Wait until auth state is confirmed
-
-    const currentSettings = {
-        favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-        isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-        isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-        isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-        marqueeSpeed, marqueeDelay, filter, sortOrder
-    };
-
-    if (user) {
-        // User is logged in: save to Firestore
-        debouncedSave(currentSettings, user.uid);
-    } else {
-        // User is logged out: save to localStorage
-        localStorage.setItem('radio-favorites', JSON.stringify(favorites));
-        localStorage.setItem('radio-station-custom-order', JSON.stringify(customOrder));
-        localStorage.setItem('radio-theme', theme);
-        localStorage.setItem('radio-eq', eqPreset);
-        localStorage.setItem('radio-custom-eq', JSON.stringify(customEqSettings));
-        localStorage.setItem('radio-volume', JSON.stringify(volume));
-        localStorage.setItem('radio-nowplaying-visualizer-enabled', JSON.stringify(isNowPlayingVisualizerEnabled));
-        localStorage.setItem('radio-playerbar-visualizer-enabled', JSON.stringify(isPlayerBarVisualizerEnabled));
-        localStorage.setItem('radio-visualizer-style', visualizerStyle);
-        localStorage.setItem('radio-status-indicator-enabled', JSON.stringify(isStatusIndicatorEnabled));
-        localStorage.setItem('radio-volume-control-visible', JSON.stringify(isVolumeControlVisible));
-        localStorage.setItem('radio-show-next-song', JSON.stringify(showNextSong));
-        localStorage.setItem('radio-grid-size', JSON.stringify(gridSize));
-        localStorage.setItem('radio-marquee-program-enabled', JSON.stringify(isMarqueeProgramEnabled));
-        localStorage.setItem('radio-marquee-current-enabled', JSON.stringify(isMarqueeCurrentTrackEnabled));
-        localStorage.setItem('radio-marquee-next-enabled', JSON.stringify(isMarqueeNextTrackEnabled));
-        localStorage.setItem('radio-marquee-speed', JSON.stringify(marqueeSpeed));
-        localStorage.setItem('radio-marquee-delay', JSON.stringify(marqueeDelay));
-        localStorage.setItem('radio-last-filter', filter);
-        localStorage.setItem('radio-last-sort', sortOrder);
+    if (user && !isAuthLoading) {
+      debouncedSave(allSettings, user.uid);
     }
-  }, [
-      favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-      isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-      isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-      isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-      marqueeSpeed, marqueeDelay, filter, sortOrder,
-      user, isAuthLoading, debouncedSave
-  ]);
+    // Always update localStorage immediately for guest users or as a backup
+    Object.entries(allSettings).forEach(([key, value]) => {
+      const lsKey = `radio-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
+      localStorage.setItem(lsKey, JSON.stringify(value));
+    });
+    localStorage.setItem('radio-last-filter', filter);
+    localStorage.setItem('radio-last-sort', sortOrder);
+    localStorage.setItem('radio-favorites', JSON.stringify(favorites));
+
+  }, [allSettings, user, isAuthLoading, debouncedSave, filter, sortOrder, favorites]);
   
   const handleLogin = async () => {
     const loggedInUser = await signInWithGoogle();
     if (loggedInUser) {
-      // The onAuthStateChanged listener will handle the state update.
+      setUser(loggedInUser); // Update UI immediately
     }
   };
   
   const handleLogout = async () => {
+    if (user) {
       try {
+        // Save latest settings before signing out
+        await saveUserSettings(user.uid, allSettings);
         await signOut();
-        // onAuthStateChanged will handle resetting the state to guest.
+        // Force a reload to ensure the UI updates and resets to the guest state from localStorage.
+        window.location.reload();
       } catch (error) {
         console.error("Error during logout:", error);
       }
+    }
   };
 
   useEffect(() => {
@@ -578,7 +565,7 @@ export default function App() {
         </div>
       </header>
       <main className="flex-grow pb-48" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-        {isLoading || isAuthLoading ? (
+        {isLoading ? (
           <StationListSkeleton />
         ) : error ? (
           <p className="text-center text-red-400 p-4">{error}</p>
@@ -590,7 +577,6 @@ export default function App() {
       <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} currentTheme={theme} onThemeChange={setTheme} currentEqPreset={eqPreset} onEqPresetChange={setEqPreset} isNowPlayingVisualizerEnabled={isNowPlayingVisualizerEnabled} onNowPlayingVisualizerEnabledChange={setIsNowPlayingVisualizerEnabled} isPlayerBarVisualizerEnabled={isPlayerBarVisualizerEnabled} onPlayerBarVisualizerEnabledChange={setIsPlayerBarVisualizerEnabled} isStatusIndicatorEnabled={isStatusIndicatorEnabled} onStatusIndicatorEnabledChange={setIsStatusIndicatorEnabled} isVolumeControlVisible={isVolumeControlVisible} onVolumeControlVisibleChange={setIsVolumeControlVisible} showNextSong={showNextSong} onShowNextSongChange={setShowNextSong} customEqSettings={customEqSettings} onCustomEqChange={setCustomEqSettings} gridSize={gridSize} onGridSizeChange={setGridSize} isMarqueeProgramEnabled={isMarqueeProgramEnabled} onMarqueeProgramEnabledChange={setIsMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} onMarqueeCurrentTrackEnabledChange={setIsMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} onMarqueeNextTrackEnabledChange={setIsMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onMarqueeSpeedChange={setMarqueeSpeed} marqueeDelay={marqueeDelay} onMarqueeDelayChange={setMarqueeDelay} updateStatus={updateStatus} onManualUpdateCheck={handleManualUpdateCheck} user={user} onLogin={handleLogin} onLogout={handleLogout} />
       {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={volume} onVolumeChange={setVolume} trackInfo={trackInfo} showNextSong={showNextSong} frequencyData={frequencyData} visualizerStyle={visualizerStyle} isVisualizerEnabled={isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={isVolumeControlVisible} marqueeDelay={marqueeDelay} isMarqueeProgramEnabled={isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
        <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
-      {/* FIX: Changed `onOpenActionMenu` from an undefined variable to the correct function `openActionMenu`. */}
       <Player playerState={playerState} onPlay={handlePlay} onPause={handlePause} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} onPlayerEvent={(event) => dispatch(event)} eqPreset={eqPreset} customEqSettings={customEqSettings} volume={volume} onVolumeChange={setVolume} trackInfo={trackInfo} showNextSong={showNextSong} onOpenNowPlaying={() => setIsNowPlayingOpen(true)} setFrequencyData={setFrequencyData} frequencyData={frequencyData} isVisualizerEnabled={isPlayerBarVisualizerEnabled} marqueeDelay={marqueeDelay} isMarqueeProgramEnabled={isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onOpenActionMenu={openActionMenu} />
       {isUpdateAvailable && ( <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up"><p className="text-sm font-semibold">עדכון חדש זמין</p><button onClick={handleUpdateClick} className="py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold">רענן</button></div> )}
     </div>

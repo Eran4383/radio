@@ -1,37 +1,6 @@
 import { PRIORITY_STATIONS } from '../constants.js';
 import { CORS_PROXY_URL } from '../constants.js';
 
-// Helper function to fetch with retries and timeout
-const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
-  for (let i = 0; i < retries; i++) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8-second timeout for each attempt
-
-    try {
-      const response = await fetch(url, { ...options, signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (response.ok) {
-        return response;
-      }
-      // Don't retry on client errors (4xx)
-      if (response.status >= 400 && response.status < 500) {
-        throw new Error(`Client error: ${response.status}`);
-      }
-      // For server errors (5xx), we will retry
-      console.warn(`Attempt ${i + 1} failed with status ${response.status}. Retrying in ${delay / 1000}s...`);
-
-    } catch (error) {
-      clearTimeout(timeoutId);
-      if (i === retries - 1) throw error; // Rethrow last error
-      console.warn(`Attempt ${i + 1} failed with error: ${error.message}. Retrying in ${delay / 1000}s...`);
-    }
-
-    await new Promise(res => setTimeout(res, delay * (i + 1))); // Exponential backoff
-  }
-  throw new Error('All fetch attempts failed.');
-};
-
-
 // Function to shuffle an array for load distribution
 const shuffleArray = (array) => {
     for (let i = array.length - 1; i > 0; i--) {
@@ -56,9 +25,20 @@ const fetchRadioBrowserStations = async () => {
 
   for (const serverUrl of servers) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8-second timeout
+
       const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/bycountrycodeexact/IL?limit=300&hidebroken=true`;
-      const response = await fetchWithRetry(proxiedUrl, {});
+      const response = await fetch(proxiedUrl, {
+          signal: controller.signal
+      });
       
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        console.warn(`Failed to fetch from Radio-Browser server ${serverUrl} (status: ${response.status}), trying next.`);
+        continue; // Try next server
+      }
       const data = await response.json();
       if (data && data.length > 0) {
         console.log(`Successfully fetched ${data.length} raw stations from ${serverUrl}`);
@@ -68,7 +48,11 @@ const fetchRadioBrowserStations = async () => {
       console.warn(`Radio-Browser server ${serverUrl} returned empty or invalid station data, trying next.`);
 
     } catch (error) {
-        console.warn(`Error connecting to Radio-Browser server ${serverUrl}:`, error.message);
+      if (error.name === 'AbortError') {
+        console.warn(`Request to Radio-Browser server ${serverUrl} timed out, trying next.`);
+      } else {
+        console.warn(`Error connecting to Radio-Browser server ${serverUrl}:`, error);
+      }
     }
   }
 
@@ -81,8 +65,16 @@ const fetch100fmStations = async () => {
   const url = 'https://digital.100fm.co.il/app/';
   try {
     const proxiedUrl = `${CORS_PROXY_URL}${url}`;
-    const response = await fetchWithRetry(proxiedUrl, {});
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    const response = await fetch(proxiedUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
     
+    if (!response.ok) {
+      console.warn(`Failed to fetch from 100fm API (status: ${response.status})`);
+      return [];
+    }
     const data = await response.json();
     if (!data || !Array.isArray(data.stations)) {
       console.warn('100fm API returned invalid data format');
@@ -104,7 +96,7 @@ const fetch100fmStations = async () => {
     return newStations.filter(s => s.url_resolved); // Ensure stations have a stream URL
 
   } catch (error) {
-    console.error('Error fetching stations from 100fm API:', error.message);
+    console.error('Error fetching stations from 100fm API:', error);
     return [];
   }
 };
@@ -194,6 +186,7 @@ export const fetchIsraeliStations = async () => {
   return finalStations;
 };
 
+
 export const fetchLiveTrackInfo = async (stationuuid) => {
     if (!stationuuid) return null;
 
@@ -201,8 +194,20 @@ export const fetchLiveTrackInfo = async (stationuuid) => {
 
     for (const serverUrl of servers) {
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second timeout
+
             const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/check?uuids=${stationuuid}`;
-            const response = await fetchWithRetry(proxiedUrl, { cache: 'no-cache' }, 2, 500); // Fewer retries for live info
+            const response = await fetch(proxiedUrl, {
+                signal: controller.signal,
+                cache: 'no-cache'
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                continue; 
+            }
 
             const data = await response.json();
             if (data && data.length > 0) {

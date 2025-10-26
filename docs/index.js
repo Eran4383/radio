@@ -1,7 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.js';
-import { initFirebase } from './services/firebase.js';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -9,22 +8,10 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
-
-initFirebase().then(() => {
-  root.render(
-    React.createElement(React.StrictMode, null,
-      React.createElement(App, null)
-    )
-  );
-}).catch(error => {
-    console.error("Failed to initialize application:", error);
-    root.render(
-        React.createElement("div", { style: { padding: '2rem', textAlign: 'center', color: 'white' } },
-            React.createElement("h1", null, "שגיאת טעינה"),
-            React.createElement("p", null, "לא ניתן לטעון את האפליקציה. אנא בדוק את חיבור האינטרנט ונסה לרענן את העמוד.")
-        )
-    );
-});
-
+root.render(
+  React.createElement(React.StrictMode, null,
+    React.createElement(App, null)
+  )
+);
 
 // Service worker registration is now handled in App.js to manage update state.
