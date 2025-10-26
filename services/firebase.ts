@@ -46,12 +46,21 @@ export const signOut = async (): Promise<void> => {
   await auth.signOut();
 };
 
+const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
+  const timeout = new Promise<T>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`Firestore operation timed out after ${ms}ms`));
+    }, ms);
+  });
+  return Promise.race([promise, timeout]);
+};
+
 export const saveUserSettings = async (userId: string, settings: any): Promise<void> => {
   if (!userId) return;
   try {
-    // We remove undefined values as Firestore doesn't support them.
     const cleanSettings = JSON.parse(JSON.stringify(settings));
-    await db.collection('users').doc(userId).set(cleanSettings, { merge: true });
+    const savePromise = db.collection('users').doc(userId).set(cleanSettings, { merge: true });
+    await withTimeout(savePromise, 8000); // 8-second timeout
   } catch (error) {
     console.error("Error saving user settings to Firestore:", error);
   }
@@ -60,7 +69,8 @@ export const saveUserSettings = async (userId: string, settings: any): Promise<v
 export const loadUserSettings = async (userId: string): Promise<any | null> => {
   if (!userId) return null;
   try {
-    const doc = await db.collection('users').doc(userId).get();
+    const loadPromise: Promise<firebase.firestore.DocumentSnapshot> = db.collection('users').doc(userId).get();
+    const doc = await withTimeout(loadPromise, 8000); // 8-second timeout
     return doc.exists ? doc.data() : null;
   } catch (error) {
     console.error("Error loading user settings from Firestore:", error);

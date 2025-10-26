@@ -20,7 +20,6 @@ export const auth = firebase.auth();
 export const db = firebase.firestore();
 
 // Set persistence to 'local' to keep the user signed in across browser sessions.
-// This is often the default, but we set it explicitly to ensure the behavior.
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
   .catch((error) => {
     console.error("Firebase persistence error:", error.code, error.message);
@@ -43,12 +42,21 @@ export const signOut = async () => {
   await auth.signOut();
 };
 
+const withTimeout = (promise, ms) => {
+  const timeout = new Promise((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`Firestore operation timed out after ${ms}ms`));
+    }, ms);
+  });
+  return Promise.race([promise, timeout]);
+};
+
 export const saveUserSettings = async (userId, settings) => {
   if (!userId) return;
   try {
-    // We remove undefined values as Firestore doesn't support them.
     const cleanSettings = JSON.parse(JSON.stringify(settings));
-    await db.collection('users').doc(userId).set(cleanSettings, { merge: true });
+    const savePromise = db.collection('users').doc(userId).set(cleanSettings, { merge: true });
+    await withTimeout(savePromise, 8000); // 8-second timeout
   } catch (error) {
     console.error("Error saving user settings to Firestore:", error);
   }
@@ -57,7 +65,8 @@ export const saveUserSettings = async (userId, settings) => {
 export const loadUserSettings = async (userId) => {
   if (!userId) return null;
   try {
-    const doc = await db.collection('users').doc(userId).get();
+    const loadPromise = db.collection('users').doc(userId).get();
+    const doc = await withTimeout(loadPromise, 8000); // 8-second timeout
     return doc.exists ? doc.data() : null;
   } catch (error) {
     console.error("Error loading user settings from Firestore:", error);
