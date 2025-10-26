@@ -1,5 +1,7 @@
 // Firebase is imported via <script> tags in index.html, creating a global 'firebase' object.
 // This declaration prevents TypeScript errors.
+// FIX: Import firebase types to resolve namespace errors.
+import type firebase from 'firebase/compat/app';
 declare const firebase: any;
 
 // User's actual Firebase project configuration
@@ -21,7 +23,6 @@ export const auth = firebase.auth();
 export const db = firebase.firestore();
 
 // Set persistence to 'local' to keep the user signed in across browser sessions.
-// This is often the default, but we set it explicitly to ensure the behavior.
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
   .catch((error: any) => {
     console.error("Firebase persistence error:", error.code, error.message);
@@ -30,7 +31,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
 
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-export const signInWithGoogle = async () => {
+export const signInWithGoogle = async (): Promise<firebase.User | null> => {
   try {
     const res = await auth.signInWithPopup(googleProvider);
     return res.user;
@@ -41,11 +42,11 @@ export const signInWithGoogle = async () => {
   }
 };
 
-export const signOut = async () => {
+export const signOut = async (): Promise<void> => {
   await auth.signOut();
 };
 
-export const saveUserSettings = async (userId: string, settings: any) => {
+export const saveUserSettings = async (userId: string, settings: any): Promise<void> => {
   if (!userId) return;
   try {
     // We remove undefined values as Firestore doesn't support them.
@@ -56,7 +57,7 @@ export const saveUserSettings = async (userId: string, settings: any) => {
   }
 };
 
-export const loadUserSettings = async (userId: string) => {
+export const loadUserSettings = async (userId: string): Promise<any | null> => {
   if (!userId) return null;
   try {
     const doc = await db.collection('users').doc(userId).get();
