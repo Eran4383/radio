@@ -102,7 +102,7 @@ export default function App({ initialUser }) {
   const [stations, setStations] = useState([]);
   const [playerState, dispatch] = useReducer(playerReducer, initialPlayerState);
   
-  const [isLoading, setIsLoading] = useState(true);
+  const [isAppInitialized, setIsAppInitialized] = useState(false);
   const [error, setError] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
@@ -182,50 +182,68 @@ export default function App({ initialUser }) {
   }, []);
 
   useEffect(() => {
-    const loadAllSettings = async () => {
-        setIsSyncing(true); // Show syncing overlay
-        if (user) {
+    const initializeApp = async () => {
+      try {
+        const stationPromise = fetchIsraeliStations();
+
+        const settingsPromise = (async () => {
+          if (user) {
             const result = await loadUserSettings(user.uid);
             switch (result.status) {
-                case 'success':
-                    if (result.data) {
-                        setFavorites(result.data.favorites || []);
-                        setCustomOrder(result.data.customOrder || []);
-                        setTheme(result.data.theme || 'dark');
-                        setEqPreset(result.data.eqPreset || 'flat');
-                        setCustomEqSettings(result.data.customEqSettings || { bass: 0, mid: 0, treble: 0 });
-                        setVolume(result.data.volume ?? 1);
-                        setIsNowPlayingVisualizerEnabled(result.data.isNowPlayingVisualizerEnabled ?? true);
-                        setIsPlayerBarVisualizerEnabled(result.data.isPlayerBarVisualizerEnabled ?? true);
-                        setVisualizerStyle(result.data.visualizerStyle || 'bars');
-                        setIsStatusIndicatorEnabled(result.data.isStatusIndicatorEnabled ?? true);
-                        setIsVolumeControlVisible(result.data.isVolumeControlVisible ?? true);
-                        setShowNextSong(result.data.showNextSong ?? true);
-                        setGridSize(result.data.gridSize || 3);
-                        setIsMarqueeProgramEnabled(result.data.isMarqueeProgramEnabled ?? true);
-                        setIsMarqueeCurrentTrackEnabled(result.data.isMarqueeCurrentTrackEnabled ?? true);
-                        setIsMarqueeNextTrackEnabled(result.data.isMarqueeNextTrackEnabled ?? true);
-                        setMarqueeSpeed(result.data.marqueeSpeed || 6);
-                        setMarqueeDelay(result.data.marqueeDelay || 3);
-                        setFilter(result.data.filter || StationFilter.All);
-                        setSortOrder(result.data.sortOrder || 'priority');
-                    }
-                    break;
-                case 'not-found':
-                    console.log("New user detected. Migrating local settings to cloud.");
-                    await saveUserSettings(user.uid, allSettings);
-                    break;
-                case 'error':
-                    console.warn("Could not load user settings from cloud. Using local settings as fallback.");
-                    break;
+              case 'success':
+                if (result.data) {
+                  setFavorites(result.data.favorites || []);
+                  setCustomOrder(result.data.customOrder || []);
+                  setTheme(result.data.theme || 'dark');
+                  setEqPreset(result.data.eqPreset || 'flat');
+                  setCustomEqSettings(result.data.customEqSettings || { bass: 0, mid: 0, treble: 0 });
+                  setVolume(result.data.volume ?? 1);
+                  setIsNowPlayingVisualizerEnabled(result.data.isNowPlayingVisualizerEnabled ?? true);
+                  setIsPlayerBarVisualizerEnabled(result.data.isPlayerBarVisualizerEnabled ?? true);
+                  setVisualizerStyle(result.data.visualizerStyle || 'bars');
+                  setIsStatusIndicatorEnabled(result.data.isStatusIndicatorEnabled ?? true);
+                  setIsVolumeControlVisible(result.data.isVolumeControlVisible ?? true);
+                  setShowNextSong(result.data.showNextSong ?? true);
+                  setGridSize(result.data.gridSize || 3);
+                  setIsMarqueeProgramEnabled(result.data.isMarqueeProgramEnabled ?? true);
+                  setIsMarqueeCurrentTrackEnabled(result.data.isMarqueeCurrentTrackEnabled ?? true);
+                  setIsMarqueeNextTrackEnabled(result.data.isMarqueeNextTrackEnabled ?? true);
+                  setMarqueeSpeed(result.data.marqueeSpeed || 6);
+                  setMarqueeDelay(result.data.marqueeDelay || 3);
+                  setFilter(result.data.filter || StationFilter.All);
+                  setSortOrder(result.data.sortOrder || 'priority');
+                }
+                break;
+              case 'not-found':
+                console.log("New user detected. Migrating local settings to cloud.");
+                loadGuestSettings();
+                break;
+              case 'error':
+                console.warn("Could not load user settings from cloud. Using local settings as fallback.");
+                loadGuestSettings();
+                break;
             }
-        } else {
+          } else {
             loadGuestSettings();
+          }
+        })();
+
+        const [fetchedStations] = await Promise.all([stationPromise, settingsPromise]);
+
+        if (fetchedStations.length === 0) {
+          setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
+        } else {
+          setStations(fetchedStations);
         }
-        setIsSyncing(false); // Hide syncing overlay
+      } catch (err) {
+        setError('אירעה שגיאה בטעינת האפליקציה.');
+        console.error(err);
+      } finally {
+        setIsAppInitialized(true);
+      }
     };
 
-    loadAllSettings();
+    initializeApp();
   }, [user, loadGuestSettings]);
 
   const debouncedSave = useCallback(debounce((settings, userId) => {
@@ -233,7 +251,7 @@ export default function App({ initialUser }) {
   }, 2000), []);
 
   useEffect(() => {
-    if (isSyncing) return; // Don't save while a sync/load operation is in progress
+    if (!isAppInitialized) return;
 
     if (user) {
       debouncedSave(allSettings, user.uid);
@@ -246,7 +264,7 @@ export default function App({ initialUser }) {
       localStorage.setItem('radio-last-sort', sortOrder);
       localStorage.setItem('radio-favorites', JSON.stringify(favorites));
     }
-  }, [allSettings, user, isSyncing, debouncedSave, filter, sortOrder, favorites]);
+  }, [allSettings, user, isAppInitialized, debouncedSave, filter, sortOrder, favorites]);
   
   const handleLogin = async () => {
     setIsSyncing(true);
@@ -254,7 +272,7 @@ export default function App({ initialUser }) {
     if (loggedInUser) {
       setUser(loggedInUser);
     } else {
-      setIsSyncing(false); // User cancelled login
+      setIsSyncing(false);
     }
   };
   
@@ -327,38 +345,14 @@ export default function App({ initialUser }) {
   };
   
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const fetchedStations = await fetchIsraeliStations();
-        if (fetchedStations.length === 0) setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
-        else setStations(fetchedStations);
-      } catch (err) {
-        setError('אירעה שגיאה בטעינת התחנות.');
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadData();
-  }, []);
-  
-  useEffect(() => {
-    if (!user) {
-        loadGuestSettings();
-    }
-  }, []);
-
-  useEffect(() => {
-    if (stations.length > 0 && playerState.status === 'IDLE' && !isSyncing) {
+    if (isAppInitialized && stations.length > 0 && playerState.status === 'IDLE') {
         const lastStationUuid = localStorage.getItem('radio-last-station-uuid');
         if (lastStationUuid) {
             const station = stations.find(s => s.stationuuid === lastStationUuid);
             if (station) dispatch({ type: 'SELECT_STATION', payload: station });
         }
     }
-  }, [stations, playerState.status, isSyncing]);
+  }, [isAppInitialized, stations, playerState.status]);
 
   useEffect(() => {
       if (playerState.station) {
@@ -518,6 +512,14 @@ export default function App({ initialUser }) {
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
+  if (!isAppInitialized) {
+    return (
+      React.createElement("div", { className: "app-loader", style: { display: 'flex' } },
+        React.createElement("div", { className: "loader-spinner" })
+      )
+    );
+  }
+
   return (
     React.createElement("div", { className: "min-h-screen bg-bg-primary text-text-primary flex flex-col" },
       React.createElement("header", { className: "p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md" },
@@ -544,7 +546,7 @@ export default function App({ initialUser }) {
         )
       ),
       React.createElement("main", { className: "flex-grow pb-48", onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd },
-        isLoading ? React.createElement(StationListSkeleton, null) :
+        isAppInitialized && stations.length === 0 && !error ? React.createElement(StationListSkeleton, null) :
         error ? React.createElement("p", { className: "text-center text-red-400 p-4" }, error) :
         displayedStations.length > 0 ?
             React.createElement(StationList, { stations: displayedStations, currentStation: playerState.station, onSelectStation: handleSelectStation, isFavorite: isFavorite, toggleFavorite: toggleFavorite, onReorder: handleReorder, isStreamActive: playerState.status === 'PLAYING', isStatusIndicatorEnabled: isStatusIndicatorEnabled, gridSize: gridSize, sortOrder: sortOrder }) :
