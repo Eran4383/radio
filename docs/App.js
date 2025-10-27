@@ -100,9 +100,9 @@ const CATEGORY_SORTS = [
 
 export default function App({ initialUser: user }) {
   const [stations, setStations] = useState([]);
+  const [stationsStatus, setStationsStatus] = useState('idle');
   const [playerState, dispatch] = useReducer(playerReducer, initialPlayerState);
   
-  const [isAppInitialized, setIsAppInitialized] = useState(false);
   const [error, setError] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
@@ -181,12 +181,30 @@ export default function App({ initialUser: user }) {
   }, []);
 
   useEffect(() => {
-    const initializeApp = async () => {
+    const fetchInitialStations = async () => {
+      setStationsStatus('loading');
       try {
-        const stationPromise = fetchIsraeliStations();
+        const fetchedStations = await fetchIsraeliStations();
+        if (fetchedStations.length === 0) {
+          setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
+          setStationsStatus('error');
+        } else {
+          setStations(fetchedStations);
+          setStationsStatus('loaded');
+        }
+      } catch (err) {
+        setError('אירעה שגיאה בטעינת התחנות.');
+        setStationsStatus('error');
+        console.error(err);
+      }
+    };
+    fetchInitialStations();
+  }, []);
 
-        const settingsPromise = (async () => {
-          if (user) {
+  useEffect(() => {
+    const syncUserSettings = async () => {
+        setIsSyncing(true);
+        if (user) {
             const result = await loadUserSettings(user.uid);
             switch (result.status) {
               case 'success':
@@ -215,34 +233,19 @@ export default function App({ initialUser: user }) {
                 break;
               case 'not-found':
                 console.log("New user detected. Migrating local settings to cloud.");
-                loadGuestSettings();
+                loadGuestSettings(); 
                 break;
               case 'error':
                 console.warn("Could not load user settings from cloud. Using local settings as fallback.");
                 loadGuestSettings();
                 break;
             }
-          } else {
-            loadGuestSettings();
-          }
-        })();
-
-        const [fetchedStations] = await Promise.all([stationPromise, settingsPromise]);
-
-        if (fetchedStations.length === 0) {
-          setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
         } else {
-          setStations(fetchedStations);
+            loadGuestSettings();
         }
-      } catch (err) {
-        setError('אירעה שגיאה בטעינת האפליקציה.');
-        console.error(err);
-      } finally {
-        setIsAppInitialized(true);
-      }
+        setIsSyncing(false);
     };
-
-    initializeApp();
+    syncUserSettings();
   }, [user, loadGuestSettings]);
 
   const debouncedSave = useCallback(debounce((settings, userId) => {
@@ -250,7 +253,7 @@ export default function App({ initialUser: user }) {
   }, 2000), []);
 
   useEffect(() => {
-    if (!isAppInitialized) return;
+    if (stationsStatus !== 'loaded') return;
 
     if (user) {
       debouncedSave(allSettings, user.uid);
@@ -263,7 +266,7 @@ export default function App({ initialUser: user }) {
       localStorage.setItem('radio-last-sort', sortOrder);
       localStorage.setItem('radio-favorites', JSON.stringify(favorites));
     }
-  }, [allSettings, user, isAppInitialized, debouncedSave, filter, sortOrder, favorites]);
+  }, [allSettings, user, stationsStatus, debouncedSave, filter, sortOrder, favorites]);
   
   const handleLogin = async () => {
     setIsSyncing(true);
@@ -341,14 +344,14 @@ export default function App({ initialUser: user }) {
   };
   
   useEffect(() => {
-    if (isAppInitialized && stations.length > 0 && playerState.status === 'IDLE') {
+    if (stationsStatus === 'loaded' && playerState.status === 'IDLE') {
         const lastStationUuid = localStorage.getItem('radio-last-station-uuid');
         if (lastStationUuid) {
             const station = stations.find(s => s.stationuuid === lastStationUuid);
             if (station) dispatch({ type: 'SELECT_STATION', payload: station });
         }
     }
-  }, [isAppInitialized, stations, playerState.status]);
+  }, [stationsStatus, stations, playerState.status]);
 
   useEffect(() => {
       if (playerState.station) {
@@ -534,8 +537,8 @@ export default function App({ initialUser: user }) {
         )
       ),
       React.createElement("main", { className: "flex-grow pb-48", onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd },
-        !isAppInitialized ? React.createElement(StationListSkeleton, null) :
-        error ? React.createElement("p", { className: "text-center text-red-400 p-4" }, error) :
+        stationsStatus === 'loading' ? React.createElement(StationListSkeleton, null) :
+        stationsStatus === 'error' ? React.createElement("p", { className: "text-center text-red-400 p-4" }, error) :
         displayedStations.length > 0 ?
             React.createElement(StationList, { stations: displayedStations, currentStation: playerState.station, onSelectStation: handleSelectStation, isFavorite: isFavorite, toggleFavorite: toggleFavorite, onReorder: handleReorder, isStreamActive: playerState.status === 'PLAYING', isStatusIndicatorEnabled: isStatusIndicatorEnabled, gridSize: gridSize, sortOrder: sortOrder }) :
             React.createElement("div", { className: "text-center p-8 text-text-secondary" },

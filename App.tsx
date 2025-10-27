@@ -122,6 +122,7 @@ const CATEGORY_SORTS: { order: SortOrder; label: string }[] = [
 ];
 
 type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'found' | 'not-found' | 'error';
+type StationsStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
 interface AppProps {
   initialUser: firebase.User | null;
@@ -129,9 +130,9 @@ interface AppProps {
 
 export default function App({ initialUser: user }: AppProps) {
   const [stations, setStations] = useState<Station[]>([]);
+  const [stationsStatus, setStationsStatus] = useState<StationsStatus>('idle');
   const [playerState, dispatch] = useReducer(playerReducer, initialPlayerState);
   
-  const [isAppInitialized, setIsAppInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
@@ -212,16 +213,33 @@ export default function App({ initialUser: user }: AppProps) {
     setSortOrder(safeJsonParse(localStorage.getItem('radio-last-sort'), 'priority') as SortOrder);
   }, []);
 
-  // Centralized initialization effect
+  // Effect 1: Fetch stations only ONCE on mount
   useEffect(() => {
-    const initializeApp = async () => {
-      // Don't show the main syncing overlay during initial load,
-      // as the skeleton provides better visual feedback.
+    const fetchInitialStations = async () => {
+      setStationsStatus('loading');
       try {
-        const stationPromise = fetchIsraeliStations();
+        const fetchedStations = await fetchIsraeliStations();
+        if (fetchedStations.length === 0) {
+          setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
+          setStationsStatus('error');
+        } else {
+          setStations(fetchedStations);
+          setStationsStatus('loaded');
+        }
+      } catch (err) {
+        setError('אירעה שגיאה בטעינת התחנות.');
+        setStationsStatus('error');
+        console.error(err);
+      }
+    };
+    fetchInitialStations();
+  }, []);
 
-        const settingsPromise = (async () => {
-          if (user) {
+  // Effect 2: Sync user settings whenever the user's auth state changes.
+  useEffect(() => {
+    const syncUserSettings = async () => {
+        setIsSyncing(true);
+        if (user) {
             const result = await loadUserSettings(user.uid);
             switch (result.status) {
               case 'success':
@@ -250,34 +268,19 @@ export default function App({ initialUser: user }: AppProps) {
                 break;
               case 'not-found':
                 console.log("New user detected. Migrating local settings to cloud.");
-                loadGuestSettings(); // Load local settings to be saved later
+                loadGuestSettings(); 
                 break;
               case 'error':
                 console.warn("Could not load user settings from cloud. Using local settings as fallback.");
                 loadGuestSettings();
                 break;
             }
-          } else {
-            loadGuestSettings();
-          }
-        })();
-
-        const [fetchedStations] = await Promise.all([stationPromise, settingsPromise]);
-
-        if (fetchedStations.length === 0) {
-          setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
         } else {
-          setStations(fetchedStations);
+            loadGuestSettings();
         }
-      } catch (err) {
-        setError('אירעה שגיאה בטעינת האפליקציה.');
-        console.error(err);
-      } finally {
-        setIsAppInitialized(true);
-      }
+        setIsSyncing(false);
     };
-
-    initializeApp();
+    syncUserSettings();
   }, [user, loadGuestSettings]);
 
 
@@ -288,7 +291,7 @@ export default function App({ initialUser: user }: AppProps) {
 
   // Effect to save settings whenever they change
   useEffect(() => {
-    if (!isAppInitialized) return; // Don't save before initial load is complete
+    if (stationsStatus !== 'loaded') return;
 
     if (user) {
       debouncedSave(allSettings, user.uid);
@@ -301,7 +304,7 @@ export default function App({ initialUser: user }: AppProps) {
       localStorage.setItem('radio-last-sort', sortOrder);
       localStorage.setItem('radio-favorites', JSON.stringify(favorites));
     }
-  }, [allSettings, user, isAppInitialized, debouncedSave, filter, sortOrder, favorites]);
+  }, [allSettings, user, stationsStatus, debouncedSave, filter, sortOrder, favorites]);
   
   const handleLogin = async () => {
     setIsSyncing(true);
@@ -380,14 +383,14 @@ export default function App({ initialUser: user }: AppProps) {
   };
   
   useEffect(() => {
-    if (isAppInitialized && stations.length > 0 && playerState.status === 'IDLE') {
+    if (stationsStatus === 'loaded' && playerState.status === 'IDLE') {
         const lastStationUuid = localStorage.getItem('radio-last-station-uuid');
         if (lastStationUuid) {
             const station = stations.find(s => s.stationuuid === lastStationUuid);
             if (station) dispatch({ type: 'SELECT_STATION', payload: station });
         }
     }
-  }, [isAppInitialized, stations, playerState.status]);
+  }, [stationsStatus, stations, playerState.status]);
 
   useEffect(() => {
       if (playerState.station) {
@@ -573,9 +576,9 @@ export default function App({ initialUser: user }: AppProps) {
         </div>
       </header>
       <main className="flex-grow pb-48" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-        {!isAppInitialized ? (
+        {stationsStatus === 'loading' ? (
           <StationListSkeleton />
-        ) : error ? (
+        ) : stationsStatus === 'error' ? (
           <p className="text-center text-red-400 p-4">{error}</p>
         ) : displayedStations.length > 0 ? (
           <StationList stations={displayedStations} currentStation={playerState.station} onSelectStation={handleSelectStation} isFavorite={isFavorite} toggleFavorite={toggleFavorite} onReorder={handleReorder} isStreamActive={playerState.status === 'PLAYING'} isStatusIndicatorEnabled={isStatusIndicatorEnabled} gridSize={gridSize} sortOrder={sortOrder} />
