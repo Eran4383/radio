@@ -127,7 +127,7 @@ interface AppProps {
   initialUser: firebase.User | null;
 }
 
-export default function App({ initialUser }: AppProps) {
+export default function App({ initialUser: user }: AppProps) {
   const [stations, setStations] = useState<Station[]>([]);
   const [playerState, dispatch] = useReducer(playerReducer, initialPlayerState);
   
@@ -142,7 +142,6 @@ export default function App({ initialUser }: AppProps) {
   const PINCH_THRESHOLD = 40; // pixels
   const [actionMenuState, setActionMenuState] = useState<{isOpen: boolean; songTitle: string | null}>({ isOpen: false, songTitle: null });
 
-  const [user, setUser] = useState<firebase.User | null>(initialUser);
   const [isSyncing, setIsSyncing] = useState(false);
   
   // --- Centralized Settings State with default values for guest user ---
@@ -216,6 +215,7 @@ export default function App({ initialUser }: AppProps) {
   // Centralized initialization effect
   useEffect(() => {
     const initializeApp = async () => {
+      setIsSyncing(true);
       try {
         const stationPromise = fetchIsraeliStations();
 
@@ -273,12 +273,11 @@ export default function App({ initialUser }: AppProps) {
         console.error(err);
       } finally {
         setIsAppInitialized(true);
+        setIsSyncing(false);
       }
     };
 
     initializeApp();
-  // We use the `user` dependency to re-initialize when the user logs in or out.
-  // This simplifies state management by treating each auth state as a fresh start.
   }, [user, loadGuestSettings]);
 
 
@@ -306,27 +305,31 @@ export default function App({ initialUser }: AppProps) {
   
   const handleLogin = async () => {
     setIsSyncing(true);
-    const loggedInUser = await signInWithGoogle();
-    if (loggedInUser) {
-      setUser(loggedInUser); 
-    } else {
-      setIsSyncing(false); 
+    const resultUser = await signInWithGoogle();
+    // If login fails or is cancelled, the auth state won't change via onAuthStateChanged.
+    // We need to hide the spinner manually in that case.
+    if (!resultUser) {
+      setIsSyncing(false);
     }
+    // On success, onAuthStateChanged re-renders the app with the new user,
+    // which triggers the main useEffect, which will handle the spinner.
   };
-  
+
   const handleLogout = async () => {
     if (user) {
       setIsSyncing(true);
       try {
-        await saveUserSettings(user.uid, allSettings); 
+        await saveUserSettings(user.uid, allSettings);
         await signOut();
-        setUser(null);
+        // onAuthStateChanged will handle re-rendering with user=null.
+        // The main useEffect will run for the new state and hide the spinner.
       } catch (error) {
         console.error("Error during logout:", error);
-        setIsSyncing(false);
+        setIsSyncing(false); // Hide spinner on error
       }
     }
   };
+
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -550,7 +553,7 @@ export default function App({ initialUser }: AppProps) {
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
-  if (!isAppInitialized) {
+  if (!isAppInitialized && !isSyncing) {
     return (
       <div className="app-loader" style={{ display: 'flex' }}>
         <div className="loader-spinner"></div>

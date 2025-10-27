@@ -98,7 +98,7 @@ const CATEGORY_SORTS = [
     { order: 'category_nameStructure', label: 'שם' },
 ];
 
-export default function App({ initialUser }) {
+export default function App({ initialUser: user }) {
   const [stations, setStations] = useState([]);
   const [playerState, dispatch] = useReducer(playerReducer, initialPlayerState);
   
@@ -113,7 +113,6 @@ export default function App({ initialUser }) {
   const PINCH_THRESHOLD = 40;
   const [actionMenuState, setActionMenuState] = useState({ isOpen: false, songTitle: null });
 
-  const [user, setUser] = useState(initialUser);
   const [isSyncing, setIsSyncing] = useState(false);
   
   const [favorites, setFavorites] = useState([]);
@@ -183,6 +182,7 @@ export default function App({ initialUser }) {
 
   useEffect(() => {
     const initializeApp = async () => {
+      setIsSyncing(true);
       try {
         const stationPromise = fetchIsraeliStations();
 
@@ -240,6 +240,7 @@ export default function App({ initialUser }) {
         console.error(err);
       } finally {
         setIsAppInitialized(true);
+        setIsSyncing(false);
       }
     };
 
@@ -268,21 +269,18 @@ export default function App({ initialUser }) {
   
   const handleLogin = async () => {
     setIsSyncing(true);
-    const loggedInUser = await signInWithGoogle();
-    if (loggedInUser) {
-      setUser(loggedInUser);
-    } else {
+    const resultUser = await signInWithGoogle();
+    if (!resultUser) {
       setIsSyncing(false);
     }
   };
-  
+
   const handleLogout = async () => {
     if (user) {
       setIsSyncing(true);
       try {
         await saveUserSettings(user.uid, allSettings);
         await signOut();
-        setUser(null);
       } catch (error) {
         console.error("Error during logout:", error);
         setIsSyncing(false);
@@ -512,7 +510,7 @@ export default function App({ initialUser }) {
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
-  if (!isAppInitialized) {
+  if (!isAppInitialized && !isSyncing) {
     return (
       React.createElement("div", { className: "app-loader", style: { display: 'flex' } },
         React.createElement("div", { className: "loader-spinner" })
