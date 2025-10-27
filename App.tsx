@@ -215,7 +215,8 @@ export default function App({ initialUser: user }: AppProps) {
   // Centralized initialization effect
   useEffect(() => {
     const initializeApp = async () => {
-      setIsSyncing(true);
+      // Don't show the main syncing overlay during initial load,
+      // as the skeleton provides better visual feedback.
       try {
         const stationPromise = fetchIsraeliStations();
 
@@ -273,7 +274,6 @@ export default function App({ initialUser: user }: AppProps) {
         console.error(err);
       } finally {
         setIsAppInitialized(true);
-        setIsSyncing(false);
       }
     };
 
@@ -306,13 +306,9 @@ export default function App({ initialUser: user }: AppProps) {
   const handleLogin = async () => {
     setIsSyncing(true);
     const resultUser = await signInWithGoogle();
-    // If login fails or is cancelled, the auth state won't change via onAuthStateChanged.
-    // We need to hide the spinner manually in that case.
     if (!resultUser) {
       setIsSyncing(false);
     }
-    // On success, onAuthStateChanged re-renders the app with the new user,
-    // which triggers the main useEffect, which will handle the spinner.
   };
 
   const handleLogout = async () => {
@@ -321,11 +317,9 @@ export default function App({ initialUser: user }: AppProps) {
       try {
         await saveUserSettings(user.uid, allSettings);
         await signOut();
-        // onAuthStateChanged will handle re-rendering with user=null.
-        // The main useEffect will run for the new state and hide the spinner.
       } catch (error) {
         console.error("Error during logout:", error);
-        setIsSyncing(false); // Hide spinner on error
+        setIsSyncing(false);
       }
     }
   };
@@ -553,14 +547,6 @@ export default function App({ initialUser: user }: AppProps) {
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
-  if (!isAppInitialized && !isSyncing) {
-    return (
-      <div className="app-loader" style={{ display: 'flex' }}>
-        <div className="loader-spinner"></div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col">
       <header className="p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md">
@@ -587,13 +573,17 @@ export default function App({ initialUser: user }: AppProps) {
         </div>
       </header>
       <main className="flex-grow pb-48" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-        {isAppInitialized && stations.length === 0 && !error ? (
+        {!isAppInitialized ? (
           <StationListSkeleton />
         ) : error ? (
           <p className="text-center text-red-400 p-4">{error}</p>
-        ) : ( displayedStations.length > 0 ? (
-                <StationList stations={displayedStations} currentStation={playerState.station} onSelectStation={handleSelectStation} isFavorite={isFavorite} toggleFavorite={toggleFavorite} onReorder={handleReorder} isStreamActive={playerState.status === 'PLAYING'} isStatusIndicatorEnabled={isStatusIndicatorEnabled} gridSize={gridSize} sortOrder={sortOrder} />
-            ) : ( <div className="text-center p-8 text-text-secondary"><h2 className="text-xl font-semibold">{filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}</h2><p>{filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}</p></div> )
+        ) : displayedStations.length > 0 ? (
+          <StationList stations={displayedStations} currentStation={playerState.station} onSelectStation={handleSelectStation} isFavorite={isFavorite} toggleFavorite={toggleFavorite} onReorder={handleReorder} isStreamActive={playerState.status === 'PLAYING'} isStatusIndicatorEnabled={isStatusIndicatorEnabled} gridSize={gridSize} sortOrder={sortOrder} />
+        ) : (
+          <div className="text-center p-8 text-text-secondary">
+            <h2 className="text-xl font-semibold">{filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}</h2>
+            <p>{filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}</p>
+          </div>
         )}
       </main>
       <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} currentTheme={theme} onThemeChange={setTheme} currentEqPreset={eqPreset} onEqPresetChange={setEqPreset} isNowPlayingVisualizerEnabled={isNowPlayingVisualizerEnabled} onNowPlayingVisualizerEnabledChange={setIsNowPlayingVisualizerEnabled} isPlayerBarVisualizerEnabled={isPlayerBarVisualizerEnabled} onPlayerBarVisualizerEnabledChange={setIsPlayerBarVisualizerEnabled} isStatusIndicatorEnabled={isStatusIndicatorEnabled} onStatusIndicatorEnabledChange={setIsStatusIndicatorEnabled} isVolumeControlVisible={isVolumeControlVisible} onVolumeControlVisibleChange={setIsVolumeControlVisible} showNextSong={showNextSong} onShowNextSongChange={setShowNextSong} customEqSettings={customEqSettings} onCustomEqChange={setCustomEqSettings} gridSize={gridSize} onGridSizeChange={setGridSize} isMarqueeProgramEnabled={isMarqueeProgramEnabled} onMarqueeProgramEnabledChange={setIsMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} onMarqueeCurrentTrackEnabledChange={setIsMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} onMarqueeNextTrackEnabledChange={setIsMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onMarqueeSpeedChange={setMarqueeSpeed} marqueeDelay={marqueeDelay} onMarqueeDelayChange={setMarqueeDelay} updateStatus={updateStatus} onManualUpdateCheck={handleManualUpdateCheck} user={user} onLogin={handleLogin} onLogout={handleLogout} />

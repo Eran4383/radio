@@ -182,7 +182,6 @@ export default function App({ initialUser: user }) {
 
   useEffect(() => {
     const initializeApp = async () => {
-      setIsSyncing(true);
       try {
         const stationPromise = fetchIsraeliStations();
 
@@ -240,7 +239,6 @@ export default function App({ initialUser: user }) {
         console.error(err);
       } finally {
         setIsAppInitialized(true);
-        setIsSyncing(false);
       }
     };
 
@@ -510,14 +508,6 @@ export default function App({ initialUser: user }) {
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
-  if (!isAppInitialized && !isSyncing) {
-    return (
-      React.createElement("div", { className: "app-loader", style: { display: 'flex' } },
-        React.createElement("div", { className: "loader-spinner" })
-      )
-    );
-  }
-
   return (
     React.createElement("div", { className: "min-h-screen bg-bg-primary text-text-primary flex flex-col" },
       React.createElement("header", { className: "p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md" },
@@ -544,7 +534,7 @@ export default function App({ initialUser: user }) {
         )
       ),
       React.createElement("main", { className: "flex-grow pb-48", onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd },
-        isAppInitialized && stations.length === 0 && !error ? React.createElement(StationListSkeleton, null) :
+        !isAppInitialized ? React.createElement(StationListSkeleton, null) :
         error ? React.createElement("p", { className: "text-center text-red-400 p-4" }, error) :
         displayedStations.length > 0 ?
             React.createElement(StationList, { stations: displayedStations, currentStation: playerState.station, onSelectStation: handleSelectStation, isFavorite: isFavorite, toggleFavorite: toggleFavorite, onReorder: handleReorder, isStreamActive: playerState.status === 'PLAYING', isStatusIndicatorEnabled: isStatusIndicatorEnabled, gridSize: gridSize, sortOrder: sortOrder }) :
