@@ -1,0 +1,25 @@
+{
+  "short_name": "רדיו פרימיום",
+  "name": "רדיו פרימיום",
+  "description": "נגן רדיו ישראלי מהיר ונקי, מותאם לשימוש ברכב. האזן לתחנות המובילות בישראל ללא פרסומות. ניתן להתקנה על מסך הבית.",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": ".",
+  "id": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "categories": [
+    "music",
+    "entertainment"
+  ],
+  "icons": [
+    {
+      "src": "icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    }
+  ]
+}

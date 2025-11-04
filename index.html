@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0" />
     <title>רדיו פרימיום</title>
-    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="manifest" href="./manifest.json?v=22" />
     <meta name="theme-color" content="#111827" />
-    <link rel="apple-touch-icon" href="icon.svg">
-    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="./icon.svg">
+    <link rel="icon" href="./icon.svg" type="image/svg+xml">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -121,20 +121,109 @@
         z-index: 10;
         cursor: grabbing;
       }
+      .marquee-wrapper {
+        overflow: hidden;
+        white-space: nowrap;
+        width: 100%;
+      }
+      .animate-marquee {
+        animation: marquee-animation var(--marquee-duration, 10s) ease-in-out infinite;
+        will-change: transform;
+      }
+      @keyframes marquee-animation {
+        from { transform: translateX(0); }
+        to { transform: translateX(50%); }
+      }
+
+      /* Action Menu Styles */
+      .action-menu-overlay {
+        transition: opacity 300ms ease-in-out;
+      }
+      .action-menu-container {
+        transition: transform 300ms ease-in-out;
+      }
+      /* Action Menu Colorful Buttons */
+      .action-btn-copy {
+        background-color: #3b82f6; /* blue-500 */
+      }
+      .action-btn-copy:hover {
+        background-color: #2563eb; /* blue-600 */
+      }
+      .action-btn-ytmusic {
+        background-color: #ef4444; /* red-500 */
+      }
+      .action-btn-ytmusic:hover {
+        background-color: #dc2626; /* red-600 */
+      }
+      .action-btn-spotify {
+        background-color: #22c55e; /* green-500 */
+      }
+      .action-btn-spotify:hover {
+        background-color: #16a34a; /* green-600 */
+      }
+      .action-btn-lyrics {
+        background-color: #f59e0b; /* amber-500 */
+      }
+      .action-btn-lyrics:hover {
+        background-color: #d97706; /* amber-600 */
+      }
+
+       @keyframes fade-in-up {
+        from { opacity: 0; transform: translateY(20px) translateX(-50%); }
+        to { opacity: 1; transform: translateY(0) translateX(-50%); }
+      }
+      .animate-fade-in-up {
+        animation: fade-in-up 0.3s ease-out;
+      }
+
+      /* Initial loader */
+      .app-loader {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        width: 100vw;
+        position: fixed;
+        top: 0;
+        left: 0;
+        background-color: var(--bg-primary);
+        z-index: 9999;
+      }
+      .loader-spinner {
+        border: 4px solid var(--bg-secondary);
+        border-top: 4px solid var(--accent);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
     </style>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <script type="importmap">
 {
   "imports": {
     "react/": "https://aistudiocdn.com/react@^18.3.0/",
     "react": "https://aistudiocdn.com/react@^18.3.0",
     "react-dom/client": "https://aistudiocdn.com/react-dom@^18.3.0/client",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+    "react-dom/": "https://aistudiocdn.com/react-dom@^18.3.0/",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.4.0/"
   }
 }
 </script>
 </head>
   <body class="bg-primary text-primary font-sans">
-    <div id="root"></div>
+    <div id="root">
+      <div class="app-loader">
+        <div class="loader-spinner"></div>
+      </div>
+    </div>
     <script type="module" src="./index.tsx"></script>
   </body>
 </html>

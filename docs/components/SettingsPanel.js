@@ -1,5 +1,192 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
+import Auth from './Auth.js';
+
+const releaseNotes = [
+  {
+    version: '2.0.3',
+    date: '5 בספטמבר 2024',
+    features: [
+        "תיקון ארכיטקטוני למנגנון טעינת ההגדרות למניעת 'מסך שחור' לאחר התחברות.",
+        "האפליקציה כעת חוזרת באופן בטוח להגדרות מקומיות במקרה של שגיאת רשת בעת טעינת נתונים מהענן.",
+        "שיפור יציבות כללי וחווית המשתמש בעת סנכרון נתונים.",
+    ],
+  },
+  {
+    version: '2.0.2',
+    date: '4 בספטמבר 2024',
+    features: [
+        "תיקון קריטי: פתרון בעיית ה'מסך השחור' שהתרחשה לאחר התחברות לחשבון גוגל.",
+        "הטמעת מנגנון 'פסק זמן' (Timeout) בפניות ל-Firestore. אם אין תשובה תוך 8 שניות, האפליקציה ממשיכה לעבוד עם הגדרות מקומיות.",
+        "האפליקציה כעת עמידה יותר בפני תקלות תקשורת עם שרתי הענן.",
+        "תיקון שגיאות 404 של אייקונים חסרים.",
+    ],
+  },
+  {
+    version: '2.0.1',
+    date: '3 בספטמבר 2024',
+    features: [
+        "תיקון קריטי: סנכרון מלא בין קוד המקור לקבצי הבנייה (build) בתיקיית `docs`.",
+        "פתרון בעיית ה'מסך השחור' בגרסה החיה שנגרמה מקבצי בנייה ישנים.",
+        "הטמעה מלאה של מנגנון ה-'Gatekeeper' בגרסת הייצור, המבטיח טעינה יציבה.",
+        "הוספת אנימציית טעינה ראשונית לגרסה החיה.",
+    ],
+  },
+  {
+    version: '2.0',
+    date: '2 בספטמבר 2024',
+    features: [
+        "בנייה מחדש של מערכת ההתחברות והסנכרון לענן מהיסוד.",
+        "פתרון שורשי לבעיות תזמון, התנתקויות ברענון וטעינת הגדרות שגויות.",
+        "הפרדה מוחלטת בין הגדרות 'אורח' (במכשיר) להגדרות 'מחובר' (בענן).",
+        "תהליך התחברות והתנתקות חלק ומיידי, ללא צורך ברענון הדף.",
+        "שיפור משמעותי באמינות, מהירות ויציבות האפליקציה.",
+    ],
+  },
+  {
+    version: '1.9.9',
+    date: '1 בספטמבר 2024',
+    features: [
+        "הוספת הגנה בקובץ ההוראות הראשי (`INSTRUCTIONS.md`) למניעת מחיקה או שינוי של קבצי האייקונים המותאמים אישית (`icon-*-v2.png`).",
+        "התיעוד מבטיח שהזהות החזותית של האפליקציה תישמר בכל העדכונים העתידיים.",
+    ],
+  },
+  {
+    version: '1.9.8',
+    date: '31 באוגוסט 2024',
+    features: [
+        "ביצוע \"שבירת מטמון\" אגרסיבית לקובץ ההגדרות (manifest).",
+        "הוספת מספר גרסה ייחודי לקובץ כדי להכריח את הדפדפן לטעון אותו מחדש.",
+        "התיקון נועד לפתור באופן סופי בעיות התקנה (PWA) ואייקונים שלא התעדכנו.",
+        "העלאת גרסת המטמון ל-v19 לכפיית המנגנון החדש על כל המשתמשים.",
+    ],
+  },
+  {
+    version: '1.9.7',
+    date: '30 באוגוסט 2024',
+    features: [
+        "שינוי אסטרטגי למנגנון העדכונים (Service Worker) כדי להבטיח יציבות מירבית.",
+        "תהליך ההתקנה הפך לגמיש ועמיד יותר בפני תקלות רשת רגעיות.",
+        "התיקון מבטיח שה-Service Worker יותקן בהצלחה גם אם הורדת קובץ משני נכשלת, ופותר את בעיית העדכון שנתקע.",
+        "העלאת גרסת המטמון ל-v18 לכפיית המנגנון החדש על כל המשתמשים.",
+    ],
+  },
+  {
+    version: '1.9.6',
+    date: '29 באוגוסט 2024',
+    features: [
+        "תיקון שורשי ליציבות תהליך העדכון (Service Worker).",
+        "הסרת תלויות חיצוניות (פונטים, CDN) מתהליך ההתקנה למניעת כשלים.",
+        "פתרון סופי לבעיית העדכון שנתקע במצב \"מוריד עדכון...\"",
+        "התיקון מבטיח שהאייקון הנכון ואפשרות ההתקנה יעבדו באופן אמין.",
+        "העלאת גרסת המטמון ל-v17 לכפיית עדכון כללי.",
+    ],
+  },
+  {
+    version: '1.9.5',
+    date: '28 באוגוסט 2024',
+    features: [
+        "תיקון שורשי למנגנון העדכונים של קובץ ההגדרות (manifest).",
+        "האפליקציה תמיד תטען את הגרסה העדכנית ביותר של ההגדרות מהרשת.",
+        "פתרון סופי לבעיות ההתקנה והצגת האייקון.",
+        "העלאת גרסת המטמון ל-v16 לכפיית עדכון כללי.",
+    ],
+  },
+  {
+    version: '1.9.4',
+    date: '27 באוגוסט 2024',
+    features: [
+        "תיקון מקיף לבעיית התקנת האפליקציה (PWA) והצגת האייקון.",
+        "כפיית רענון של קובץ ה-manifest כדי להבטיח שהדפדפן תמיד טוען את הגרסה העדכנית ביותר.",
+        "עדכון גרסת ה-cache ל-v15 לניקוי יסודי של קבצים ישנים מכל המכשירים.",
+    ],
+  },
+  {
+    version: '1.9.3',
+    date: '26 באוגוסט 2024',
+    features: [
+        "תיקון סופי להצגת הלוגו המקורי של המשתמש.",
+        "החלפת קבצי הלוגו הישנים בקבצים ריקים כדי למנוע טעינתם מזיכרון המטמון.",
+        "כפיית עדכון גרסה אגרסיבי (v14) לכלל המשתמשים.",
+    ],
+  },
+  {
+    version: '1.9.2',
+    date: '25 באוגוסט 2024',
+    features: [
+        "החזרת הלוגו המקורי של המשתמש (קבצי PNG).",
+        "עדכון כלל האפליקציה לשימוש באייקונים החדשים.",
+        "הוספת הגנה בקובץ ההוראות למניעת מחיקה עתידית של קבצי הלוגו.",
+    ],
+  },
+  {
+    version: '1.9.1',
+    date: '24 באוגוסט 2024',
+    features: [
+        "עיצוב לוגו חדש ומקצועי לאפליקציה.",
+        "הטמעת הלוגו החדש כאייקון במסך הבית (PWA).",
+        "שיפור מנגנון עדכון האייקון כדי להבטיח שהשינוי יופיע אצל כל המשתמשים.",
+    ],
+  },
+  {
+    version: '1.9',
+    date: '23 באוגוסט 2024',
+    features: [
+        "תיקון יסודי למנגנון העדכונים של האפליקציה (Service Worker).",
+        "האפליקציה תזהה ותציע עדכונים חדשים באופן אמין יותר.",
+        "תיקון תאריכים בהיסטוריית הגרסאות.",
+    ],
+  },
+  {
+    version: '1.8',
+    date: '22 באוגוסט 2024',
+    features: [
+        "הסרת מסך טעינה ראשוני לטעינה מהירה יותר של האפליקציה.",
+    ],
+  },
+  {
+    version: '1.7',
+    date: '20 באוגוסט 2024',
+    features: [
+        "תיקון אגרסיבי לעדכון אייקון האפליקציה על-ידי שינוי שמות קבצי האייקון.",
+    ],
+  },
+  {
+    version: '1.6',
+    date: '18 באוגוסט 2024',
+    features: [
+        "כפיית עדכון אייקון האפליקציה במסך הבית לכלל המשתמשים.",
+    ],
+  },
+  {
+    version: '1.5',
+    date: '15 באוגוסט 2024',
+    features: [
+        "החלפת אייקון האפליקציה ושיפור מנגנון העדכון.",
+    ],
+  },
+  {
+    version: '1.4',
+    date: '25 ביולי 2024',
+    features: [
+      "הוספת היסטוריית גרסאות ומידע על פיצ'רים חדשים.",
+      "שיפורי ביצועים ויציבות כלליים.",
+    ],
+  },
+  {
+    version: '1.3',
+    date: 'יוני 2024',
+    features: [
+        'מיון תחנות לפי קטגוריות (סגנון, אופי, אזור).',
+        'שינוי גודל תצוגת התחנות באמצעות מחוות צביטה (Pinch-to-Zoom).',
+        'הוספת סגנונות תצוגה גרפית חדשים: "זוהר צפוני" ו"טבעות".',
+        'בקרת מהירות והשהייה לטקסט נע.',
+    ],
+  },
+];
+
+const currentVersionInfo = releaseNotes[0];
+
 
 const SettingsButton = ({ label, isActive, onClick }) => (
     React.createElement("button", {
@@ -55,8 +242,35 @@ const SettingsPanel = ({
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
     showNextSong, onShowNextSongChange,
     customEqSettings, onCustomEqChange,
-    gridSize, onGridSizeChange
+    gridSize, onGridSizeChange,
+    isMarqueeProgramEnabled, onMarqueeProgramEnabledChange,
+    isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange,
+    isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange,
+    marqueeSpeed, onMarqueeSpeedChange,
+    marqueeDelay, onMarqueeDelayChange,
+    updateStatus, onManualUpdateCheck,
+    user, onLogin, onLogout
  }) => {
+  const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
+
+  const getUpdateStatusContent = () => {
+      switch (updateStatus) {
+        case 'checking':
+          return 'בודק עדכונים...';
+        case 'downloading':
+          return 'מוריד עדכון...';
+        case 'found':
+          return 'העדכון מוכן להתקנה!';
+        case 'not-found':
+          return 'הגרסה עדכנית';
+        case 'error':
+          return 'שגיאה בבדיקה';
+        case 'idle':
+        default:
+          return React.createElement("span", { className: "opacity-70" }, "לחץ לבדיקת עדכונים");
+      }
+    };
+
   return (
     React.createElement(React.Fragment, null,
       /* Overlay */
@@ -70,12 +284,7 @@ const SettingsPanel = ({
         React.createElement("div", { className: "p-4 flex flex-col h-full overflow-y-auto" },
             React.createElement("div", { className: "flex justify-between items-center mb-6 flex-shrink-0" },
                 React.createElement("h2", { className: "text-xl font-bold text-text-primary" }, "הגדרות"),
-                React.createElement("div", { className: "text-center opacity-60 cursor-not-allowed" },
-                    React.createElement("div", { className: "w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center ring-2 ring-gray-600" },
-                        React.createElement("span", { className: "text-xl font-bold text-gray-300" }, "G")
-                    ),
-                    React.createElement("p", { className: "text-xs text-text-secondary mt-1" }, "התחברות")
-                )
+                React.createElement(Auth, { user, onLogin, onLogout })
             ),
 
             /* Theme Switcher */
@@ -106,7 +315,7 @@ const SettingsPanel = ({
                         })
                     ))
                 ),
-                currentEqPreset === 'custom' && (
+                 currentEqPreset === 'custom' && (
                     React.createElement("div", { className: "p-3 rounded-lg bg-bg-primary space-y-3" },
                         React.createElement(EqSlider, { 
                             label: "בס (Bass)",
@@ -136,7 +345,7 @@ const SettingsPanel = ({
                           React.createElement("div", { className: "flex justify-between text-sm font-medium text-text-primary" },
                               React.createElement("span", null, "גודל תצוגה")
                           ),
-                           React.createElement("div", { className: "flex justify-between text-xs text-text-secondary px-1" },
+                          React.createElement("div", { className: "flex justify-between text-xs text-text-secondary px-1" },
                             React.createElement("span", null, "קטן"),
                             React.createElement("span", null, "גדול")
                           ),
@@ -151,6 +360,60 @@ const SettingsPanel = ({
                           })
                       )
                     ),
+                    
+                    React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-2 px-3" }, "טקסט נע"),
+                    React.createElement(ToggleSwitch, { 
+                        label: "שם תחנה / תוכנית",
+                        enabled: isMarqueeProgramEnabled,
+                        onChange: onMarqueeProgramEnabledChange
+                    }),
+                     React.createElement(ToggleSwitch, { 
+                        label: "שם שיר נוכחי",
+                        enabled: isMarqueeCurrentTrackEnabled,
+                        onChange: onMarqueeCurrentTrackEnabledChange
+                    }),
+                     React.createElement(ToggleSwitch, { 
+                        label: "שיר הבא",
+                        enabled: isMarqueeNextTrackEnabled,
+                        onChange: onMarqueeNextTrackEnabledChange
+                    }),
+                    React.createElement("div", { className: "p-3 rounded-lg bg-bg-primary space-y-3" },
+                        React.createElement("div", { className: "flex flex-col gap-1" },
+                          React.createElement("div", { className: "flex justify-between text-sm font-medium text-text-primary" },
+                              React.createElement("span", null, "מהירות גלילה")
+                          ),
+                           React.createElement("div", { className: "flex justify-between text-xs text-text-secondary px-1" },
+                            React.createElement("span", null, "איטי"),
+                            React.createElement("span", null, "מהיר")
+                          ),
+                          React.createElement("input", {
+                              type: "range",
+                              min: "1",
+                              max: "10",
+                              step: "1",
+                              value: marqueeSpeed,
+                              onChange: (e) => onMarqueeSpeedChange(parseInt(e.target.value, 10)),
+                              className: "w-full accent-teal-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                          })
+                        ),
+                        React.createElement("div", { className: "flex flex-col gap-1" },
+                          React.createElement("div", { className: "flex justify-between text-sm font-medium text-text-primary" },
+                              React.createElement("span", null, "השהיה בין גלילות"),
+                              React.createElement("span", null, `${marqueeDelay} ש'`)
+                          ),
+                          React.createElement("input", {
+                              type: "range",
+                              min: "1",
+                              max: "10",
+                              step: "1",
+                              value: marqueeDelay,
+                              onChange: (e) => onMarqueeDelayChange(parseInt(e.target.value, 10)),
+                              className: "w-full accent-teal-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                          })
+                        )
+                    ),
+
+                    React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-2 px-3" }, "כללי"),
                     React.createElement(ToggleSwitch, { 
                         label: "תצוגה גרפית (מסך מלא)", 
                         enabled: isNowPlayingVisualizerEnabled, 
@@ -161,17 +424,17 @@ const SettingsPanel = ({
                         enabled: isPlayerBarVisualizerEnabled, 
                         onChange: onPlayerBarVisualizerEnabledChange 
                     }),
-                    React.createElement(ToggleSwitch, {
+                    React.createElement(ToggleSwitch, { 
                         label: "הצג חיווי מצב",
                         enabled: isStatusIndicatorEnabled,
                         onChange: onStatusIndicatorEnabledChange
                     }),
-                    React.createElement(ToggleSwitch, {
+                    React.createElement(ToggleSwitch, { 
                         label: "הצג בקרת עוצמה",
                         enabled: isVolumeControlVisible,
                         onChange: onVolumeControlVisibleChange
                     }),
-                    React.createElement(ToggleSwitch, {
+                    React.createElement(ToggleSwitch, { 
                         label: "הצג שיר הבא",
                         enabled: showNextSong,
                         onChange: onShowNextSongChange
@@ -179,8 +442,44 @@ const SettingsPanel = ({
                 )
             ),
 
-            React.createElement("div", { className: "mt-auto text-center text-xs text-text-secondary flex-shrink-0" },
-                React.createElement("p", null, "רדיו פרימיום v1.3")
+            React.createElement("div", { className: "mt-auto flex-shrink-0" },
+                isVersionHistoryVisible && (
+                    React.createElement("div", { className: "mb-4 text-xs text-text-secondary" },
+                        React.createElement("h4", { className: "font-bold text-sm text-text-primary mb-2" }, "היסטוריית גרסאות"),
+                        React.createElement("div", { className: "space-y-3 max-h-48 overflow-y-auto pr-2" },
+                            releaseNotes.map(release => (
+                                React.createElement("div", { key: release.version },
+                                    React.createElement("p", { className: "font-semibold text-text-primary" }, `גרסה ${release.version} (${release.date})`),
+                                    React.createElement("ul", { className: "list-disc list-inside space-y-1 mt-1" },
+                                        release.features.map((feature, index) => (
+                                            React.createElement("li", { key: index }, feature)
+                                        ))
+                                    )
+                                )
+                            ))
+                        )
+                    )
+                ),
+                 React.createElement("div", { className: "text-center text-xs text-text-secondary space-y-2" },
+                    React.createElement("div", {
+                        className: `p-2 rounded-lg ${updateStatus === 'idle' ? 'cursor-pointer hover:bg-bg-primary' : 'cursor-default'}`,
+                        onClick: updateStatus === 'idle' ? onManualUpdateCheck : undefined,
+                        role: "button",
+                        tabIndex: updateStatus === 'idle' ? 0 : -1,
+                        "aria-live": "polite"
+                    },
+                        React.createElement("p", null, `רדיו פרימיום v${currentVersionInfo.version}`),
+                        React.createElement("div", { className: "h-4 mt-1 flex items-center justify-center" },
+                            getUpdateStatusContent()
+                        )
+                    ),
+                    React.createElement("button", {
+                        className: "text-text-secondary hover:text-text-primary opacity-80",
+                        onClick: () => setIsVersionHistoryVisible(prev => !prev)
+                    },
+                        isVersionHistoryVisible ? 'הסתר היסטוריית גרסאות' : 'הצג היסטוריית גרסאות'
+                    )
+                )
             )
         )
       )

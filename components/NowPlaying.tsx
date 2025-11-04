@@ -1,8 +1,9 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Station, VisualizerStyle, StationTrackInfo } from '../types';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon } from './Icons';
 import Visualizer from './Visualizer';
 import InteractiveText from './InteractiveText';
+import MarqueeText from './MarqueeText';
 
 interface NowPlayingProps {
   isOpen: boolean;
@@ -21,45 +22,147 @@ interface NowPlayingProps {
   isVisualizerEnabled: boolean;
   onCycleVisualizerStyle: () => void;
   isVolumeControlVisible: boolean;
+  marqueeDelay: number;
+  isMarqueeProgramEnabled: boolean;
+  isMarqueeCurrentTrackEnabled: boolean;
+  isMarqueeNextTrackEnabled: boolean;
+  marqueeSpeed: number;
+  onOpenActionMenu: (songTitle: string) => void;
+  isVisualizerFullscreen: boolean;
+  setIsVisualizerFullscreen: (isFull: boolean) => void;
 }
 
 const NowPlaying: React.FC<NowPlayingProps> = ({
   isOpen, onClose, station, isPlaying, onPlayPause, onNext, onPrev, 
   volume, onVolumeChange, trackInfo, showNextSong, frequencyData,
   visualizerStyle, isVisualizerEnabled, onCycleVisualizerStyle,
-  isVolumeControlVisible
+  isVolumeControlVisible, marqueeDelay,
+  isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled, marqueeSpeed,
+  onOpenActionMenu,
+  isVisualizerFullscreen, setIsVisualizerFullscreen
 }) => {
-    const touchStartY = useRef(0);
-    const touchStartX = useRef(0);
     const dragRef = useRef<HTMLDivElement>(null);
+    const [startAnimation, setStartAnimation] = useState(false);
+    
+    const stationNameRef = useRef<HTMLSpanElement>(null);
+    const programNameRef = useRef<HTMLSpanElement>(null);
+    const currentTrackRef = useRef<HTMLSpanElement>(null);
+    const nextTrackRef = useRef<HTMLSpanElement>(null);
+    const [marqueeConfig, setMarqueeConfig] = useState<{ duration: number; isOverflowing: boolean[] }>({ duration: 0, isOverflowing: [false, false, false, false] });
+    
+    // Refs for gesture detection
+    const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
+    const longPressTimerRef = useRef<number | null>(null);
+    const hasMoved = useRef(false);
+
+    useEffect(() => {
+      setStartAnimation(false);
+      const timer = setTimeout(() => {
+          setStartAnimation(true);
+      }, 3000); 
+  
+      return () => clearTimeout(timer);
+    }, [station?.stationuuid]);
+    
+    useEffect(() => {
+        const calculateMarquee = () => {
+            const refs = [stationNameRef, programNameRef, currentTrackRef, nextTrackRef];
+            let maxContentWidth = 0;
+            const newIsOverflowing = refs.map(ref => {
+                const content = ref.current;
+                if (!content) return false;
+                
+                const container = content.closest('.marquee-wrapper, .truncate');
+                
+                if (container && content.scrollWidth > container.clientWidth) {
+                    maxContentWidth = Math.max(maxContentWidth, content.scrollWidth);
+                    return true;
+                }
+                return false;
+            });
+
+            const anyOverflowing = newIsOverflowing.some(Boolean);
+            const pixelsPerSecond = 3.668 * Math.pow(1.363, marqueeSpeed);
+            const newDuration = anyOverflowing ? Math.max(5, maxContentWidth / pixelsPerSecond) : 0;
+            
+            setMarqueeConfig({ duration: newDuration, isOverflowing: newIsOverflowing });
+        };
+
+        const timeoutId = setTimeout(calculateMarquee, 50);
+        return () => clearTimeout(timeoutId);
+    }, [station, trackInfo, showNextSong, marqueeSpeed, isOpen, isVisualizerFullscreen]);
+
+    const clearLongPressTimer = useCallback(() => {
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+    }, []);
 
     const handleTouchStart = (e: React.TouchEvent) => {
-        touchStartX.current = e.targetTouches[0].clientX;
-        touchStartY.current = e.targetTouches[0].clientY;
+        clearLongPressTimer();
+        const target = e.target as HTMLElement;
+        const isVisualizerArea = target.closest('.visualizer-interaction-area');
+
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+            hasMoved.current = false;
+
+            if (isVisualizerArea) {
+                longPressTimerRef.current = window.setTimeout(() => {
+                    setIsVisualizerFullscreen(!isVisualizerFullscreen);
+                    longPressTimerRef.current = null; // Mark as fired
+                }, 500); // 500ms for long press
+            }
+        } else {
+             clearLongPressTimer();
+        }
     };
     
     const handleTouchMove = (e: React.TouchEvent) => {
-        const deltaY = e.targetTouches[0].clientY - touchStartY.current;
-        if (deltaY > 0 && dragRef.current) { // only for swipe down
-             dragRef.current.style.transform = `translateY(${deltaY}px)`;
-             dragRef.current.style.transition = 'none';
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            const deltaX = Math.abs(touch.clientX - touchStartRef.current.x);
+            const deltaY = Math.abs(touch.clientY - touchStartRef.current.y);
+
+            if (deltaX > 10 || deltaY > 10) {
+                hasMoved.current = true;
+                clearLongPressTimer();
+            }
+
+            if (!isVisualizerFullscreen) {
+                 const dragDownY = touch.clientY - touchStartRef.current.y;
+                 if (dragDownY > 0 && dragRef.current) {
+                     dragRef.current.style.transform = `translateY(${dragDownY}px)`;
+                     dragRef.current.style.transition = 'none';
+                 }
+            }
+        } else {
+            clearLongPressTimer();
         }
     };
 
     const handleTouchEnd = (e: React.TouchEvent) => {
-        const deltaX = e.changedTouches[0].clientX - touchStartX.current;
-        const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+        const target = e.target as HTMLElement;
+        const isVisualizerArea = target.closest('.visualizer-interaction-area');
 
-        if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5) { // Horizontal swipe
-            if (Math.abs(deltaX) > 50) {
-                if (deltaX > 0) {
-                    onPrev();
-                } else {
-                    onNext();
-                }
+        if (longPressTimerRef.current) {
+            clearLongPressTimer();
+            if (isVisualizerArea && !hasMoved.current) {
+                 onCycleVisualizerStyle();
             }
-        } else { // Vertical swipe
-            if (deltaY > 70) {
+        }
+        
+        if (!isVisualizerFullscreen) {
+            const touch = e.changedTouches[0];
+            const deltaX = touch.clientX - touchStartRef.current.x;
+            const deltaY = touch.clientY - touchStartRef.current.y;
+
+            if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY)) {
+                if (deltaX > 0) onPrev();
+                else onNext();
+            } else if (deltaY > 70 && !hasMoved.current) {
                 onClose();
             }
         }
@@ -68,77 +171,112 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
             dragRef.current.style.transform = '';
             dragRef.current.style.transition = '';
         }
-
-        touchStartX.current = 0;
-        touchStartY.current = 0;
     };
-
-    const defaultInfo = station ? `${station.codec} @ ${station.bitrate}kbps` : '...';
 
     return (
       <div 
         ref={dragRef}
-        className={`fixed inset-0 bg-bg-primary z-50 flex flex-col h-full transition-transform duration-300 ease-in-out ${isOpen ? 'translate-y-0' : 'translate-y-full'}`}
+        className={`fixed bg-bg-primary z-50 flex flex-col h-full transition-transform duration-300 ease-in-out ${isOpen ? 'translate-y-0' : 'translate-y-full'} ${isVisualizerFullscreen ? 'inset-0' : 'inset-x-0 bottom-0'}`}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {/* Header */}
-        <div className="flex-shrink-0 text-center pt-4 px-4">
+        <div className={isVisualizerFullscreen ? 'hidden' : 'flex-shrink-0 text-center pt-4 px-4'}>
             <button onClick={onClose} className="p-2 text-text-secondary hover:text-text-primary" aria-label="סגור">
                 <ChevronDownIcon className="w-8 h-8 mx-auto" />
             </button>
         </div>
 
-        {/* Main Content - Scrollable */}
-        <div className="flex-grow flex flex-col items-center justify-center gap-4 text-center overflow-y-auto py-4 px-4">
+        <div className={`flex-grow flex flex-col items-center justify-center gap-4 text-center overflow-y-auto py-4 px-4 ${isVisualizerFullscreen ? 'h-full' : ''}`}>
             <img 
               src={station?.favicon || 'https://picsum.photos/256'} 
               alt={station?.name || 'תחנה'} 
-              className="w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-2xl bg-gray-700 object-cover shadow-2xl flex-shrink-0"
+              className={`rounded-2xl bg-gray-700 object-cover shadow-2xl flex-shrink-0 transition-all duration-300 ${isVisualizerFullscreen ? 'hidden' : 'w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64'}`}
               onError={(e) => { e.currentTarget.src = 'https://picsum.photos/256'; }}
             />
-            <div className="flex-shrink-0 w-full">
-                <h2 className="text-2xl sm:text-3xl font-bold text-text-primary truncate px-4">{station?.name || 'טוען...'}</h2>
-                <div className="mt-2 min-h-[4rem] flex flex-col justify-center">
-                    <div className="text-lg text-text-primary px-4">
-                        {trackInfo?.current || trackInfo?.program ? (
+            <div className={`flex-shrink-0 w-full ${isVisualizerFullscreen ? 'hidden' : ''}`} key={station?.stationuuid}>
+                <div className="w-full px-4">
+                    <MarqueeText 
+                        loopDelay={marqueeDelay}
+                        duration={marqueeConfig.duration}
+                        startAnimation={startAnimation}
+                        isOverflowing={marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled}
+                        contentRef={stationNameRef}
+                        className="text-2xl sm:text-3xl font-bold text-text-primary">
+                        <span>{station?.name || 'טוען...'}</span>
+                    </MarqueeText>
+                </div>
+                
+                <div className="mt-2 min-h-[4rem] flex flex-col justify-center items-center">
+                    <div className="w-full px-4 text-center">
+                        {trackInfo?.program && !trackInfo.current && (
+                            <MarqueeText 
+                                loopDelay={marqueeDelay}
+                                duration={marqueeConfig.duration}
+                                startAnimation={startAnimation}
+                                isOverflowing={marqueeConfig.isOverflowing[1] && isMarqueeProgramEnabled}
+                                contentRef={programNameRef}
+                                className="text-lg text-text-primary opacity-80">
+                                <span>{trackInfo.program}</span>
+                            </MarqueeText>
+                        )}
+                        {trackInfo?.current && (
                             <>
-                                {trackInfo.program && !trackInfo.current && <p className="truncate opacity-80">{trackInfo.program}</p>}
-                                {trackInfo.current && (
-                                    <>
-                                        {trackInfo.program && <p className="truncate text-base opacity-70">{trackInfo.program}</p>}
-                                        <div className="mt-1">
-                                            <InteractiveText text={trackInfo.current} className="font-bold text-xl"/>
-                                        </div>
-                                    </>
+                                {trackInfo.program && (
+                                    <MarqueeText 
+                                        loopDelay={marqueeDelay}
+                                        duration={marqueeConfig.duration}
+                                        startAnimation={startAnimation}
+                                        isOverflowing={marqueeConfig.isOverflowing[1] && isMarqueeProgramEnabled}
+                                        contentRef={programNameRef}
+                                        className="text-base text-text-primary opacity-70">
+                                        <span>{trackInfo.program}</span>
+                                    </MarqueeText>
                                 )}
+                                <div className="mt-1">
+                                    <MarqueeText 
+                                        loopDelay={marqueeDelay}
+                                        duration={marqueeConfig.duration}
+                                        startAnimation={startAnimation}
+                                        isOverflowing={marqueeConfig.isOverflowing[2] && isMarqueeCurrentTrackEnabled}
+                                        contentRef={currentTrackRef}
+                                    >
+                                        <InteractiveText text={trackInfo.current} className="font-bold text-xl" onOpenActionMenu={onOpenActionMenu}/>
+                                    </MarqueeText>
+                                </div>
                             </>
-                        ) : (
-                            <p>{defaultInfo}</p>
                         )}
                     </div>
                     {showNextSong && trackInfo?.next && (
-                        <p className="text-base text-text-secondary mt-2 opacity-90 truncate px-4">
-                            <span className="font-semibold">הבא:</span> {trackInfo.next}
-                        </p>
+                        <div className="w-full px-4 mt-2 flex items-center justify-center text-base text-text-secondary opacity-90">
+                            <span className="font-semibold flex-shrink-0">הבא:&nbsp;</span>
+                            <div className="min-w-0">
+                                <MarqueeText 
+                                    loopDelay={marqueeDelay}
+                                    duration={marqueeConfig.duration}
+                                    startAnimation={startAnimation}
+                                    isOverflowing={marqueeConfig.isOverflowing[3] && isMarqueeNextTrackEnabled}
+                                    contentRef={nextTrackRef}
+                                >
+                                    <span>{trackInfo.next}</span>
+                                </MarqueeText>
+                            </div>
+                        </div>
                     )}
                 </div>
             </div>
             
-            <div className="w-full max-w-sm px-4 flex-shrink-0">
+            <div className={`w-full max-w-sm px-4 flex-shrink-0 visualizer-interaction-area ${isVisualizerFullscreen ? 'w-full h-full max-w-none' : 'h-20'}`}>
                 {isVisualizerEnabled && (
                     <Visualizer 
                         frequencyData={frequencyData}
                         style={visualizerStyle}
-                        onClick={onCycleVisualizerStyle}
                     />
                 )}
             </div>
         </div>
         
-        {/* Controls */}
-        <div className="flex-shrink-0 flex flex-col items-center gap-4 sm:gap-6 pb-4 sm:pb-8 px-4">
+        <div className={`flex-shrink-0 flex flex-col items-center gap-4 sm:gap-6 pb-4 sm:pb-8 px-4 ${isVisualizerFullscreen ? 'hidden' : ''}`}>
             <div className="flex items-center justify-center gap-4">
               <button onClick={onPrev} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="הקודם">
                 <SkipNextIcon className="w-12 h-12" />

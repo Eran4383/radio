@@ -25,10 +25,14 @@ const GLZ_SLUGS: { [key: string]: string } = {
  * @returns True if a specific handler exists, false otherwise.
  */
 export const hasSpecificHandler = (stationName: string): boolean => {
+    const lowerCaseName = stationName.toLowerCase();
     if (Object.keys(GLZ_SLUGS).some(glzName => stationName.includes(glzName))) {
         return true;
     }
     if (Object.keys(KAN_STATION_IDS).some(kanName => stationName.includes(kanName))) {
+        return true;
+    }
+    if (lowerCaseName.includes('eco99fm')) {
         return true;
     }
     
@@ -272,6 +276,64 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
     };
 };
 
+/**
+ * Fetches "now playing" info for eco99fm from their Firestore API.
+ * @returns A structured object with track/program info or null.
+ */
+const fetchEco99fmTrackInfo = async (): Promise<StationTrackInfo | null> => {
+    const url = 'https://firestore.googleapis.com/v1/projects/eco-99-production/databases/(default)/documents/streamed_content/program';
+    const proxiedUrl = `${CORS_PROXY_URL}${url}`;
+
+    try {
+        const response = await fetch(proxiedUrl, { cache: 'no-cache' });
+        if (!response.ok) {
+            console.warn(`eco99fm API failed with status: ${response.status}`);
+            return null;
+        }
+
+        const data = await response.json();
+        const fields = data?.fields;
+        if (!fields) return null;
+
+        const programName = fields.program_name?.stringValue || null;
+        const broadcasterName = fields.broadcaster_name?.stringValue || null;
+        const songName = fields.song_name?.stringValue || null;
+        const artistName = fields.artist_name?.stringValue || null;
+        
+        let program = programName;
+        // Combine program and broadcaster if both exist and are different
+        if (programName && broadcasterName && programName.toLowerCase() !== broadcasterName.toLowerCase()) {
+            program = `${programName} | ${broadcasterName}`;
+        } else if (broadcasterName && !programName) {
+            program = broadcasterName;
+        }
+
+        let current = null;
+        if (songName && artistName) {
+            current = `${songName} - ${artistName}`;
+        } else if (songName) {
+            current = songName;
+        }
+        
+        // Don't show program name as current song
+        if (current && program && current.toLowerCase().includes(program.toLowerCase().split('|')[0].trim())) {
+            current = null;
+        }
+        
+        if (!program && !current) return null;
+        
+        return {
+            program,
+            current,
+            next: null,
+        };
+
+    } catch (error) {
+        console.error('Error fetching from eco99fm API:', error);
+        return null;
+    }
+};
+
 
 /**
  * Main router function to fetch track info from a station-specific source.
@@ -281,8 +343,9 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
  * @returns A structured object with the current track/program name, or null if no specific handler is available.
  */
 export const fetchStationSpecificTrackInfo = async (stationName: string): Promise<StationTrackInfo | null> => {
+    const lowerCaseName = stationName.toLowerCase();
     
-    // Check for Galei Tzahal stations (גלגלצ, גלי צה"ל) - uses the new combined method
+    // Check for Galei Tzahal stations (גלגלצ, גלי צה"ל)
     if (Object.keys(GLZ_SLUGS).some(glzName => stationName.includes(glzName))) {
         return fetchGaleiTzahalCombinedInfo(stationName);
     }
@@ -291,11 +354,11 @@ export const fetchStationSpecificTrackInfo = async (stationName: string): Promis
     if (Object.keys(KAN_STATION_IDS).some(kanName => stationName.includes(kanName))) {
         return fetchKanTrackInfo(stationName);
     }
-    
-    // Example for future expansion:
-    // if (stationName.toLowerCase().includes('103fm')) {
-    //     return fetch103fmTrackInfo();
-    // }
 
+    // Check for eco99fm
+    if (lowerCaseName.includes('eco99fm')) {
+        return fetchEco99fmTrackInfo();
+    }
+    
     return null; // No specific handler for this station
 };

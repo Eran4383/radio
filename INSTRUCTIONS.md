@@ -1,3 +1,8 @@
+# PROTECTED FILES: DO NOT MODIFY OR DELETE
+- `icon-192-v2.png`
+- `icon-512-v2.png`
+**IMPORTANT**: These are custom, user-provided icons. They are critical for the application's identity and must not be changed, replaced, or removed under any circumstances. All parts of the application must reference these files for icons.
+---
 # AI AGENT INSTRUCTIONS: READ AND FOLLOW THESE RULES BEFORE MODIFYING ANY CODE.
 
 1.  **SOURCE CODE**: The primary source code is in the root directory and uses TypeScript (`.tsx`, `.ts` files).
