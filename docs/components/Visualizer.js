@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 
+// Helper functions for each drawing style
 const drawPulse = (ctx, data, width, height, color) => {
     const bass = (data[0] + data[1] + data[2]) / 3;
     const mid = (data[Math.floor(data.length / 2)] + data[Math.floor(data.length / 2) + 1]) / 2;
@@ -80,70 +81,62 @@ const drawWaveSymmetric = (ctx, data, width, height, color) => {
     ctx.stroke();
 };
 
-const drawSpectrumSymmetric = (ctx, data, width, height) => {
+const drawSpectrum = (ctx, data, width, height) => {
     const bufferLength = data.length;
-    const halfBuffer = Math.floor(bufferLength / 2);
-    const centerX = width / 2;
-    const barWidth = (width / 2) / halfBuffer;
+    const barWidth = width / bufferLength;
 
-    for (let i = 0; i < halfBuffer; i++) {
+    for (let i = 0; i < bufferLength; i++) {
         const barHeight = (data[i] / 255) * height;
-        const hue = (i / halfBuffer) * 180;
+        const hue = (i / bufferLength) * 360;
         ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-        // Right side
-        ctx.fillRect(centerX + i * barWidth, height - barHeight, barWidth, barHeight);
-        // Left side (mirrored)
-        ctx.fillRect(centerX - (i + 1) * barWidth, height - barHeight, barWidth, barHeight);
+        ctx.fillRect(i * barWidth, height - barHeight, barWidth, barHeight);
     }
 };
 
-const drawAuroraSymmetric = (ctx, data, width, height) => {
+const drawAurora = (ctx, data, width, height) => {
+    ctx.clearRect(0, 0, width, height);
     const bufferLength = data.length;
-    const halfBuffer = Math.floor(bufferLength / 2);
-    const centerX = width / 2;
-    const sliceWidth = (width / 2) / halfBuffer;
+    const sliceWidth = width / bufferLength;
 
     const createGradient = (color1, color2) => {
-        const gradient = ctx.createLinearGradient(centerX, 0, width, 0);
+        const gradient = ctx.createLinearGradient(0, 0, width, height);
         gradient.addColorStop(0, color1);
         gradient.addColorStop(1, color2);
         return gradient;
     };
-    
-    ctx.lineWidth = 3;
 
-    const drawHalf = (sign) => {
-        ctx.save();
-        ctx.translate(centerX, 0);
-        ctx.scale(sign, 1);
-        
-        ctx.strokeStyle = createGradient('#ff00ff80', '#00ffff80');
-        ctx.beginPath();
-        ctx.moveTo(0, height / 2);
-        for (let i = 0; i < halfBuffer; i++) {
-            const v = data[i] / 255.0;
-            const y = height / 2 - (v * height / 2);
-            ctx.lineTo(i * sliceWidth, y);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = createGradient('#ff00ff', '#00ffff');
+
+    ctx.beginPath();
+    let x = 0;
+    for (let i = 0; i < bufferLength; i++) {
+        const v = data[i] / 255.0;
+        const y = v * height / 2;
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
         }
-        ctx.stroke();
-
-        ctx.strokeStyle = createGradient('#ffff0080', '#ff00ff80');
-        ctx.beginPath();
-        ctx.moveTo(0, height / 2);
-        for (let i = 0; i < halfBuffer; i++) {
-            const v = data[halfBuffer - 1 - i] / 255.0; // reverse
-            const y = height / 2 + (v * height / 2);
-            ctx.lineTo(i * sliceWidth, y);
-        }
-        ctx.stroke();
-
-        ctx.restore();
-    };
+        x += sliceWidth;
+    }
+    ctx.stroke();
     
-    drawHalf(1);
-    drawHalf(-1);
+    ctx.strokeStyle = createGradient('#ffff00', '#ff00ff');
+    ctx.beginPath();
+    x = 0;
+    for (let i = 0; i < bufferLength; i++) {
+        const v = data[bufferLength - 1 - i] / 255.0; // reverse
+        const y = height - (v * height / 2);
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+        x += sliceWidth;
+    }
+    ctx.stroke();
 };
-
 
 const drawRings = (ctx, data, width, height) => {
     const centerX = width / 2;
@@ -177,163 +170,13 @@ const drawRings = (ctx, data, width, height) => {
     ctx.stroke();
 };
 
-const drawStatic = (ctx, data, width, height, color) => {
-    const centerX = width / 2;
-    const centerY = height / 2;
-    const bass = data.slice(0, 5).reduce((a, b) => a + b, 0) / 5;
-    const energy = bass / 255;
-    
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
 
-    const numBolts = Math.floor(energy * 20);
-    for (let i = 0; i < numBolts; i++) {
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY);
-        let x = centerX;
-        let y = centerY;
-        const angle = Math.random() * Math.PI * 2;
-        const totalLength = (Math.random() * 0.5 + 0.5) * Math.min(width, height) * 0.5 * energy;
-
-        for (let j = 0; j < 5; j++) {
-            const segmentLength = totalLength / 5;
-            x += Math.cos(angle) * segmentLength + (Math.random() - 0.5) * 20;
-            y += Math.sin(angle) * segmentLength + (Math.random() - 0.5) * 20;
-            ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-    }
-};
-
-const drawVortex = (ctx, data, width, height, color) => {
-    const centerX = width / 2;
-    const centerY = height / 2;
-    const bass = data.slice(0, 5).reduce((a, b) => a + b, 0) / 5;
-    const energy = bass / 255;
-    
-    const numParticles = 100;
-    for (let i = 0; i < numParticles; i++) {
-        const angle = i * (Math.PI * 2 / numParticles) + (energy * Math.PI);
-        const distance = (i / numParticles) * Math.min(width, height) * 0.4;
-        const x = centerX + Math.cos(angle) * distance;
-        const y = centerY + Math.sin(angle) * distance;
-
-        const size = (data[i % data.length] / 255) * 4 * energy + 1;
-        const opacity = data[i % data.length] / 255;
-
-        const hexOpacity = Math.round(opacity * 255).toString(16).padStart(2, '0');
-        ctx.fillStyle = `${color}${hexOpacity}`;
-        ctx.beginPath();
-        ctx.arc(x, y, size, 0, Math.PI * 2);
-        ctx.fill();
-    }
-};
-
-const drawSpeaker = (ctx, data, width, height, color) => {
-    const centerX = width / 2;
-    const centerY = height / 2;
-    const bass = (data[0] + data[1] + data[2]) / 3 / 255;
-    const mid = data.slice(10, 20).reduce((a, b) => a + b, 0) / (10 * 255);
-    const maxRadius = Math.min(width, height) * 0.45;
-
-    // Outer ring
-    ctx.strokeStyle = `${color}80`;
-    ctx.lineWidth = 1 + mid * 4;
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, maxRadius * 0.9 + mid * 10, 0, 2 * Math.PI);
-    ctx.stroke();
-
-    // Mid ring
-    ctx.strokeStyle = `${color}40`;
-    ctx.lineWidth = 2 + mid * 8;
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, maxRadius * 0.6, 0, 2 * Math.PI);
-    ctx.stroke();
-
-    // Central pulsing circle (speaker cone)
-    const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, maxRadius * bass);
-    gradient.addColorStop(0, `${color}FF`);
-    gradient.addColorStop(0.5, `${color}80`);
-    gradient.addColorStop(1, `${color}00`);
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, maxRadius * 0.4 + bass * maxRadius * 0.4, 0, 2 * Math.PI);
-    ctx.fill();
-};
-
-const drawGalaxy = (ctx, data, width, height) => {
-    const centerX = width / 2;
-    const centerY = height / 2;
-
-    for (let i = 0; i < data.length; i++) {
-        const value = data[i] / 255;
-        const angle = i * 4; // Spread particles
-        const radius = value * Math.min(width, height) * 0.4;
-
-        const x = centerX + Math.cos(angle) * radius;
-        const y = centerY + Math.sin(angle) * radius;
-
-        const hue = 180 + i * 2;
-        const size = value * 3 + 1;
-        ctx.fillStyle = `hsla(${hue}, 100%, 70%, ${0.5 + value * 0.5})`;
-        ctx.beginPath();
-        ctx.arc(x, y, size, 0, 2 * Math.PI);
-        ctx.fill();
-    }
-};
-
-const drawEqualizer = (ctx, data, width, height, color) => {
-    const bufferLength = data.length;
-    const halfBuffer = Math.floor(bufferLength / 2);
-    const centerX = width / 2;
-    const barWidth = Math.max(1, (width / 2) / halfBuffer * 0.8);
-    const gap = (width / 2) / halfBuffer * 0.2;
-
-    const drawRoundedRect = (x, y, w, h, r) => {
-        if (h < 2 * r) r = h / 2;
-        if (w < 2 * r) r = w / 2;
-        if (h <= 0) return;
-        ctx.beginPath();
-        ctx.moveTo(x + r, y);
-        ctx.arcTo(x + w, y, x + w, y + h, r);
-        ctx.arcTo(x + w, y + h, x, y + h, r);
-        ctx.arcTo(x, y + h, x, y, r);
-        ctx.arcTo(x, y, x + w, y, r);
-        ctx.closePath();
-        ctx.fill();
-    }
-
-    for (let i = 0; i < halfBuffer; i++) {
-        const barHeight = (data[i] / 255) * height;
-        const hue = (i * 360) / halfBuffer;
-        
-        const gradient = ctx.createLinearGradient(0, height, 0, height - barHeight);
-        gradient.addColorStop(0, `hsl(${hue}, 100%, 40%)`);
-        gradient.addColorStop(0.7, `hsl(${hue}, 100%, 60%)`);
-        gradient.addColorStop(1, `hsl(${hue}, 100%, 80%)`);
-        ctx.fillStyle = gradient;
-
-        const xRight = centerX + (i * (barWidth + gap));
-        const xLeft = centerX - ((i + 1) * (barWidth + gap) + gap);
-        
-        drawRoundedRect(xRight, height - barHeight, barWidth, barHeight, 3);
-        drawRoundedRect(xLeft, height - barHeight, barWidth, barHeight, 3);
-    }
-};
-
-const Visualizer = ({ frequencyData, style }) => {
+const Visualizer = ({ frequencyData, style, onClick }) => {
   const canvasRef = useRef(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !frequencyData) return;
-
-    // Ensure canvas resolution matches its display size for high quality
-    const { clientWidth, clientHeight } = canvas;
-    if (canvas.width !== clientWidth || canvas.height !== clientHeight) {
-        canvas.width = clientWidth;
-        canvas.height = clientHeight;
-    }
     
     const context = canvas.getContext('2d');
     if (!context) return;
@@ -352,28 +195,13 @@ const Visualizer = ({ frequencyData, style }) => {
             drawPulse(context, frequencyData, width, height, accentColor);
             break;
         case 'spectrum':
-            drawSpectrumSymmetric(context, frequencyData, width, height);
+            drawSpectrum(context, frequencyData, width, height);
             break;
         case 'aurora':
-            drawAuroraSymmetric(context, frequencyData, width, height);
+            drawAurora(context, frequencyData, width, height);
             break;
         case 'rings':
             drawRings(context, frequencyData, width, height);
-            break;
-        case 'static':
-            drawStatic(context, frequencyData, width, height, accentColor);
-            break;
-        case 'vortex':
-            drawVortex(context, frequencyData, width, height, accentColor);
-            break;
-        case 'speaker':
-            drawSpeaker(context, frequencyData, width, height, accentColor);
-            break;
-        case 'galaxy':
-            drawGalaxy(context, frequencyData, width, height);
-            break;
-        case 'equalizer':
-            drawEqualizer(context, frequencyData, width, height, accentColor);
             break;
         case 'bars':
         default:
@@ -384,8 +212,14 @@ const Visualizer = ({ frequencyData, style }) => {
   }, [frequencyData, style]);
 
   return (
-    React.createElement("div", { className: "w-full h-full" },
-        React.createElement("canvas", { ref: canvasRef, className: "w-full h-full" })
+    React.createElement("div", { 
+        onClick: onClick,
+        role: "button",
+        tabIndex: 0,
+        "aria-label": "שנה סגנון אקולייזר",
+        className: "w-full h-20 cursor-pointer"
+    },
+        React.createElement("canvas", { ref: canvasRef, width: "300", height: "80", className: "w-full h-full" })
     )
   );
 };

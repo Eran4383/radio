@@ -1,19 +1,20 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService';
-import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES } from './types';
+import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder } from './types';
 import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
 import NowPlaying from './components/NowPlaying';
-import ActionMenu from './components/ActionMenu';
+import { useFavorites } from './hooks/useFavorites';
+import { useAuth } from './hooks/useAuth';
+import { firestore } from './services/firebaseService';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { PRIORITY_STATIONS } from './constants';
 import { MenuIcon } from './components/Icons';
 import { getCurrentProgram } from './services/scheduleService';
 import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/stationSpecificService';
 import StationListSkeleton from './components/StationListSkeleton';
 import { getCategory, CategoryType } from './services/categoryService';
-import { auth, signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase';
-import type firebase from 'firebase/compat/app';
 
 
 enum StationFilter {
@@ -21,89 +22,30 @@ enum StationFilter {
   Favorites = 'מועדפים',
 }
 
-// Player State Machine
-type PlayerStatus = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'ERROR';
-interface PlayerState {
-  status: PlayerStatus;
-  station: Station | null;
-  error?: string;
-}
-type PlayerAction =
-  | { type: 'PLAY'; payload: Station }
-  | { type: 'TOGGLE_PAUSE' }
-  | { type: 'STREAM_STARTED' }
-  | { type: 'STREAM_PAUSED' }
-  | { type: 'STREAM_ERROR'; payload: string }
-  | { type: 'SELECT_STATION'; payload: Station };
-
-const initialPlayerState: PlayerState = {
-  status: 'IDLE',
-  station: null,
-};
-
-function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
-  switch (action.type) {
-    case 'SELECT_STATION':
-      if (state.station?.stationuuid === action.payload.stationuuid) {
-        // It's the same station, toggle play/pause
-        if (state.status === 'PLAYING') {
-          return { ...state, status: 'PAUSED' };
-        } else if (state.status === 'PAUSED' || state.status === 'ERROR' || state.status === 'IDLE') {
-          return { ...state, status: 'LOADING' };
-        }
-      }
-      // It's a new station
-      return { status: 'LOADING', station: action.payload, error: undefined };
-    case 'PLAY':
-       return { ...state, status: 'LOADING', station: action.payload, error: undefined };
-    case 'TOGGLE_PAUSE':
-      if (state.status === 'PLAYING') {
-        return { ...state, status: 'PAUSED' };
-      }
-      if (state.status === 'PAUSED' && state.station) {
-        return { ...state, status: 'LOADING', error: undefined };
-      }
-      return state;
-    case 'STREAM_STARTED':
-      return { ...state, status: 'PLAYING', error: undefined };
-    case 'STREAM_PAUSED':
-        if(state.status === 'LOADING') return state; // Ignore pause event during load
-        return { ...state, status: 'PAUSED' };
-    case 'STREAM_ERROR':
-      return { ...state, status: 'ERROR', error: action.payload };
-    default:
-      return state;
-  }
-}
-
-// Helper function for safely parsing JSON from localStorage
-function safeJsonParse<T>(jsonString: string | null, defaultValue: T): T {
-    if (jsonString === null) {
-        return defaultValue;
-    }
-    try {
-        const parsedValue = JSON.parse(jsonString);
-        if (parsedValue === null && defaultValue !== null) {
-            return defaultValue;
-        }
-        return parsedValue;
-    } catch (e) {
-        return defaultValue;
-    }
-}
-
-const debounce = <F extends (...args: any[]) => any>(func: F, waitFor: number) => {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<F>): void => {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    timeout = setTimeout(() => func(...args), waitFor);
-  };
-};
+// LocalStorage Keys
+const CUSTOM_ORDER_KEY_LOCAL = 'radio-station-custom-order-anonymous';
+const THEME_KEY = 'radio-theme';
+const EQ_KEY = 'radio-eq';
+const CUSTOM_EQ_KEY = 'radio-custom-eq';
+const LAST_STATION_KEY = 'radio-last-station-uuid';
+const LAST_FILTER_KEY = 'radio-last-filter';
+const LAST_SORT_KEY = 'radio-last-sort';
+const VOLUME_KEY = 'radio-volume';
+const NOW_PLAYING_VISUALIZER_ENABLED_KEY = 'radio-nowplaying-visualizer-enabled';
+const PLAYER_BAR_VISUALIZER_ENABLED_KEY = 'radio-playerbar-visualizer-enabled';
+const VISUALIZER_STYLE_KEY = 'radio-visualizer-style';
+const STATUS_INDICATOR_ENABLED_KEY = 'radio-status-indicator-enabled';
+const VOLUME_CONTROL_VISIBLE_KEY = 'radio-volume-control-visible';
+const SHOW_NEXT_SONG_KEY = 'radio-show-next-song';
+const GRID_SIZE_KEY = 'radio-grid-size';
 
 
-const SortButton: React.FC<{ label: string; order: SortOrder; currentOrder: SortOrder; setOrder: (order: SortOrder) => void }> = ({ label, order, currentOrder, setOrder }) => (
+const SortButton: React.FC<{
+  label: string;
+  order: SortOrder;
+  currentOrder: SortOrder;
+  setOrder: (order: SortOrder) => void;
+}> = ({ label, order, currentOrder, setOrder }) => (
   <button
     onClick={() => setOrder(order)}
     className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
@@ -121,358 +63,351 @@ const CATEGORY_SORTS: { order: SortOrder; label: string }[] = [
     { order: 'category_nameStructure', label: 'שם' },
 ];
 
-type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'found' | 'not-found' | 'error';
-type StationsStatus = 'idle' | 'loading' | 'loaded' | 'error';
-
-interface AppProps {
-  initialUser: firebase.User | null;
-}
-
-export default function App({ initialUser: user }: AppProps) {
+export default function App() {
+  const { user, loading: authLoading, signInWithGoogle, signOut } = useAuth();
   const [stations, setStations] = useState<Station[]>([]);
-  const [stationsStatus, setStationsStatus] = useState<StationsStatus>('idle');
-  const [playerState, dispatch] = useReducer(playerReducer, initialPlayerState);
-  
+  const [currentStationIndex, setCurrentStationIndex] = useState<number | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
-  const [isVisualizerFullscreen, setIsVisualizerFullscreen] = useState(false);
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [trackInfo, setTrackInfo] = useState<StationTrackInfo | null>(null);
-  const pinchDistRef = useRef(0);
+  const [isStreamActive, setIsStreamActive] = useState(false);
+  const pinchDistRef = useRef<number>(0);
   const PINCH_THRESHOLD = 40; // pixels
-  const [actionMenuState, setActionMenuState] = useState<{isOpen: boolean; songTitle: string | null}>({ isOpen: false, songTitle: null });
-
-  const [isSyncing, setIsSyncing] = useState(false);
   
-  // --- Centralized Settings State with default values for guest user ---
-  const [favorites, setFavorites] = useState<string[]>([]);
+  // Custom Order State
   const [customOrder, setCustomOrder] = useState<string[]>([]);
-  const [theme, setTheme] = useState<Theme>('dark');
-  const [eqPreset, setEqPreset] = useState<EqPreset>('flat');
-  const [customEqSettings, setCustomEqSettings] = useState<CustomEqSettings>({ bass: 0, mid: 0, treble: 0 });
-  const [volume, setVolume] = useState<number>(1);
-  const [isNowPlayingVisualizerEnabled, setIsNowPlayingVisualizerEnabled] = useState<boolean>(true);
-  const [isPlayerBarVisualizerEnabled, setIsPlayerBarVisualizerEnabled] = useState<boolean>(true);
-  const [visualizerStyle, setVisualizerStyle] = useState<VisualizerStyle>('bars');
-  const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState<boolean>(true);
-  const [isVolumeControlVisible, setIsVolumeControlVisible] = useState<boolean>(true);
-  const [showNextSong, setShowNextSong] = useState<boolean>(true);
-  const [gridSize, setGridSize] = useState<GridSize>(3);
-  const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState<boolean>(true);
-  const [isMarqueeCurrentTrackEnabled, setIsMarqueeCurrentTrackEnabled] = useState<boolean>(true);
-  const [isMarqueeNextTrackEnabled, setIsMarqueeNextTrackEnabled] = useState<boolean>(true);
-  const [marqueeSpeed, setMarqueeSpeed] = useState<number>(6);
-  const [marqueeDelay, setMarqueeDelay] = useState<number>(3);
-  const [filter, setFilter] = useState<StationFilter>(StationFilter.All);
-  const [sortOrder, setSortOrder] = useState<SortOrder>('priority');
+  
+  // State loaded from LocalStorage (will be overridden by Firestore if logged in)
+  const [filter, setFilter] = useState<StationFilter>(() => {
+    const saved = localStorage.getItem(LAST_FILTER_KEY) as StationFilter;
+    return (saved && Object.values(StationFilter).includes(saved)) ? saved : StationFilter.All;
+  });
 
-  const isFavorite = useCallback((stationUuid: string) => favorites.includes(stationUuid), [favorites]);
+  const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
+    const saved = localStorage.getItem(LAST_SORT_KEY) as SortOrder;
+    return saved || 'priority';
+  });
+  
+  const [theme, setTheme] = useState<Theme>(() => {
+      const saved = localStorage.getItem(THEME_KEY) as Theme;
+      return (saved && THEMES.includes(saved)) ? saved : 'dark';
+  });
 
-  const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
-  const waitingWorkerRef = useRef<ServiceWorker | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
+  const [eqPreset, setEqPreset] = useState<EqPreset>(() => {
+      const saved = localStorage.getItem(EQ_KEY) as EqPreset;
+      return (saved && EQ_PRESET_KEYS.includes(saved)) ? saved : 'flat';
+  });
 
-  // Combine all settings into a single object for easier saving
-  const allSettings = useMemo(() => ({
-    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-    marqueeSpeed, marqueeDelay, filter, sortOrder
-  }), [
-    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-    marqueeSpeed, marqueeDelay, filter, sortOrder
-  ]);
+  const [customEqSettings, setCustomEqSettings] = useState<CustomEqSettings>(() => {
+    try {
+      const saved = localStorage.getItem(CUSTOM_EQ_KEY);
+      return saved ? JSON.parse(saved) : { bass: 0, mid: 0, treble: 0 };
+    } catch {
+      return { bass: 0, mid: 0, treble: 0 };
+    }
+  });
 
-  // Function to load settings from localStorage for a guest user
-  const loadGuestSettings = useCallback(() => {
-    setFavorites(safeJsonParse(localStorage.getItem('radio-favorites'), []));
-    setCustomOrder(safeJsonParse(localStorage.getItem('radio-station-custom-order'), []));
-    setTheme(safeJsonParse(localStorage.getItem('radio-theme'), 'dark') as Theme);
-    setEqPreset(safeJsonParse(localStorage.getItem('radio-eq'), 'flat') as EqPreset);
-    setCustomEqSettings(safeJsonParse(localStorage.getItem('radio-custom-eq'), { bass: 0, mid: 0, treble: 0 }));
-    setVolume(safeJsonParse(localStorage.getItem('radio-volume'), 1));
-    setIsNowPlayingVisualizerEnabled(safeJsonParse(localStorage.getItem('radio-nowplaying-visualizer-enabled'), true));
-    setIsPlayerBarVisualizerEnabled(safeJsonParse(localStorage.getItem('radio-playerbar-visualizer-enabled'), true));
-    setVisualizerStyle(safeJsonParse(localStorage.getItem('radio-visualizer-style'), 'bars') as VisualizerStyle);
-    setIsStatusIndicatorEnabled(safeJsonParse(localStorage.getItem('radio-status-indicator-enabled'), true));
-    setIsVolumeControlVisible(safeJsonParse(localStorage.getItem('radio-volume-control-visible'), true));
-    setShowNextSong(safeJsonParse(localStorage.getItem('radio-show-next-song'), true));
-    setGridSize(safeJsonParse(localStorage.getItem('radio-grid-size'), 3) as GridSize);
-    setIsMarqueeProgramEnabled(safeJsonParse(localStorage.getItem('radio-marquee-program-enabled'), true));
-    setIsMarqueeCurrentTrackEnabled(safeJsonParse(localStorage.getItem('radio-marquee-current-enabled'), true));
-    setIsMarqueeNextTrackEnabled(safeJsonParse(localStorage.getItem('radio-marquee-next-enabled'), true));
-    setMarqueeSpeed(safeJsonParse(localStorage.getItem('radio-marquee-speed'), 6));
-    setMarqueeDelay(safeJsonParse(localStorage.getItem('radio-marquee-delay'), 3));
-    const savedFilter = localStorage.getItem('radio-last-filter');
-    setFilter((savedFilter && Object.values(StationFilter).includes(savedFilter as StationFilter)) ? savedFilter as StationFilter : StationFilter.All);
-    setSortOrder(safeJsonParse(localStorage.getItem('radio-last-sort'), 'priority') as SortOrder);
-  }, []);
+  const [volume, setVolume] = useState<number>(() => {
+    const saved = localStorage.getItem(VOLUME_KEY);
+    return saved ? parseFloat(saved) : 1;
+  });
 
-  // Effect 1: Fetch stations only ONCE on mount
+  const [isNowPlayingVisualizerEnabled, setIsNowPlayingVisualizerEnabled] = useState<boolean>(() => {
+      const saved = localStorage.getItem(NOW_PLAYING_VISUALIZER_ENABLED_KEY);
+      return saved ? JSON.parse(saved) : true;
+  });
+
+  const [isPlayerBarVisualizerEnabled, setIsPlayerBarVisualizerEnabled] = useState<boolean>(() => {
+      const saved = localStorage.getItem(PLAYER_BAR_VISUALIZER_ENABLED_KEY);
+      return saved ? JSON.parse(saved) : true;
+  });
+
+  const [visualizerStyle, setVisualizerStyle] = useState<VisualizerStyle>(() => {
+      const saved = localStorage.getItem(VISUALIZER_STYLE_KEY) as VisualizerStyle;
+      return (saved && VISUALIZER_STYLES.includes(saved)) ? saved : 'bars';
+  });
+  
+  const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem(STATUS_INDICATOR_ENABLED_KEY);
+    return saved ? JSON.parse(saved) : true;
+  });
+
+  const [isVolumeControlVisible, setIsVolumeControlVisible] = useState<boolean>(() => {
+      const saved = localStorage.getItem(VOLUME_CONTROL_VISIBLE_KEY);
+      return saved ? JSON.parse(saved) : true;
+  });
+  
+  const [showNextSong, setShowNextSong] = useState<boolean>(() => {
+      const saved = localStorage.getItem(SHOW_NEXT_SONG_KEY);
+      return saved ? JSON.parse(saved) : true;
+  });
+
+  const [gridSize, setGridSize] = useState<GridSize>(() => {
+    const saved = localStorage.getItem(GRID_SIZE_KEY);
+    // 1 is smallest, 5 is largest. Let's default to 3.
+    return saved ? (JSON.parse(saved) as GridSize) : 3;
+  });
+
+
+  const { favorites, toggleFavorite, isFavorite, isFavoritesLoaded } = useFavorites(user);
+  
+  const currentStation = useMemo(() => {
+     if (currentStationIndex !== null && stations[currentStationIndex]) {
+        return stations[currentStationIndex];
+     }
+     return null;
+  }, [stations, currentStationIndex]);
+
+  // Sync custom order with Firestore
   useEffect(() => {
-    const fetchInitialStations = async () => {
-      setStationsStatus('loading');
+    const syncCustomOrder = async () => {
+      if (user) {
+        try {
+          const docRef = doc(firestore, 'user_data', user.uid);
+          const docSnap = await getDoc(docRef);
+          const remoteData = docSnap.data();
+
+          const localOrderStr = localStorage.getItem(CUSTOM_ORDER_KEY_LOCAL);
+          const localOrder: string[] = localOrderStr ? JSON.parse(localOrderStr) : [];
+          
+          let finalOrder: string[] = [];
+          if (docSnap.exists() && remoteData?.customOrder) {
+            finalOrder = remoteData.customOrder;
+          } else if (localOrder.length > 0) {
+            finalOrder = localOrder;
+            await setDoc(docRef, { customOrder: finalOrder }, { merge: true });
+            localStorage.removeItem(CUSTOM_ORDER_KEY_LOCAL);
+          }
+          setCustomOrder(finalOrder);
+        } catch (error) {
+          console.error("Failed to sync custom order:", error);
+        }
+      } else {
+        const localOrderStr = localStorage.getItem(CUSTOM_ORDER_KEY_LOCAL);
+        setCustomOrder(localOrderStr ? JSON.parse(localOrderStr) : []);
+      }
+    };
+    syncCustomOrder();
+  }, [user]);
+
+  const saveCustomOrder = useCallback(async (newOrder: string[]) => {
+      setCustomOrder(newOrder);
+      if (user) {
+        try {
+            const userDocRef = doc(firestore, 'user_data', user.uid);
+            await setDoc(userDocRef, { customOrder: newOrder }, { merge: true });
+        } catch (error) {
+            console.error("Failed to save custom order to Firestore:", error);
+        }
+      } else {
+        localStorage.setItem(CUSTOM_ORDER_KEY_LOCAL, JSON.stringify(newOrder));
+      }
+  }, [user]);
+
+  // Fetch stations on initial load
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      setError(null);
       try {
         const fetchedStations = await fetchIsraeliStations();
         if (fetchedStations.length === 0) {
           setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
-          setStationsStatus('error');
         } else {
           setStations(fetchedStations);
-          setStationsStatus('loaded');
         }
       } catch (err) {
         setError('אירעה שגיאה בטעינת התחנות.');
-        setStationsStatus('error');
         console.error(err);
+      } finally {
+        setIsLoading(false);
       }
     };
-    fetchInitialStations();
+
+    loadData();
   }, []);
 
-  // Effect 2: Sync user settings whenever the user's auth state changes.
+  // Restore last played station once station list is loaded
   useEffect(() => {
-    const syncUserSettings = async () => {
-        setIsSyncing(true);
-        if (user) {
-            const result = await loadUserSettings(user.uid);
-            switch (result.status) {
-              case 'success':
-                if (result.data) {
-                  setFavorites(result.data.favorites || []);
-                  setCustomOrder(result.data.customOrder || []);
-                  setTheme(result.data.theme || 'dark');
-                  setEqPreset(result.data.eqPreset || 'flat');
-                  setCustomEqSettings(result.data.customEqSettings || { bass: 0, mid: 0, treble: 0 });
-                  setVolume(result.data.volume ?? 1);
-                  setIsNowPlayingVisualizerEnabled(result.data.isNowPlayingVisualizerEnabled ?? true);
-                  setIsPlayerBarVisualizerEnabled(result.data.isPlayerBarVisualizerEnabled ?? true);
-                  setVisualizerStyle(result.data.visualizerStyle || 'bars');
-                  setIsStatusIndicatorEnabled(result.data.isStatusIndicatorEnabled ?? true);
-                  setIsVolumeControlVisible(result.data.isVolumeControlVisible ?? true);
-                  setShowNextSong(result.data.showNextSong ?? true);
-                  setGridSize(result.data.gridSize || 3);
-                  setIsMarqueeProgramEnabled(result.data.isMarqueeProgramEnabled ?? true);
-                  setIsMarqueeCurrentTrackEnabled(result.data.isMarqueeCurrentTrackEnabled ?? true);
-                  setIsMarqueeNextTrackEnabled(result.data.isMarqueeNextTrackEnabled ?? true);
-                  setMarqueeSpeed(result.data.marqueeSpeed || 6);
-                  setMarqueeDelay(result.data.marqueeDelay || 3);
-                  setFilter(result.data.filter || StationFilter.All);
-                  setSortOrder(result.data.sortOrder || 'priority');
-                }
-                break;
-              case 'not-found':
-                console.log("New user detected. Migrating local settings to cloud.");
-                loadGuestSettings(); 
-                break;
-              case 'error':
-                console.warn("Could not load user settings from cloud. Using local settings as fallback.");
-                loadGuestSettings();
-                break;
-            }
-        } else {
-            loadGuestSettings();
-        }
-        setIsSyncing(false);
-    };
-    syncUserSettings();
-  }, [user, loadGuestSettings]);
-
-
-  // Debounced save to Firestore
-  const debouncedSave = useCallback(debounce((settings, userId) => {
-    saveUserSettings(userId, settings);
-  }, 2000), []);
-
-  // Effect to save settings whenever they change
-  useEffect(() => {
-    if (stationsStatus !== 'loaded') return;
-
-    if (user) {
-      debouncedSave(allSettings, user.uid);
-    } else {
-      Object.entries(allSettings).forEach(([key, value]) => {
-        const lsKey = `radio-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
-        localStorage.setItem(lsKey, JSON.stringify(value));
-      });
-      localStorage.setItem('radio-last-filter', filter);
-      localStorage.setItem('radio-last-sort', sortOrder);
-      localStorage.setItem('radio-favorites', JSON.stringify(favorites));
-    }
-  }, [allSettings, user, stationsStatus, debouncedSave, filter, sortOrder, favorites]);
-  
-  const handleLogin = async () => {
-    setIsSyncing(true);
-    const resultUser = await signInWithGoogle();
-    if (!resultUser) {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    if (user) {
-      setIsSyncing(true);
-      try {
-        await saveUserSettings(user.uid, allSettings);
-        await signOut();
-      } catch (error) {
-        console.error("Error during logout:", error);
-        setIsSyncing(false);
-      }
-    }
-  };
-
-
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./service-worker.js').then(registration => {
-        registration.onupdatefound = () => {
-          setUpdateStatus('downloading');
-          const installingWorker = registration.installing;
-          if (installingWorker) {
-            installingWorker.onstatechange = () => {
-              if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                waitingWorkerRef.current = installingWorker;
-                setIsUpdateAvailable(true);
-                setUpdateStatus('found');
-              }
-            };
-          }
-        };
-      }).catch(error => console.error('SW reg failed:', error));
-      let refreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!refreshing) {
-          window.location.reload();
-          refreshing = true;
-        }
-      });
-    }
-  }, []);
-
-  const handleManualUpdateCheck = useCallback(async () => {
-    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.ready) {
-      setUpdateStatus('error');
-      setTimeout(() => setUpdateStatus('idle'), 3000);
-      return;
-    }
-    setUpdateStatus('checking');
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      await registration.update();
-      setTimeout(() => {
-        setUpdateStatus(cs => cs === 'checking' ? 'not-found' : cs);
-        if (updateStatus === 'not-found') setTimeout(() => setUpdateStatus('idle'), 3000);
-      }, 5000);
-    } catch (error) {
-      setUpdateStatus('error');
-      setTimeout(() => setUpdateStatus('idle'), 3000);
-    }
-  }, [updateStatus]);
-
-  const handleUpdateClick = () => {
-    if (waitingWorkerRef.current) {
-      waitingWorkerRef.current.postMessage({ type: 'SKIP_WAITING' });
-      setIsUpdateAvailable(false);
-    }
-  };
-  
-  useEffect(() => {
-    if (stationsStatus === 'loaded' && playerState.status === 'IDLE') {
-        const lastStationUuid = localStorage.getItem('radio-last-station-uuid');
+    if (stations.length > 0 && currentStationIndex === null) {
+        const lastStationUuid = localStorage.getItem(LAST_STATION_KEY);
         if (lastStationUuid) {
-            const station = stations.find(s => s.stationuuid === lastStationUuid);
-            if (station) dispatch({ type: 'SELECT_STATION', payload: station });
+            const stationIndex = stations.findIndex(s => s.stationuuid === lastStationUuid);
+            if (stationIndex !== -1) {
+                setCurrentStationIndex(stationIndex);
+            }
         }
     }
-  }, [stationsStatus, stations, playerState.status]);
-
+  }, [stations, currentStationIndex]);
+  
+  // Fetch station metadata (current song/program)
   useEffect(() => {
-      if (playerState.station) {
-          localStorage.setItem('radio-last-station-uuid', playerState.station.stationuuid);
-      }
-  }, [playerState.station]);
+    let intervalId: number | undefined;
 
-  useEffect(() => {
-    let intervalId: number;
     const fetchAndSetInfo = async () => {
-      if (!playerState.station) return;
-      const { name, stationuuid } = playerState.station;
+      if (!currentStation) return;
+      
       let finalInfo: StationTrackInfo | null = null;
-      if (hasSpecificHandler(name)) {
-        const specificInfo = await fetchStationSpecificTrackInfo(name);
-        finalInfo = specificInfo ? { ...specificInfo } : { program: null, current: null, next: null };
-        if (!finalInfo.program) finalInfo.program = getCurrentProgram(name);
+      const stationName = currentStation.name;
+
+      if (hasSpecificHandler(stationName)) {
+        const specificInfo = await fetchStationSpecificTrackInfo(stationName);
+        if (specificInfo) {
+          finalInfo = specificInfo;
+        } else {
+          const scheduledProgram = getCurrentProgram(stationName);
+          if (scheduledProgram) {
+            finalInfo = { program: scheduledProgram, current: null, next: null };
+          }
+        }
       } else {
-        const [songTitle, programName] = await Promise.all([ fetchLiveTrackInfo(stationuuid), getCurrentProgram(name) ]);
-        const current = songTitle && songTitle.toLowerCase() !== name.toLowerCase() ? songTitle : null;
-        finalInfo = { program: programName, current, next: null };
+        const songTitle = await fetchLiveTrackInfo(currentStation.stationuuid);
+        if (songTitle && songTitle.toLowerCase() !== stationName.toLowerCase()) {
+          finalInfo = { program: null, current: songTitle, next: null };
+        } else {
+          const scheduledProgram = getCurrentProgram(stationName);
+          if (scheduledProgram) {
+            finalInfo = { program: scheduledProgram, current: null, next: null };
+          }
+        }
       }
+      
       setTrackInfo(finalInfo);
     };
 
-    if (playerState.station) {
+    if (currentStation) {
       fetchAndSetInfo(); 
       intervalId = window.setInterval(fetchAndSetInfo, 20000);
     } else {
       setTrackInfo(null);
     }
-    return () => clearInterval(intervalId);
-  }, [playerState.station]);
 
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [currentStation]);
+
+  // Effects to save state changes to localStorage
   useEffect(() => {
     document.documentElement.className = theme;
+    localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  const toggleFavorite = useCallback((stationUuid: string) => {
-    setFavorites(currentFavorites =>
-      currentFavorites.includes(stationUuid)
-        ? currentFavorites.filter(uuid => uuid !== stationUuid)
-        : [...currentFavorites, stationUuid]
-    );
+  useEffect(() => {
+    localStorage.setItem(LAST_FILTER_KEY, filter);
+  }, [filter]);
+
+  useEffect(() => {
+    localStorage.setItem(LAST_SORT_KEY, sortOrder);
+  }, [sortOrder]);
+  
+  const handleSetVolume = (newVolume: number) => {
+    setVolume(newVolume);
+    localStorage.setItem(VOLUME_KEY, newVolume.toString());
+  };
+
+  const handleSetEqPreset = (preset: EqPreset) => {
+    setEqPreset(preset);
+    localStorage.setItem(EQ_KEY, preset);
+  };
+
+  const handleSetCustomEqSettings = (settings: CustomEqSettings) => {
+    setCustomEqSettings(settings);
+    localStorage.setItem(CUSTOM_EQ_KEY, JSON.stringify(settings));
+  };
+  
+  const handleSetIsNowPlayingVisualizerEnabled = (enabled: boolean) => {
+    setIsNowPlayingVisualizerEnabled(enabled);
+    localStorage.setItem(NOW_PLAYING_VISUALIZER_ENABLED_KEY, JSON.stringify(enabled));
+  };
+
+  const handleSetIsPlayerBarVisualizerEnabled = (enabled: boolean) => {
+    setIsPlayerBarVisualizerEnabled(enabled);
+    localStorage.setItem(PLAYER_BAR_VISUALIZER_ENABLED_KEY, JSON.stringify(enabled));
+  };
+  
+  const handleSetStatusIndicatorEnabled = (enabled: boolean) => {
+    setIsStatusIndicatorEnabled(enabled);
+    localStorage.setItem(STATUS_INDICATOR_ENABLED_KEY, JSON.stringify(enabled));
+  };
+
+  const handleSetIsVolumeControlVisible = (visible: boolean) => {
+    setIsVolumeControlVisible(visible);
+    localStorage.setItem(VOLUME_CONTROL_VISIBLE_KEY, JSON.stringify(visible));
+  };
+  
+  const handleSetShowNextSong = (enabled: boolean) => {
+    setShowNextSong(enabled);
+    localStorage.setItem(SHOW_NEXT_SONG_KEY, JSON.stringify(enabled));
+  };
+    
+  const handleSetGridSize = useCallback((size: GridSize) => {
+    setGridSize(size);
+    localStorage.setItem(GRID_SIZE_KEY, JSON.stringify(size));
   }, []);
 
-  const saveCustomOrder = (newOrder: string[]) => {
-      setCustomOrder(newOrder);
-      setSortOrder('custom');
-  };
+  const handleCycleVisualizerStyle = useCallback(() => {
+    const currentIndex = VISUALIZER_STYLES.indexOf(visualizerStyle);
+    const nextIndex = (currentIndex + 1) % VISUALIZER_STYLES.length;
+    const newStyle = VISUALIZER_STYLES[nextIndex];
+    setVisualizerStyle(newStyle);
+    localStorage.setItem(VISUALIZER_STYLE_KEY, newStyle);
+  }, [visualizerStyle]);
 
   const handleReorder = (reorderedDisplayedUuids: string[]) => {
       const allStationUuids = stations.map(s => s.stationuuid);
-      const currentOrderUuids = customOrder.length > 0 ? customOrder : allStationUuids;
+      const currentOrder = customOrder.length > 0 ? customOrder : allStationUuids;
+
       const reorderedSet = new Set(reorderedDisplayedUuids);
-      const newOrder = [...reorderedDisplayedUuids, ...currentOrderUuids.filter(uuid => !reorderedSet.has(uuid))];
+      const newOrder = [...reorderedDisplayedUuids];
+
+      currentOrder.forEach(uuid => {
+        if (!reorderedSet.has(uuid)) {
+          newOrder.push(uuid);
+        }
+      });
+      
       saveCustomOrder(newOrder);
+      setSortOrder('custom');
   };
 
   const filteredStations = useMemo(() => {
     if (filter === StationFilter.Favorites) {
-      return stations.filter(s => isFavorite(s.stationuuid));
+      if (!isFavoritesLoaded) return []; // Don't show anything until favorites are loaded
+      return stations.filter(s => favorites.includes(s.stationuuid));
     }
     return stations;
-  }, [stations, filter, isFavorite]);
+  }, [stations, filter, favorites, isFavoritesLoaded]);
   
   const displayedStations = useMemo(() => {
     let stationsToSort = [...filteredStations];
+    
     const customOrderMap = new Map(customOrder.map((uuid, index) => [uuid, index]));
+
     switch (sortOrder) {
       case 'custom':
         stationsToSort.sort((a, b) => {
             const indexA = customOrderMap.get(a.stationuuid);
             const indexB = customOrderMap.get(b.stationuuid);
+            
             if (typeof indexA === 'number' && typeof indexB === 'number') return indexA - indexB;
             if (typeof indexA === 'number') return -1;
             if (typeof indexB === 'number') return 1;
             return a.name.localeCompare(b.name, 'he');
         });
         break;
-      case 'name_asc': stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he')); break;
-      case 'name_desc': stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he')); break;
+      case 'name_asc':
+        stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he'));
+        break;
+      case 'name_desc':
+        stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he'));
+        break;
       case 'category_style':
       case 'category_identity':
       case 'category_region':
@@ -483,72 +418,143 @@ export default function App({ initialUser: user }: AppProps) {
             const categoryB = getCategory(b, categoryType);
             if (categoryA < categoryB) return -1;
             if (categoryA > categoryB) return 1;
-            return a.name.localeCompare(b.name, 'he');
+            return a.name.localeCompare(b.name, 'he'); // secondary sort by name
         });
         break;
       case 'priority':
       default:
-        const getPriorityIndex = (stationName: string) => PRIORITY_STATIONS.findIndex(ps => ps.aliases.some(alias => stationName.toLowerCase().includes(alias.toLowerCase())));
+        const getPriorityIndex = (stationName: string): number => {
+          const lowerCaseName = stationName.toLowerCase();
+          return PRIORITY_STATIONS.findIndex(priorityStation => 
+            priorityStation.aliases.some(alias => 
+              lowerCaseName.includes(alias.toLowerCase())
+            )
+          );
+        };
+        
         stationsToSort.sort((a, b) => {
-          let aP = getPriorityIndex(a.name); let bP = getPriorityIndex(b.name);
-          if (aP === -1) aP = Infinity; if (bP === -1) bP = Infinity;
-          return aP !== bP ? aP - bP : a.name.localeCompare(b.name, 'he');
+          let aPriority = getPriorityIndex(a.name);
+          let bPriority = getPriorityIndex(b.name);
+
+          if (aPriority === -1) aPriority = Infinity;
+          if (bPriority === -1) bPriority = Infinity;
+          
+          if (aPriority !== bPriority) {
+            return aPriority - bPriority;
+          }
+
+          return a.name.localeCompare(b.name, 'he');
         });
         break;
     }
     return stationsToSort;
   }, [filteredStations, sortOrder, customOrder]);
 
-  const handleSelectStation = useCallback((station: Station) => dispatch({ type: 'SELECT_STATION', payload: station }), []);
-  const handlePlayPause = useCallback(() => {
-    if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' });
-    else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] });
-  }, [playerState.station, displayedStations]);
-  const handlePlay = useCallback(async () => {
-    if (playerState.status === 'PLAYING') return;
-    if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' });
-    else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] });
-  }, [playerState.status, playerState.station, displayedStations]);
-  const handlePause = useCallback(async () => { if (playerState.status === 'PLAYING') dispatch({ type: 'TOGGLE_PAUSE' }); }, [playerState.status]);
-  const handleNext = useCallback(async () => {
-      if (displayedStations.length === 0) return;
-      const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid) : -1;
-      handleSelectStation(displayedStations[(currentIndex + 1) % displayedStations.length]);
-  }, [displayedStations, playerState.station, handleSelectStation]);
-  const handlePrev = useCallback(async () => {
-      if (displayedStations.length === 0) return;
-      const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid) : -1;
-      handleSelectStation(displayedStations[(currentIndex - 1 + displayedStations.length) % displayedStations.length]);
-  }, [displayedStations, playerState.station, handleSelectStation]);
-    
-  const handleTouchStart = useCallback((e: React.TouchEvent) => { if (e.touches.length === 2) { e.preventDefault(); const dx = e.touches[0].clientX - e.touches[1].clientX; const dy = e.touches[0].clientY - e.touches[1].clientY; pinchDistRef.current = Math.sqrt(dx * dx + dy * dy); } }, []);
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2 && pinchDistRef.current > 0) {
-      e.preventDefault();
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const currentDist = Math.sqrt(dx * dx + dy * dy);
-      const delta = currentDist - pinchDistRef.current;
-      if (Math.abs(delta) > PINCH_THRESHOLD) {
-        setGridSize(gs => delta > 0 ? Math.min(5, gs + 1) as GridSize : Math.max(1, gs - 1) as GridSize);
-        pinchDistRef.current = currentDist;
-      }
+  const playStationAtIndex = useCallback((index: number) => {
+    if (index >= 0 && index < stations.length) {
+        localStorage.setItem(LAST_STATION_KEY, stations[index].stationuuid);
+        setCurrentStationIndex(index);
+        setIsPlaying(true); // Always play when selecting a new station
     }
-  }, []);
-  const handleTouchEnd = useCallback(() => { pinchDistRef.current = 0; }, []);
+  }, [stations]);
+
+  const handleSelectStation = useCallback((station: Station) => {
+    const stationIndexInMainList = stations.findIndex(s => s.stationuuid === station.stationuuid);
+    if (stationIndexInMainList !== -1) {
+        if (currentStationIndex === stationIndexInMainList) {
+          setIsPlaying(prev => !prev); // Toggle if it's the same station
+        } else {
+          playStationAtIndex(stationIndexInMainList); // Play if it's a new station
+        }
+    }
+  }, [stations, currentStationIndex, playStationAtIndex]);
+
+  const handlePlayPause = useCallback(() => {
+    if (currentStation) {
+      setIsPlaying(!isPlaying);
+    } else if (displayedStations.length > 0) {
+        const firstStationIndex = stations.findIndex(s => s.stationuuid === displayedStations[0].stationuuid);
+        playStationAtIndex(firstStationIndex);
+    }
+  }, [isPlaying, currentStation, displayedStations, stations, playStationAtIndex]);
   
+  const handleNext = useCallback(() => {
+      if (displayedStations.length === 0) return;
+      const currentStationObject = currentStationIndex !== null ? stations[currentStationIndex] : null;
+      const currentIndexInDisplayed = currentStationObject ? displayedStations.findIndex(s => s.stationuuid === currentStationObject.stationuuid) : -1;
+
+      let nextIndexInDisplayed = (currentIndexInDisplayed === -1) ? 0 : (currentIndexInDisplayed + 1) % displayedStations.length;
+      
+      const nextStation = displayedStations[nextIndexInDisplayed];
+      const globalIndex = stations.findIndex(s => s.stationuuid === nextStation.stationuuid);
+      playStationAtIndex(globalIndex);
+  }, [currentStationIndex, displayedStations, stations, playStationAtIndex]);
+
+  const handlePrev = useCallback(() => {
+      if (displayedStations.length === 0) return;
+      const currentStationObject = currentStationIndex !== null ? stations[currentStationIndex] : null;
+      const currentIndexInDisplayed = currentStationObject ? displayedStations.findIndex(s => s.stationuuid === currentStationObject.stationuuid) : -1;
+      
+      let prevIndexInDisplayed = (currentIndexInDisplayed <= 0) ? displayedStations.length - 1 : currentIndexInDisplayed - 1;
+
+      const prevStation = displayedStations[prevIndexInDisplayed];
+      const globalIndex = stations.findIndex(s => s.stationuuid === prevStation.stationuuid);
+      playStationAtIndex(globalIndex);
+  }, [currentStationIndex, displayedStations, stations, playStationAtIndex]);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+      if (e.touches.length === 2) {
+          e.preventDefault();
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
+      }
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+      if (e.touches.length === 2 && pinchDistRef.current > 0) {
+          e.preventDefault();
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          const currentDist = Math.sqrt(dx * dx + dy * dy);
+          const delta = currentDist - pinchDistRef.current;
+
+          if (Math.abs(delta) > PINCH_THRESHOLD) {
+              if (delta > 0) { // Pinch out -> bigger items
+                  const newSize = Math.min(5, gridSize + 1) as GridSize;
+                  handleSetGridSize(newSize);
+              } else { // Pinch in -> smaller items
+                  const newSize = Math.max(1, gridSize - 1) as GridSize;
+                  handleSetGridSize(newSize);
+              }
+              pinchDistRef.current = currentDist;
+          }
+      }
+  }, [gridSize, handleSetGridSize]);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+      if (e.touches.length < 2) {
+          pinchDistRef.current = 0;
+      }
+  }, []);
+
   const handleCategorySortClick = () => {
     const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
-    const nextIndex = currentCategoryIndex !== -1 ? (currentCategoryIndex + 1) % CATEGORY_SORTS.length : 0;
-    setSortOrder(CATEGORY_SORTS[nextIndex].order);
+    const isCategorySortActive = currentCategoryIndex !== -1;
+
+    if (isCategorySortActive) {
+        const nextIndex = (currentCategoryIndex + 1) % CATEGORY_SORTS.length;
+        setSortOrder(CATEGORY_SORTS[nextIndex].order);
+    } else {
+        // If it's not a category sort, start from the first one
+        setSortOrder(CATEGORY_SORTS[0].order);
+    }
   };
 
-  const openActionMenu = useCallback((songTitle: string) => setActionMenuState({ isOpen: true, songTitle }), []);
-  const closeActionMenu = useCallback(() => setActionMenuState({ isOpen: false, songTitle: null }), []);
-  const handleCycleVisualizerStyle = useCallback(() => setVisualizerStyle(vs => VISUALIZER_STYLES[(VISUALIZER_STYLES.indexOf(vs) + 1) % VISUALIZER_STYLES.length]), []);
-  
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
-  const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
+  const isCategorySortActive = currentCategoryIndex !== -1;
+  const categoryButtonLabel = isCategorySortActive ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
+
 
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col">
@@ -557,48 +563,160 @@ export default function App({ initialUser: user }: AppProps) {
             <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הגדרות">
               <MenuIcon className="w-6 h-6" />
             </button>
+            
             <div className="flex items-center bg-gray-700 rounded-full p-1">
-              <button onClick={() => setFilter(StationFilter.All)} className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.All ? 'bg-accent text-white' : 'text-gray-300'}`}>{StationFilter.All}</button>
-              <button onClick={() => setFilter(StationFilter.Favorites)} className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.Favorites ? 'bg-accent text-white' : 'text-gray-300'}`}>{StationFilter.Favorites}</button>
+              <button 
+                onClick={() => setFilter(StationFilter.All)}
+                className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.All ? 'bg-accent text-white' : 'text-gray-300'}`}
+              >
+                {StationFilter.All}
+              </button>
+              <button 
+                onClick={() => setFilter(StationFilter.Favorites)}
+                className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.Favorites ? 'bg-accent text-white' : 'text-gray-300'}`}
+              >
+                {StationFilter.Favorites}
+              </button>
             </div>
+            
             <h1 className="text-xl sm:text-2xl font-bold text-accent">רדיו פרימיום</h1>
         </div>
         <div className="max-w-7xl mx-auto mt-4">
             <div className="flex items-center justify-center gap-2">
                 <span className="text-xs text-text-secondary">מיון:</span>
                 <div className="flex items-center bg-gray-700 rounded-full p-1 gap-1 flex-wrap justify-center">
-                    <SortButton label="שלי" order="custom" currentOrder={sortOrder} setOrder={setSortOrder} />
+                    <SortButton label="אישי" order="custom" currentOrder={sortOrder} setOrder={setSortOrder} />
                     <SortButton label="פופולריות" order="priority" currentOrder={sortOrder} setOrder={setSortOrder} />
-                    <button onClick={() => setSortOrder(so => so === 'name_asc' ? 'name_desc' : 'name_asc')} className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${sortOrder.startsWith('name_') ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`}>{sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'}</button>
-                    <button onClick={handleCategorySortClick} className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${currentCategoryIndex !== -1 ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`}>{categoryButtonLabel}</button>
+                    <button
+                      onClick={() => {
+                        if (sortOrder === 'name_asc') {
+                          setSortOrder('name_desc');
+                        } else {
+                          setSortOrder('name_asc');
+                        }
+                      }}
+                      className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                        sortOrder.startsWith('name_') ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                      }`}
+                    >
+                      {sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'}
+                    </button>
+                    <button
+                      onClick={handleCategorySortClick}
+                      className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                        isCategorySortActive ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                      }`}
+                    >
+                      {categoryButtonLabel}
+                    </button>
                 </div>
             </div>
         </div>
       </header>
-      <main className="flex-grow pb-48" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-        {stationsStatus === 'loading' ? (
+
+      <main 
+        className="flex-grow pb-48"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        {isLoading ? (
           <StationListSkeleton />
-        ) : stationsStatus === 'error' ? (
+        ) : error ? (
           <p className="text-center text-red-400 p-4">{error}</p>
-        ) : displayedStations.length > 0 ? (
-          <StationList stations={displayedStations} currentStation={playerState.station} onSelectStation={handleSelectStation} isFavorite={isFavorite} toggleFavorite={toggleFavorite} onReorder={handleReorder} isStreamActive={playerState.status === 'PLAYING'} isStatusIndicatorEnabled={isStatusIndicatorEnabled} gridSize={gridSize} sortOrder={sortOrder} />
         ) : (
-          <div className="text-center p-8 text-text-secondary">
-            <h2 className="text-xl font-semibold">{filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}</h2>
-            <p>{filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}</p>
-          </div>
+            displayedStations.length > 0 ? (
+                <StationList
+                    stations={displayedStations}
+                    currentStation={currentStation}
+                    onSelectStation={handleSelectStation}
+                    isFavorite={isFavorite}
+                    toggleFavorite={toggleFavorite}
+                    onReorder={handleReorder}
+                    isStreamActive={isStreamActive}
+                    isStatusIndicatorEnabled={isStatusIndicatorEnabled}
+                    gridSize={gridSize}
+                    sortOrder={sortOrder}
+                />
+            ) : (
+                <div className="text-center p-8 text-text-secondary">
+                    <h2 className="text-xl font-semibold">
+                      {filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}
+                    </h2>
+                    <p>
+                      {filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}
+                    </p>
+                </div>
+            )
         )}
       </main>
-      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} currentTheme={theme} onThemeChange={setTheme} currentEqPreset={eqPreset} onEqPresetChange={setEqPreset} isNowPlayingVisualizerEnabled={isNowPlayingVisualizerEnabled} onNowPlayingVisualizerEnabledChange={setIsNowPlayingVisualizerEnabled} isPlayerBarVisualizerEnabled={isPlayerBarVisualizerEnabled} onPlayerBarVisualizerEnabledChange={setIsPlayerBarVisualizerEnabled} isStatusIndicatorEnabled={isStatusIndicatorEnabled} onStatusIndicatorEnabledChange={setIsStatusIndicatorEnabled} isVolumeControlVisible={isVolumeControlVisible} onVolumeControlVisibleChange={setIsVolumeControlVisible} showNextSong={showNextSong} onShowNextSongChange={setShowNextSong} customEqSettings={customEqSettings} onCustomEqChange={setCustomEqSettings} gridSize={gridSize} onGridSizeChange={setGridSize} isMarqueeProgramEnabled={isMarqueeProgramEnabled} onMarqueeProgramEnabledChange={setIsMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} onMarqueeCurrentTrackEnabledChange={setIsMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} onMarqueeNextTrackEnabledChange={setIsMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onMarqueeSpeedChange={setMarqueeSpeed} marqueeDelay={marqueeDelay} onMarqueeDelayChange={setMarqueeDelay} updateStatus={updateStatus} onManualUpdateCheck={handleManualUpdateCheck} user={user} onLogin={handleLogin} onLogout={handleLogout} />
-      {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={volume} onVolumeChange={setVolume} trackInfo={trackInfo} showNextSong={showNextSong} frequencyData={frequencyData} visualizerStyle={visualizerStyle} isVisualizerEnabled={isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={isVolumeControlVisible} marqueeDelay={marqueeDelay} isMarqueeProgramEnabled={isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
-      <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
-      <Player playerState={playerState} onPlay={handlePlay} onPause={handlePause} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} onPlayerEvent={(event) => dispatch(event)} eqPreset={eqPreset} customEqSettings={customEqSettings} volume={volume} onVolumeChange={setVolume} trackInfo={trackInfo} showNextSong={showNextSong} onOpenNowPlaying={() => setIsNowPlayingOpen(true)} setFrequencyData={setFrequencyData} frequencyData={frequencyData} isVisualizerEnabled={isPlayerBarVisualizerEnabled} marqueeDelay={marqueeDelay} isMarqueeProgramEnabled={isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onOpenActionMenu={openActionMenu} />
-      {isUpdateAvailable && ( <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up"><p className="text-sm font-semibold">עדכון חדש זמין</p><button onClick={handleUpdateClick} className="py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold">רענן</button></div> )}
-       {isSyncing && (
-        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center transition-opacity duration-300">
-            <div className="loader-spinner"></div>
-        </div>
+
+      <SettingsPanel 
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        currentTheme={theme}
+        onThemeChange={setTheme}
+        currentEqPreset={eqPreset}
+        onEqPresetChange={handleSetEqPreset}
+        isNowPlayingVisualizerEnabled={isNowPlayingVisualizerEnabled}
+        onNowPlayingVisualizerEnabledChange={handleSetIsNowPlayingVisualizerEnabled}
+        isPlayerBarVisualizerEnabled={isPlayerBarVisualizerEnabled}
+        onPlayerBarVisualizerEnabledChange={handleSetIsPlayerBarVisualizerEnabled}
+        isStatusIndicatorEnabled={isStatusIndicatorEnabled}
+        onStatusIndicatorEnabledChange={handleSetStatusIndicatorEnabled}
+        isVolumeControlVisible={isVolumeControlVisible}
+        onVolumeControlVisibleChange={handleSetIsVolumeControlVisible}
+        showNextSong={showNextSong}
+        onShowNextSongChange={handleSetShowNextSong}
+        customEqSettings={customEqSettings}
+        onCustomEqChange={handleSetCustomEqSettings}
+        gridSize={gridSize}
+        onGridSizeChange={handleSetGridSize}
+        user={user}
+        authLoading={authLoading}
+        signIn={signInWithGoogle}
+        signOut={signOut}
+      />
+
+      {currentStation && (
+         <NowPlaying
+          isOpen={isNowPlayingOpen}
+          onClose={() => setIsNowPlayingOpen(false)}
+          station={currentStation}
+          isPlaying={isPlaying}
+          onPlayPause={handlePlayPause}
+          onNext={handleNext}
+          onPrev={handlePrev}
+          volume={volume}
+          onVolumeChange={handleSetVolume}
+          trackInfo={trackInfo}
+          showNextSong={showNextSong}
+          frequencyData={frequencyData}
+          visualizerStyle={visualizerStyle}
+          isVisualizerEnabled={isNowPlayingVisualizerEnabled}
+          onCycleVisualizerStyle={handleCycleVisualizerStyle}
+          isVolumeControlVisible={isVolumeControlVisible}
+        />
       )}
+     
+      <Player
+        station={currentStation}
+        isPlaying={isPlaying}
+        onPlayPause={handlePlayPause}
+        onNext={handleNext}
+        onPrev={handlePrev}
+        eqPreset={eqPreset}
+        customEqSettings={customEqSettings}
+        volume={volume}
+        onVolumeChange={handleSetVolume}
+        trackInfo={trackInfo}
+        showNextSong={showNextSong}
+        onOpenNowPlaying={() => setIsNowPlayingOpen(true)}
+        setFrequencyData={setFrequencyData}
+        onStreamStatusChange={setIsStreamActive}
+        frequencyData={frequencyData}
+        isVisualizerEnabled={isPlayerBarVisualizerEnabled}
+      />
     </div>
   );
 }
