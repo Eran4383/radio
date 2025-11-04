@@ -147,7 +147,11 @@ export default function App() {
   const [mergeModal, setMergeModal] = useState({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
 
   const [allSettings, setAllSettings] = useState(() => loadSettingsFromLocalStorage());
-  const localSettingsOnLoad = useRef(loadSettingsFromLocalStorage());
+  
+  const settingsRef = useRef(allSettings);
+  useEffect(() => {
+    settingsRef.current = allSettings;
+  }, [allSettings]);
 
   const [error, setError] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -169,7 +173,7 @@ export default function App() {
       if (user) {
         setIsCloudSyncing(true);
         const cloudSettings = await getUserSettings(user.uid);
-        const localSettings = localSettingsOnLoad.current;
+        const localSettings = settingsRef.current;
 
         if (cloudSettings) {
           if (settingsHaveConflict(localSettings, cloudSettings)) {
@@ -201,7 +205,7 @@ export default function App() {
         }
       } else {
         setUser(null);
-        setAllSettings(localSettingsOnLoad.current);
+        setAllSettings(loadSettingsFromLocalStorage());
       }
       setIsAuthReady(true);
     });
@@ -209,7 +213,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    saveSettingsToLocalStorage(allSettings);
+    if (!user) {
+      saveSettingsToLocalStorage(allSettings);
+    }
     if (user && !isCloudSyncing) {
         saveUserSettings(user.uid, allSettings);
     }

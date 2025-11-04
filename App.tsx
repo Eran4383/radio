@@ -165,9 +165,13 @@ export default function App() {
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [mergeModal, setMergeModal] = useState({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
 
-  // FIX: Initialize state and refs synchronously to prevent race conditions on startup.
   const [allSettings, setAllSettings] = useState<AllSettings>(() => loadSettingsFromLocalStorage());
-  const localSettingsOnLoad = useRef<AllSettings>(loadSettingsFromLocalStorage());
+  
+  // Use a ref to track the latest settings, to be used inside the auth listener closure
+  const settingsRef = useRef(allSettings);
+  useEffect(() => {
+    settingsRef.current = allSettings;
+  }, [allSettings]);
 
   const [error, setError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -184,56 +188,59 @@ export default function App() {
   const waitingWorkerRef = useRef<ServiceWorker | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
   
-  // Auth state listener
+  // Auth state listener - runs only once on mount
   useEffect(() => {
     const unsubscribe = onAuthStateChangedListener(async (user) => {
       if (user) {
         setIsCloudSyncing(true);
         const cloudSettings = await getUserSettings(user.uid);
-        const localSettings = localSettingsOnLoad.current!; // Should be safe now
+        const localSettings = settingsRef.current; // Get latest local settings from ref
 
         if (cloudSettings) {
           if (settingsHaveConflict(localSettings, cloudSettings)) {
             setMergeModal({
               isOpen: true,
-              onMerge: () => {
+              onMerge: () => { // Keep local, push to cloud
                 setAllSettings(localSettings);
                 saveUserSettings(user.uid, localSettings);
                 setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
                 setIsCloudSyncing(false);
                 setUser(user);
               },
-              onDiscardLocal: () => {
+              onDiscardLocal: () => { // Discard local, use cloud
                 setAllSettings(cloudSettings);
                 setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
                 setIsCloudSyncing(false);
                 setUser(user);
               },
             });
-          } else {
+          } else { // No conflict, just use cloud settings
             setAllSettings(cloudSettings);
             setIsCloudSyncing(false);
             setUser(user);
           }
-        } else {
+        } else { // No settings in cloud, so upload local ones
           await saveUserSettings(user.uid, localSettings);
           setIsCloudSyncing(false);
           setUser(user);
         }
-      } else {
+      } else { // Logout
         setUser(null);
-        // FIX: On logout, revert to the settings that were present when the app loaded (before any user logged in),
-        // not the current state of localStorage which would contain the logged-out user's data.
-        setAllSettings(localSettingsOnLoad.current!);
+        // On logout, restore the last saved local state.
+        setAllSettings(loadSettingsFromLocalStorage());
       }
       setIsAuthReady(true);
     });
     return unsubscribe;
-  }, []);
+  }, []); // IMPORTANT: Empty dependency array ensures this runs only once.
 
   // Settings persistence effect
   useEffect(() => {
-    saveSettingsToLocalStorage(allSettings);
+    // Only save settings to local storage if the user is not logged in.
+    if (!user) {
+      saveSettingsToLocalStorage(allSettings);
+    }
+    // Always save settings to the cloud if the user is logged in.
     if (user && !isCloudSyncing) {
         saveUserSettings(user.uid, allSettings);
     }
