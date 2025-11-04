@@ -6,12 +6,16 @@ const FAVORITES_KEY = 'radio-favorites-anonymous';
 
 const getUserDocRef = (uid: string) => doc(firestore, 'user_data', uid);
 
-export const useFavorites = (user: User | null) => {
+export const useFavorites = (user: User | null, authLoading: boolean) => {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Effect to load favorites from Firestore or localStorage
   useEffect(() => {
+    if (authLoading) {
+      return; // Do not run until authentication state is resolved.
+    }
+
     const loadData = async () => {
       setIsLoaded(false);
       try {
@@ -64,7 +68,7 @@ export const useFavorites = (user: User | null) => {
     };
 
     loadData();
-  }, [user]);
+  }, [user, authLoading]);
 
   const saveFavorites = useCallback(async (newFavorites: string[]) => {
     setFavorites(newFavorites);

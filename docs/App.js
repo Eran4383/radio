@@ -128,7 +128,7 @@ export default function App() {
   const [gridSize, setGridSize] = useState(() => JSON.parse(localStorage.getItem(GRID_SIZE_KEY) || '3'));
 
 
-  const { favorites, toggleFavorite, isFavorite, isFavoritesLoaded } = useFavorites(user);
+  const { favorites, toggleFavorite, isFavorite, isFavoritesLoaded } = useFavorites(user, authLoading);
   
   const currentStation = useMemo(() => {
      if (currentStationIndex !== null && stations[currentStationIndex]) {
