@@ -16,9 +16,7 @@ const urlsToCache = [
   './components/NowPlaying.js',
   './components/Visualizer.js',
   './components/InteractiveText.js',
-  './services/scheduleService.js',
-  'https://cdn.tailwindcss.com',
-  'https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap'
+  './services/scheduleService.js'
 ];
 
 self.addEventListener('install', event => {

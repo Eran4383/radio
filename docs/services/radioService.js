@@ -182,6 +182,14 @@ export const fetchIsraeliStations = async () => {
   });
   
   const finalStations = Array.from(uniqueStations.values());
+  
+  // Upgrade HTTP to HTTPS for favicons to avoid mixed content issues
+  finalStations.forEach(station => {
+      if (station.favicon?.startsWith('http://')) {
+          station.favicon = station.favicon.replace('http://', 'https://');
+      }
+  });
+
   console.log(`Successfully combined and de-duplicated ${finalStations.length} stations from all sources.`);
   return finalStations;
 };

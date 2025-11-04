@@ -165,111 +165,111 @@ export default function App() {
         if (authLoading) return; // Wait for authentication to resolve
 
         const syncUserData = async () => {
-            try {
-                if (user) {
-                     // --- TAKE SNAPSHOT OF GUEST STATE BEFORE LOGIN ---
-                    guestStateSnapshotRef.current = {
-                        theme, filter, sortOrder, eqPreset, customEqSettings, volume,
-                        isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled,
-                        visualizerStyle, isStatusIndicatorEnabled, isVolumeControlVisible,
-                        showNextSong, gridSize, customOrder, favorites
-                    };
+          try {
+              if (user) {
+                   // --- TAKE SNAPSHOT OF GUEST STATE BEFORE LOGIN ---
+                  guestStateSnapshotRef.current = {
+                      theme, filter, sortOrder, eqPreset, customEqSettings, volume,
+                      isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled,
+                      visualizerStyle, isStatusIndicatorEnabled, isVolumeControlVisible,
+                      showNextSong, gridSize, customOrder, favorites
+                  };
 
-                    const docRef = doc(firestore, 'user_data', user.uid);
-                    const docSnap = await getDoc(docRef);
-                    const remoteData = docSnap.data() || {};
-                    
-                    // --- MERGE CUSTOM ORDER ---
-                    const localCustomOrder = JSON.parse(localStorage.getItem(CUSTOM_ORDER_KEY_LOCAL) || '[]');
-                    let finalCustomOrder = remoteData.customOrder || [];
-                    if (localCustomOrder.length > 0) {
-                        const merged = new Set([...finalCustomOrder, ...localCustomOrder]);
-                        finalCustomOrder = Array.from(merged);
-                    }
-                    setCustomOrder(finalCustomOrder);
+                  const docRef = doc(firestore, 'user_data', user.uid);
+                  const docSnap = await getDoc(docRef);
+                  const remoteData = docSnap.data() || {};
+                  
+                  // --- MERGE CUSTOM ORDER ---
+                  const localCustomOrder = JSON.parse(localStorage.getItem(CUSTOM_ORDER_KEY_LOCAL) || '[]');
+                  let finalCustomOrder = remoteData.customOrder || [];
+                  if (localCustomOrder.length > 0) {
+                      const merged = new Set([...finalCustomOrder, ...localCustomOrder]);
+                      finalCustomOrder = Array.from(merged);
+                  }
+                  setCustomOrder(finalCustomOrder);
 
-                    // --- MERGE SETTINGS ---
-                    const localSettings: Partial<typeof DEFAULT_SETTINGS> = {};
-                    Object.entries(SETTINGS_LOCAL_STORAGE_MAP).forEach(([key, storageKey]) => {
-                        const item = localStorage.getItem(storageKey);
-                        if (item !== null) {
-                            try {
-                                (localSettings as any)[key] = JSON.parse(item);
-                            } catch {
-                                (localSettings as any)[key] = item; // For non-JSON values like theme
-                            }
-                        }
-                    });
+                  // --- MERGE SETTINGS ---
+                  const localSettings: Partial<typeof DEFAULT_SETTINGS> = {};
+                  Object.entries(SETTINGS_LOCAL_STORAGE_MAP).forEach(([key, storageKey]) => {
+                      const item = localStorage.getItem(storageKey);
+                      if (item !== null) {
+                          try {
+                              (localSettings as any)[key] = JSON.parse(item);
+                          } catch {
+                              (localSettings as any)[key] = item; // For non-JSON values like theme
+                          }
+                      }
+                  });
 
-                    const mergedSettings = { ...DEFAULT_SETTINGS, ...localSettings, ...remoteData.settings };
+                  const mergedSettings = { ...DEFAULT_SETTINGS, ...localSettings, ...remoteData.settings };
 
-                    // --- UPDATE REACT STATE ---
-                    setTheme(mergedSettings.theme);
-                    setFilter(mergedSettings.filter);
-                    setSortOrder(mergedSettings.sortOrder);
-                    setEqPreset(mergedSettings.eqPreset);
-                    setCustomEqSettings(mergedSettings.customEqSettings);
-                    setVolume(mergedSettings.volume);
-                    setIsNowPlayingVisualizerEnabled(mergedSettings.isNowPlayingVisualizerEnabled);
-                    setIsPlayerBarVisualizerEnabled(mergedSettings.isPlayerBarVisualizerEnabled);
-                    setVisualizerStyle(mergedSettings.visualizerStyle);
-                    setIsStatusIndicatorEnabled(mergedSettings.isStatusIndicatorEnabled);
-                    setIsVolumeControlVisible(mergedSettings.isVolumeControlVisible);
-                    setShowNextSong(mergedSettings.showNextSong);
-                    setGridSize(mergedSettings.gridSize);
+                  // --- UPDATE REACT STATE ---
+                  setTheme(mergedSettings.theme);
+                  setFilter(mergedSettings.filter);
+                  setSortOrder(mergedSettings.sortOrder);
+                  setEqPreset(mergedSettings.eqPreset);
+                  setCustomEqSettings(mergedSettings.customEqSettings);
+                  setVolume(mergedSettings.volume);
+                  setIsNowPlayingVisualizerEnabled(mergedSettings.isNowPlayingVisualizerEnabled);
+                  setIsPlayerBarVisualizerEnabled(mergedSettings.isPlayerBarVisualizerEnabled);
+                  setVisualizerStyle(mergedSettings.visualizerStyle);
+                  setIsStatusIndicatorEnabled(mergedSettings.isStatusIndicatorEnabled);
+                  setIsVolumeControlVisible(mergedSettings.isVolumeControlVisible);
+                  setShowNextSong(mergedSettings.showNextSong);
+                  setGridSize(mergedSettings.gridSize);
 
-                    // --- SAVE MERGED DATA TO FIRESTORE & CLEANUP LOCAL ---
-                    await setDoc(docRef, { customOrder: finalCustomOrder, settings: mergedSettings }, { merge: true });
-                    localStorage.removeItem(CUSTOM_ORDER_KEY_LOCAL);
-                    Object.values(SETTINGS_LOCAL_STORAGE_MAP).forEach(key => localStorage.removeItem(key));
-                
-                } else {
-                     // ANONYMOUS: This block now handles initial load AND restoring state after logout.
-                    if (guestStateSnapshotRef.current) {
-                        // --- RESTORE GUEST STATE AFTER LOGOUT ---
-                        const restoredState = guestStateSnapshotRef.current;
+                  // --- SAVE MERGED DATA TO FIRESTORE & CLEANUP LOCAL ---
+                  await setDoc(docRef, { customOrder: finalCustomOrder, settings: mergedSettings }, { merge: true });
+                  localStorage.removeItem(CUSTOM_ORDER_KEY_LOCAL);
+                  Object.values(SETTINGS_LOCAL_STORAGE_MAP).forEach(key => localStorage.removeItem(key));
+              
+              } else {
+                   // ANONYMOUS: This block now handles initial load AND restoring state after logout.
+                  if (guestStateSnapshotRef.current) {
+                      // --- RESTORE GUEST STATE AFTER LOGOUT ---
+                      const restoredState = guestStateSnapshotRef.current;
 
-                        // Restore state setters. Existing useEffects will handle saving to localStorage.
-                        setTheme(restoredState.theme);
-                        setFilter(restoredState.filter);
-                        setSortOrder(restoredState.sortOrder);
-                        setEqPreset(restoredState.eqPreset);
-                        setCustomEqSettings(restoredState.customEqSettings);
-                        setVolume(restoredState.volume);
-                        setIsNowPlayingVisualizerEnabled(restoredState.isNowPlayingVisualizerEnabled);
-                        setIsPlayerBarVisualizerEnabled(restoredState.isPlayerBarVisualizerEnabled);
-                        setVisualizerStyle(restoredState.visualizerStyle);
-                        setIsStatusIndicatorEnabled(restoredState.isStatusIndicatorEnabled);
-                        setIsVolumeControlVisible(restoredState.isVolumeControlVisible);
-                        setShowNextSong(restoredState.showNextSong);
-                        setGridSize(restoredState.gridSize);
+                      // Restore state setters. Existing useEffects will handle saving to localStorage.
+                      setTheme(restoredState.theme);
+                      setFilter(restoredState.filter);
+                      setSortOrder(restoredState.sortOrder);
+                      setEqPreset(restoredState.eqPreset);
+                      setCustomEqSettings(restoredState.customEqSettings);
+                      setVolume(restoredState.volume);
+                      setIsNowPlayingVisualizerEnabled(restoredState.isNowPlayingVisualizerEnabled);
+                      setIsPlayerBarVisualizerEnabled(restoredState.isPlayerBarVisualizerEnabled);
+                      setVisualizerStyle(restoredState.visualizerStyle);
+                      setIsStatusIndicatorEnabled(restoredState.isStatusIndicatorEnabled);
+                      setIsVolumeControlVisible(restoredState.isVolumeControlVisible);
+                      setShowNextSong(restoredState.showNextSong);
+                      setGridSize(restoredState.gridSize);
 
-                        // Restore custom order (this also saves to localStorage)
-                        saveCustomOrder(restoredState.customOrder);
+                      // Restore custom order (this also saves to localStorage)
+                      saveCustomOrder(restoredState.customOrder);
 
-                        // Restore favorites by writing to localStorage; the hook will pick it up.
-                        localStorage.setItem(FAVORITES_KEY_LOCAL, JSON.stringify(restoredState.favorites));
-                        
-                        guestStateSnapshotRef.current = null; // Clear snapshot
-                    } else {
-                        // --- STANDARD ANONYMOUS LOAD ---
-                        const localOrder = JSON.parse(localStorage.getItem(CUSTOM_ORDER_KEY_LOCAL) || '[]');
-                        setCustomOrder(localOrder);
-                    }
-                }
-            } catch (error) {
-                console.error("Error during user data sync:", error);
-                // Fallback for anonymous users if something went wrong
-                if (!user) {
-                    const localOrder = JSON.parse(localStorage.getItem(CUSTOM_ORDER_KEY_LOCAL) || '[]');
-                    setCustomOrder(localOrder);
-                }
-            } finally {
-                setIsUserDataSynced(true);
-            }
-        };
+                      // Restore favorites by writing to localStorage; the hook will pick it up.
+                      localStorage.setItem(FAVORITES_KEY_LOCAL, JSON.stringify(restoredState.favorites));
+                      
+                      guestStateSnapshotRef.current = null; // Clear snapshot
+                  } else {
+                      // --- STANDARD ANONYMOUS LOAD ---
+                      const localOrder = JSON.parse(localStorage.getItem(CUSTOM_ORDER_KEY_LOCAL) || '[]');
+                      setCustomOrder(localOrder);
+                  }
+              }
+          } catch (error) {
+              console.error("Error during user data sync:", error);
+              // Fallback for anonymous users if something went wrong
+              if (!user) {
+                  const localOrder = JSON.parse(localStorage.getItem(CUSTOM_ORDER_KEY_LOCAL) || '[]');
+                  setCustomOrder(localOrder);
+              }
+          } finally {
+              setIsUserDataSynced(true);
+          }
+      };
 
-        syncUserData();
+      syncUserData();
     }, [user, authLoading]);
 
 
