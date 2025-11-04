@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { initializeFirestore, memoryLocalCache } from 'firebase/firestore';
+import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -16,9 +16,19 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const firestore = initializeFirestore(app, { 
-  localCache: memoryLocalCache() 
-});
+// Initialize Firestore without special cache settings first.
+export const firestore = initializeFirestore(app, {});
+
+// Explicitly enable persistence for robust offline support.
+enableIndexedDbPersistence(firestore)
+  .catch((err) => {
+    if (err.code == 'failed-precondition') {
+      console.warn("Firestore persistence could not be enabled: Multiple tabs open.");
+    } else if (err.code == 'unimplemented') {
+      console.warn("Firestore persistence could not be enabled: Browser not supported.");
+    }
+  });
+
 export const googleProvider = new GoogleAuthProvider();
 
 export type User = FirebaseUser;
