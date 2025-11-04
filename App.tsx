@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService';
-import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES } from './types';
+import { 
+    signInWithGoogle, 
+    signOutUser, 
+    onAuthStateChangedListener,
+    saveUserSettings,
+    getUserSettings
+} from './services/firebase';
+import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES, User, AllSettings } from './types';
 import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
@@ -12,8 +19,7 @@ import { getCurrentProgram } from './services/scheduleService';
 import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/stationSpecificService';
 import StationListSkeleton from './components/StationListSkeleton';
 import { getCategory, CategoryType } from './services/categoryService';
-import { auth, signInWithGoogle, signOut, saveUserSettings, loadUserSettings } from './services/firebase';
-import type firebase from 'firebase/compat/app';
+import MergeDataModal from './components/MergeDataModal';
 
 
 enum StationFilter {
@@ -45,29 +51,20 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
   switch (action.type) {
     case 'SELECT_STATION':
       if (state.station?.stationuuid === action.payload.stationuuid) {
-        // It's the same station, toggle play/pause
-        if (state.status === 'PLAYING') {
-          return { ...state, status: 'PAUSED' };
-        } else if (state.status === 'PAUSED' || state.status === 'ERROR' || state.status === 'IDLE') {
-          return { ...state, status: 'LOADING' };
-        }
+        if (state.status === 'PLAYING') return { ...state, status: 'PAUSED' };
+        else if (state.status === 'PAUSED' || state.status === 'ERROR' || state.status === 'IDLE') return { ...state, status: 'LOADING' };
       }
-      // It's a new station
       return { status: 'LOADING', station: action.payload, error: undefined };
     case 'PLAY':
        return { ...state, status: 'LOADING', station: action.payload, error: undefined };
     case 'TOGGLE_PAUSE':
-      if (state.status === 'PLAYING') {
-        return { ...state, status: 'PAUSED' };
-      }
-      if (state.status === 'PAUSED' && state.station) {
-        return { ...state, status: 'LOADING', error: undefined };
-      }
+      if (state.status === 'PLAYING') return { ...state, status: 'PAUSED' };
+      if (state.status === 'PAUSED' && state.station) return { ...state, status: 'LOADING', error: undefined };
       return state;
     case 'STREAM_STARTED':
       return { ...state, status: 'PLAYING', error: undefined };
     case 'STREAM_PAUSED':
-        if(state.status === 'LOADING') return state; // Ignore pause event during load
+        if(state.status === 'LOADING') return state;
         return { ...state, status: 'PAUSED' };
     case 'STREAM_ERROR':
       return { ...state, status: 'ERROR', error: action.payload };
@@ -76,63 +73,109 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
   }
 }
 
-// Helper function for safely parsing JSON from localStorage
 function safeJsonParse<T>(jsonString: string | null, defaultValue: T): T {
-    if (jsonString === null) {
-        return defaultValue;
-    }
+    if (jsonString === null) return defaultValue;
     try {
         const parsedValue = JSON.parse(jsonString);
-        if (parsedValue === null && defaultValue !== null) {
-            return defaultValue;
-        }
-        return parsedValue;
+        return parsedValue === null ? defaultValue : parsedValue;
     } catch (e) {
         return defaultValue;
     }
 }
 
-const debounce = <F extends (...args: any[]) => any>(func: F, waitFor: number) => {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<F>): void => {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    timeout = setTimeout(() => func(...args), waitFor);
-  };
+const SETTINGS_KEYS = [
+    'favorites', 'customOrder', 'theme', 'eqPreset', 'customEqSettings', 'volume',
+    'isNowPlayingVisualizerEnabled', 'isPlayerBarVisualizerEnabled', 'visualizerStyle',
+    'isStatusIndicatorEnabled', 'isVolumeControlVisible', 'showNextSong', 'gridSize',
+    'isMarqueeProgramEnabled', 'isMarqueeCurrentTrackEnabled', 'isMarqueeNextTrackEnabled',
+    'marqueeSpeed', 'marqueeDelay', 'filter', 'sortOrder'
+];
+
+const defaultSettings: AllSettings = {
+    favorites: [], customOrder: [], theme: 'dark', eqPreset: 'flat',
+    customEqSettings: { bass: 0, mid: 0, treble: 0 }, volume: 1,
+    isNowPlayingVisualizerEnabled: true, isPlayerBarVisualizerEnabled: true,
+    visualizerStyle: 'bars', isStatusIndicatorEnabled: true, isVolumeControlVisible: true,
+    showNextSong: true, gridSize: 3, isMarqueeProgramEnabled: true,
+    isMarqueeCurrentTrackEnabled: true, isMarqueeNextTrackEnabled: true,
+    marqueeSpeed: 6, marqueeDelay: 3, filter: StationFilter.All, sortOrder: 'priority'
 };
 
+const loadSettingsFromLocalStorage = (): AllSettings => {
+    return {
+        favorites: safeJsonParse(localStorage.getItem('radio-favorites'), defaultSettings.favorites),
+        customOrder: safeJsonParse(localStorage.getItem('radio-station-custom-order'), defaultSettings.customOrder),
+        theme: safeJsonParse(localStorage.getItem('radio-theme'), defaultSettings.theme),
+        eqPreset: safeJsonParse(localStorage.getItem('radio-eq'), defaultSettings.eqPreset),
+        customEqSettings: safeJsonParse(localStorage.getItem('radio-custom-eq'), defaultSettings.customEqSettings),
+        volume: safeJsonParse(localStorage.getItem('radio-volume'), defaultSettings.volume),
+        isNowPlayingVisualizerEnabled: safeJsonParse(localStorage.getItem('radio-nowplaying-visualizer-enabled'), defaultSettings.isNowPlayingVisualizerEnabled),
+        isPlayerBarVisualizerEnabled: safeJsonParse(localStorage.getItem('radio-playerbar-visualizer-enabled'), defaultSettings.isPlayerBarVisualizerEnabled),
+        visualizerStyle: safeJsonParse(localStorage.getItem('radio-visualizer-style'), defaultSettings.visualizerStyle),
+        isStatusIndicatorEnabled: safeJsonParse(localStorage.getItem('radio-status-indicator-enabled'), defaultSettings.isStatusIndicatorEnabled),
+        isVolumeControlVisible: safeJsonParse(localStorage.getItem('radio-volume-control-visible'), defaultSettings.isVolumeControlVisible),
+        showNextSong: safeJsonParse(localStorage.getItem('radio-show-next-song'), defaultSettings.showNextSong),
+        gridSize: safeJsonParse(localStorage.getItem('radio-grid-size'), defaultSettings.gridSize),
+        isMarqueeProgramEnabled: safeJsonParse(localStorage.getItem('radio-marquee-program-enabled'), defaultSettings.isMarqueeProgramEnabled),
+        isMarqueeCurrentTrackEnabled: safeJsonParse(localStorage.getItem('radio-marquee-current-enabled'), defaultSettings.isMarqueeCurrentTrackEnabled),
+        isMarqueeNextTrackEnabled: safeJsonParse(localStorage.getItem('radio-marquee-next-enabled'), defaultSettings.isMarqueeNextTrackEnabled),
+        marqueeSpeed: safeJsonParse(localStorage.getItem('radio-marquee-speed'), defaultSettings.marqueeSpeed),
+        marqueeDelay: safeJsonParse(localStorage.getItem('radio-marquee-delay'), defaultSettings.marqueeDelay),
+        filter: safeJsonParse(localStorage.getItem('radio-last-filter'), defaultSettings.filter),
+        sortOrder: safeJsonParse(localStorage.getItem('radio-last-sort'), defaultSettings.sortOrder)
+    };
+};
+
+const saveSettingsToLocalStorage = (settings: AllSettings) => {
+    localStorage.setItem('radio-favorites', JSON.stringify(settings.favorites));
+    localStorage.setItem('radio-station-custom-order', JSON.stringify(settings.customOrder));
+    localStorage.setItem('radio-theme', JSON.stringify(settings.theme));
+    localStorage.setItem('radio-eq', JSON.stringify(settings.eqPreset));
+    localStorage.setItem('radio-custom-eq', JSON.stringify(settings.customEqSettings));
+    localStorage.setItem('radio-volume', JSON.stringify(settings.volume));
+    localStorage.setItem('radio-nowplaying-visualizer-enabled', JSON.stringify(settings.isNowPlayingVisualizerEnabled));
+    localStorage.setItem('radio-playerbar-visualizer-enabled', JSON.stringify(settings.isPlayerBarVisualizerEnabled));
+    localStorage.setItem('radio-visualizer-style', JSON.stringify(settings.visualizerStyle));
+    localStorage.setItem('radio-status-indicator-enabled', JSON.stringify(settings.isStatusIndicatorEnabled));
+    localStorage.setItem('radio-volume-control-visible', JSON.stringify(settings.isVolumeControlVisible));
+    localStorage.setItem('radio-show-next-song', JSON.stringify(settings.showNextSong));
+    localStorage.setItem('radio-grid-size', JSON.stringify(settings.gridSize));
+    localStorage.setItem('radio-marquee-program-enabled', JSON.stringify(settings.isMarqueeProgramEnabled));
+    localStorage.setItem('radio-marquee-current-enabled', JSON.stringify(settings.isMarqueeCurrentTrackEnabled));
+    localStorage.setItem('radio-marquee-next-enabled', JSON.stringify(settings.isMarqueeNextTrackEnabled));
+    localStorage.setItem('radio-marquee-speed', JSON.stringify(settings.marqueeSpeed));
+    localStorage.setItem('radio-marquee-delay', JSON.stringify(settings.marqueeDelay));
+    localStorage.setItem('radio-last-filter', JSON.stringify(settings.filter));
+    localStorage.setItem('radio-last-sort', JSON.stringify(settings.sortOrder));
+};
+
+const settingsHaveConflict = (local: AllSettings, cloud: AllSettings) => {
+    // A simple JSON diff is good enough for this data structure.
+    return JSON.stringify(local) !== JSON.stringify(cloud);
+};
 
 const SortButton: React.FC<{ label: string; order: SortOrder; currentOrder: SortOrder; setOrder: (order: SortOrder) => void }> = ({ label, order, currentOrder, setOrder }) => (
-  <button
-    onClick={() => setOrder(order)}
-    className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-      currentOrder === order ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-    }`}
-  >
-    {label}
-  </button>
+  <button onClick={() => setOrder(order)} className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${ currentOrder === order ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500' }`} >{label}</button>
 );
 
-const CATEGORY_SORTS: { order: SortOrder; label: string }[] = [
-    { order: 'category_style', label: 'סגנון' },
-    { order: 'category_identity', label: 'אופי' },
-    { order: 'category_region', label: 'אזור' },
-    { order: 'category_nameStructure', label: 'שם' },
-];
+const CATEGORY_SORTS: { order: SortOrder; label: string }[] = [ { order: 'category_style', label: 'סגנון' }, { order: 'category_identity', label: 'אופי' }, { order: 'category_region', label: 'אזור' }, { order: 'category_nameStructure', label: 'שם' }, ];
 
 type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'found' | 'not-found' | 'error';
 type StationsStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
-interface AppProps {
-  initialUser: firebase.User | null;
-}
-
-export default function App({ initialUser: user }: AppProps) {
+export default function App() {
   const [stations, setStations] = useState<Station[]>([]);
   const [stationsStatus, setStationsStatus] = useState<StationsStatus>('idle');
   const [playerState, dispatch] = useReducer(playerReducer, initialPlayerState);
   
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [mergeModal, setMergeModal] = useState({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
+
+  const [allSettings, setAllSettings] = useState<AllSettings>(defaultSettings);
+  const localSettingsOnLoad = useRef<AllSettings | null>(null);
+
   const [error, setError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
@@ -140,80 +183,81 @@ export default function App({ initialUser: user }: AppProps) {
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
   const [trackInfo, setTrackInfo] = useState<StationTrackInfo | null>(null);
   const pinchDistRef = useRef(0);
-  const PINCH_THRESHOLD = 40; // pixels
+  const PINCH_THRESHOLD = 40;
   const [actionMenuState, setActionMenuState] = useState<{isOpen: boolean; songTitle: string | null}>({ isOpen: false, songTitle: null });
 
-  const [isSyncing, setIsSyncing] = useState(false);
-  
-  // --- Centralized Settings State with default values for guest user ---
-  const [favorites, setFavorites] = useState<string[]>([]);
-  const [customOrder, setCustomOrder] = useState<string[]>([]);
-  const [theme, setTheme] = useState<Theme>('dark');
-  const [eqPreset, setEqPreset] = useState<EqPreset>('flat');
-  const [customEqSettings, setCustomEqSettings] = useState<CustomEqSettings>({ bass: 0, mid: 0, treble: 0 });
-  const [volume, setVolume] = useState<number>(1);
-  const [isNowPlayingVisualizerEnabled, setIsNowPlayingVisualizerEnabled] = useState<boolean>(true);
-  const [isPlayerBarVisualizerEnabled, setIsPlayerBarVisualizerEnabled] = useState<boolean>(true);
-  const [visualizerStyle, setVisualizerStyle] = useState<VisualizerStyle>('bars');
-  const [isStatusIndicatorEnabled, setIsStatusIndicatorEnabled] = useState<boolean>(true);
-  const [isVolumeControlVisible, setIsVolumeControlVisible] = useState<boolean>(true);
-  const [showNextSong, setShowNextSong] = useState<boolean>(true);
-  const [gridSize, setGridSize] = useState<GridSize>(3);
-  const [isMarqueeProgramEnabled, setIsMarqueeProgramEnabled] = useState<boolean>(true);
-  const [isMarqueeCurrentTrackEnabled, setIsMarqueeCurrentTrackEnabled] = useState<boolean>(true);
-  const [isMarqueeNextTrackEnabled, setIsMarqueeNextTrackEnabled] = useState<boolean>(true);
-  const [marqueeSpeed, setMarqueeSpeed] = useState<number>(6);
-  const [marqueeDelay, setMarqueeDelay] = useState<number>(3);
-  const [filter, setFilter] = useState<StationFilter>(StationFilter.All);
-  const [sortOrder, setSortOrder] = useState<SortOrder>('priority');
-
-  const isFavorite = useCallback((stationUuid: string) => favorites.includes(stationUuid), [favorites]);
-
+  const isFavorite = useCallback((stationUuid: string) => allSettings.favorites.includes(stationUuid), [allSettings.favorites]);
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
   const waitingWorkerRef = useRef<ServiceWorker | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
 
-  // Combine all settings into a single object for easier saving
-  const allSettings = useMemo(() => ({
-    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-    marqueeSpeed, marqueeDelay, filter, sortOrder
-  }), [
-    favorites, customOrder, theme, eqPreset, customEqSettings, volume,
-    isNowPlayingVisualizerEnabled, isPlayerBarVisualizerEnabled, visualizerStyle,
-    isStatusIndicatorEnabled, isVolumeControlVisible, showNextSong, gridSize,
-    isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled,
-    marqueeSpeed, marqueeDelay, filter, sortOrder
-  ]);
+  // Load settings from local storage on initial mount
+  useEffect(() => {
+    const localSettings = loadSettingsFromLocalStorage();
+    localSettingsOnLoad.current = localSettings;
+    setAllSettings(localSettings);
+  }, []);
+  
+  // Auth state listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChangedListener(async (user) => {
+      if (user) {
+        setIsCloudSyncing(true);
+        const cloudSettings = await getUserSettings(user.uid);
+        const localSettings = localSettingsOnLoad.current!;
 
-  // Function to load settings from localStorage for a guest user
-  const loadGuestSettings = useCallback(() => {
-    setFavorites(safeJsonParse(localStorage.getItem('radio-favorites'), []));
-    setCustomOrder(safeJsonParse(localStorage.getItem('radio-station-custom-order'), []));
-    setTheme(safeJsonParse(localStorage.getItem('radio-theme'), 'dark') as Theme);
-    setEqPreset(safeJsonParse(localStorage.getItem('radio-eq'), 'flat') as EqPreset);
-    setCustomEqSettings(safeJsonParse(localStorage.getItem('radio-custom-eq'), { bass: 0, mid: 0, treble: 0 }));
-    setVolume(safeJsonParse(localStorage.getItem('radio-volume'), 1));
-    setIsNowPlayingVisualizerEnabled(safeJsonParse(localStorage.getItem('radio-nowplaying-visualizer-enabled'), true));
-    setIsPlayerBarVisualizerEnabled(safeJsonParse(localStorage.getItem('radio-playerbar-visualizer-enabled'), true));
-    setVisualizerStyle(safeJsonParse(localStorage.getItem('radio-visualizer-style'), 'bars') as VisualizerStyle);
-    setIsStatusIndicatorEnabled(safeJsonParse(localStorage.getItem('radio-status-indicator-enabled'), true));
-    setIsVolumeControlVisible(safeJsonParse(localStorage.getItem('radio-volume-control-visible'), true));
-    setShowNextSong(safeJsonParse(localStorage.getItem('radio-show-next-song'), true));
-    setGridSize(safeJsonParse(localStorage.getItem('radio-grid-size'), 3) as GridSize);
-    setIsMarqueeProgramEnabled(safeJsonParse(localStorage.getItem('radio-marquee-program-enabled'), true));
-    setIsMarqueeCurrentTrackEnabled(safeJsonParse(localStorage.getItem('radio-marquee-current-enabled'), true));
-    setIsMarqueeNextTrackEnabled(safeJsonParse(localStorage.getItem('radio-marquee-next-enabled'), true));
-    setMarqueeSpeed(safeJsonParse(localStorage.getItem('radio-marquee-speed'), 6));
-    setMarqueeDelay(safeJsonParse(localStorage.getItem('radio-marquee-delay'), 3));
-    const savedFilter = localStorage.getItem('radio-last-filter');
-    setFilter((savedFilter && Object.values(StationFilter).includes(savedFilter as StationFilter)) ? savedFilter as StationFilter : StationFilter.All);
-    setSortOrder(safeJsonParse(localStorage.getItem('radio-last-sort'), 'priority') as SortOrder);
+        if (cloudSettings) {
+          if (settingsHaveConflict(localSettings, cloudSettings)) {
+            setMergeModal({
+              isOpen: true,
+              onMerge: () => {
+                setAllSettings(localSettings);
+                saveUserSettings(user.uid, localSettings);
+                setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
+                setIsCloudSyncing(false);
+                setUser(user);
+              },
+              onDiscardLocal: () => {
+                setAllSettings(cloudSettings);
+                setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
+                setIsCloudSyncing(false);
+                setUser(user);
+              },
+            });
+          } else {
+            setAllSettings(cloudSettings);
+            setIsCloudSyncing(false);
+            setUser(user);
+          }
+        } else {
+          await saveUserSettings(user.uid, localSettings);
+          setIsCloudSyncing(false);
+          setUser(user);
+        }
+      } else {
+        setUser(null);
+        setAllSettings(loadSettingsFromLocalStorage()); // On logout, revert to whatever is local
+      }
+      setIsAuthReady(true);
+    });
+    return unsubscribe;
   }, []);
 
-  // Effect 1: Fetch stations only ONCE on mount
+  // Settings persistence effect
+  useEffect(() => {
+    saveSettingsToLocalStorage(allSettings);
+    if (user && !isCloudSyncing) {
+        saveUserSettings(user.uid, allSettings);
+    }
+  }, [allSettings, user, isCloudSyncing]);
+
+  useEffect(() => {
+    if (isAuthReady && (stationsStatus === 'loaded' || stationsStatus === 'error')) {
+      const loader = document.querySelector<HTMLElement>('.app-loader');
+      if (loader) loader.style.display = 'none';
+    }
+  }, [isAuthReady, stationsStatus]);
+
   useEffect(() => {
     const fetchInitialStations = async () => {
       setStationsStatus('loading');
@@ -235,99 +279,7 @@ export default function App({ initialUser: user }: AppProps) {
     fetchInitialStations();
   }, []);
 
-  // Effect 2: Sync user settings whenever the user's auth state changes.
-  useEffect(() => {
-    const syncUserSettings = async () => {
-        setIsSyncing(true);
-        if (user) {
-            const result = await loadUserSettings(user.uid);
-            switch (result.status) {
-              case 'success':
-                if (result.data) {
-                  setFavorites(result.data.favorites || []);
-                  setCustomOrder(result.data.customOrder || []);
-                  setTheme(result.data.theme || 'dark');
-                  setEqPreset(result.data.eqPreset || 'flat');
-                  setCustomEqSettings(result.data.customEqSettings || { bass: 0, mid: 0, treble: 0 });
-                  setVolume(result.data.volume ?? 1);
-                  setIsNowPlayingVisualizerEnabled(result.data.isNowPlayingVisualizerEnabled ?? true);
-                  setIsPlayerBarVisualizerEnabled(result.data.isPlayerBarVisualizerEnabled ?? true);
-                  setVisualizerStyle(result.data.visualizerStyle || 'bars');
-                  setIsStatusIndicatorEnabled(result.data.isStatusIndicatorEnabled ?? true);
-                  setIsVolumeControlVisible(result.data.isVolumeControlVisible ?? true);
-                  setShowNextSong(result.data.showNextSong ?? true);
-                  setGridSize(result.data.gridSize || 3);
-                  setIsMarqueeProgramEnabled(result.data.isMarqueeProgramEnabled ?? true);
-                  setIsMarqueeCurrentTrackEnabled(result.data.isMarqueeCurrentTrackEnabled ?? true);
-                  setIsMarqueeNextTrackEnabled(result.data.isMarqueeNextTrackEnabled ?? true);
-                  setMarqueeSpeed(result.data.marqueeSpeed || 6);
-                  setMarqueeDelay(result.data.marqueeDelay || 3);
-                  setFilter(result.data.filter || StationFilter.All);
-                  setSortOrder(result.data.sortOrder || 'priority');
-                }
-                break;
-              case 'not-found':
-                console.log("New user detected. Migrating local settings to cloud.");
-                loadGuestSettings(); 
-                break;
-              case 'error':
-                console.warn("Could not load user settings from cloud. Using local settings as fallback.");
-                loadGuestSettings();
-                break;
-            }
-        } else {
-            loadGuestSettings();
-        }
-        setIsSyncing(false);
-    };
-    syncUserSettings();
-  }, [user, loadGuestSettings]);
-
-
-  // Debounced save to Firestore
-  const debouncedSave = useCallback(debounce((settings, userId) => {
-    saveUserSettings(userId, settings);
-  }, 2000), []);
-
-  // Effect to save settings whenever they change
-  useEffect(() => {
-    if (stationsStatus !== 'loaded') return;
-
-    if (user) {
-      debouncedSave(allSettings, user.uid);
-    } else {
-      Object.entries(allSettings).forEach(([key, value]) => {
-        const lsKey = `radio-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
-        localStorage.setItem(lsKey, JSON.stringify(value));
-      });
-      localStorage.setItem('radio-last-filter', filter);
-      localStorage.setItem('radio-last-sort', sortOrder);
-      localStorage.setItem('radio-favorites', JSON.stringify(favorites));
-    }
-  }, [allSettings, user, stationsStatus, debouncedSave, filter, sortOrder, favorites]);
-  
-  const handleLogin = async () => {
-    setIsSyncing(true);
-    const resultUser = await signInWithGoogle();
-    if (!resultUser) {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    if (user) {
-      setIsSyncing(true);
-      try {
-        await saveUserSettings(user.uid, allSettings);
-        await signOut();
-      } catch (error) {
-        console.error("Error during logout:", error);
-        setIsSyncing(false);
-      }
-    }
-  };
-
-
+  // Other effects (SW, track info etc.)
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./service-worker.js').then(registration => {
@@ -354,212 +306,59 @@ export default function App({ initialUser: user }: AppProps) {
       });
     }
   }, []);
-
-  const handleManualUpdateCheck = useCallback(async () => {
-    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.ready) {
-      setUpdateStatus('error');
-      setTimeout(() => setUpdateStatus('idle'), 3000);
-      return;
-    }
-    setUpdateStatus('checking');
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      await registration.update();
-      setTimeout(() => {
-        setUpdateStatus(cs => cs === 'checking' ? 'not-found' : cs);
-        if (updateStatus === 'not-found') setTimeout(() => setUpdateStatus('idle'), 3000);
-      }, 5000);
-    } catch (error) {
-      setUpdateStatus('error');
-      setTimeout(() => setUpdateStatus('idle'), 3000);
-    }
-  }, [updateStatus]);
-
-  const handleUpdateClick = () => {
-    if (waitingWorkerRef.current) {
-      waitingWorkerRef.current.postMessage({ type: 'SKIP_WAITING' });
-      setIsUpdateAvailable(false);
-    }
-  };
   
-  useEffect(() => {
-    if (stationsStatus === 'loaded' && playerState.status === 'IDLE') {
-        const lastStationUuid = localStorage.getItem('radio-last-station-uuid');
-        if (lastStationUuid) {
-            const station = stations.find(s => s.stationuuid === lastStationUuid);
-            if (station) dispatch({ type: 'SELECT_STATION', payload: station });
-        }
-    }
-  }, [stationsStatus, stations, playerState.status]);
+  useEffect(() => { document.documentElement.className = allSettings.theme; }, [allSettings.theme]);
 
-  useEffect(() => {
-      if (playerState.station) {
-          localStorage.setItem('radio-last-station-uuid', playerState.station.stationuuid);
-      }
-  }, [playerState.station]);
-
-  useEffect(() => {
-    let intervalId: number;
-    const fetchAndSetInfo = async () => {
-      if (!playerState.station) return;
-      const { name, stationuuid } = playerState.station;
-      let finalInfo: StationTrackInfo | null = null;
-      if (hasSpecificHandler(name)) {
-        const specificInfo = await fetchStationSpecificTrackInfo(name);
-        finalInfo = specificInfo ? { ...specificInfo } : { program: null, current: null, next: null };
-        if (!finalInfo.program) finalInfo.program = getCurrentProgram(name);
-      } else {
-        const [songTitle, programName] = await Promise.all([ fetchLiveTrackInfo(stationuuid), getCurrentProgram(name) ]);
-        const current = songTitle && songTitle.toLowerCase() !== name.toLowerCase() ? songTitle : null;
-        finalInfo = { program: programName, current, next: null };
-      }
-      setTrackInfo(finalInfo);
-    };
-
-    if (playerState.station) {
-      fetchAndSetInfo(); 
-      intervalId = window.setInterval(fetchAndSetInfo, 20000);
-    } else {
-      setTrackInfo(null);
-    }
-    return () => clearInterval(intervalId);
-  }, [playerState.station]);
-
-  useEffect(() => {
-    document.documentElement.className = theme;
-  }, [theme]);
-
-  const toggleFavorite = useCallback((stationUuid: string) => {
-    setFavorites(currentFavorites =>
-      currentFavorites.includes(stationUuid)
-        ? currentFavorites.filter(uuid => uuid !== stationUuid)
-        : [...currentFavorites, stationUuid]
-    );
-  }, []);
-
-  const saveCustomOrder = (newOrder: string[]) => {
-      setCustomOrder(newOrder);
-      setSortOrder('custom');
-  };
-
-  const handleReorder = (reorderedDisplayedUuids: string[]) => {
-      const allStationUuids = stations.map(s => s.stationuuid);
-      const currentOrderUuids = customOrder.length > 0 ? customOrder : allStationUuids;
-      const reorderedSet = new Set(reorderedDisplayedUuids);
-      const newOrder = [...reorderedDisplayedUuids, ...currentOrderUuids.filter(uuid => !reorderedSet.has(uuid))];
-      saveCustomOrder(newOrder);
-  };
-
-  const filteredStations = useMemo(() => {
-    if (filter === StationFilter.Favorites) {
-      return stations.filter(s => isFavorite(s.stationuuid));
-    }
-    return stations;
-  }, [stations, filter, isFavorite]);
-  
   const displayedStations = useMemo(() => {
-    let stationsToSort = [...filteredStations];
-    const customOrderMap = new Map(customOrder.map((uuid, index) => [uuid, index]));
-    switch (sortOrder) {
-      case 'custom':
-        stationsToSort.sort((a, b) => {
-            const indexA = customOrderMap.get(a.stationuuid);
-            const indexB = customOrderMap.get(b.stationuuid);
-            if (typeof indexA === 'number' && typeof indexB === 'number') return indexA - indexB;
-            if (typeof indexA === 'number') return -1;
-            if (typeof indexB === 'number') return 1;
-            return a.name.localeCompare(b.name, 'he');
-        });
-        break;
+    let stationsToSort = [...(allSettings.filter === StationFilter.Favorites ? stations.filter(s => isFavorite(s.stationuuid)) : stations)];
+    const customOrderMap = new Map(allSettings.customOrder.map((uuid, index) => [uuid, index]));
+    switch (allSettings.sortOrder) {
+      case 'custom': stationsToSort.sort((a, b) => { const indexA = customOrderMap.get(a.stationuuid); const indexB = customOrderMap.get(b.stationuuid); if (typeof indexA === 'number' && typeof indexB === 'number') return indexA - indexB; if (typeof indexA === 'number') return -1; if (typeof indexB === 'number') return 1; return a.name.localeCompare(b.name, 'he'); }); break;
       case 'name_asc': stationsToSort.sort((a, b) => a.name.localeCompare(b.name, 'he')); break;
       case 'name_desc': stationsToSort.sort((a, b) => b.name.localeCompare(a.name, 'he')); break;
-      case 'category_style':
-      case 'category_identity':
-      case 'category_region':
-      case 'category_nameStructure':
-        const categoryType = sortOrder.replace('category_', '') as CategoryType;
-        stationsToSort.sort((a, b) => {
-            const categoryA = getCategory(a, categoryType);
-            const categoryB = getCategory(b, categoryType);
-            if (categoryA < categoryB) return -1;
-            if (categoryA > categoryB) return 1;
-            return a.name.localeCompare(b.name, 'he');
-        });
-        break;
-      case 'priority':
-      default:
+      case 'category_style': case 'category_identity': case 'category_region': case 'category_nameStructure':
+        const categoryType = allSettings.sortOrder.replace('category_', '') as CategoryType;
+        stationsToSort.sort((a, b) => { const categoryA = getCategory(a, categoryType); const categoryB = getCategory(b, categoryType); if (categoryA < categoryB) return -1; if (categoryA > categoryB) return 1; return a.name.localeCompare(b.name, 'he'); }); break;
+      case 'priority': default:
         const getPriorityIndex = (stationName: string) => PRIORITY_STATIONS.findIndex(ps => ps.aliases.some(alias => stationName.toLowerCase().includes(alias.toLowerCase())));
-        stationsToSort.sort((a, b) => {
-          let aP = getPriorityIndex(a.name); let bP = getPriorityIndex(b.name);
-          if (aP === -1) aP = Infinity; if (bP === -1) bP = Infinity;
-          return aP !== bP ? aP - bP : a.name.localeCompare(b.name, 'he');
-        });
-        break;
+        stationsToSort.sort((a, b) => { let aP = getPriorityIndex(a.name); let bP = getPriorityIndex(b.name); if (aP === -1) aP = Infinity; if (bP === -1) bP = Infinity; return aP !== bP ? aP - bP : a.name.localeCompare(b.name, 'he'); }); break;
     }
     return stationsToSort;
-  }, [filteredStations, sortOrder, customOrder]);
+  }, [stations, allSettings.filter, isFavorite, allSettings.sortOrder, allSettings.customOrder]);
 
-  const handleSelectStation = useCallback((station: Station) => dispatch({ type: 'SELECT_STATION', payload: station }), []);
-  const handlePlayPause = useCallback(() => {
-    if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' });
-    else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] });
-  }, [playerState.station, displayedStations]);
-  const handlePlay = useCallback(async () => {
-    if (playerState.status === 'PLAYING') return;
-    if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' });
-    else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] });
-  }, [playerState.status, playerState.station, displayedStations]);
-  const handlePause = useCallback(async () => { if (playerState.status === 'PLAYING') dispatch({ type: 'TOGGLE_PAUSE' }); }, [playerState.status]);
-  const handleNext = useCallback(async () => {
-      if (displayedStations.length === 0) return;
-      const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid) : -1;
-      handleSelectStation(displayedStations[(currentIndex + 1) % displayedStations.length]);
-  }, [displayedStations, playerState.station, handleSelectStation]);
-  const handlePrev = useCallback(async () => {
-      if (displayedStations.length === 0) return;
-      const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid) : -1;
-      handleSelectStation(displayedStations[(currentIndex - 1 + displayedStations.length) % displayedStations.length]);
-  }, [displayedStations, playerState.station, handleSelectStation]);
-    
-  const handleTouchStart = useCallback((e: React.TouchEvent) => { if (e.touches.length === 2) { e.preventDefault(); const dx = e.touches[0].clientX - e.touches[1].clientX; const dy = e.touches[0].clientY - e.touches[1].clientY; pinchDistRef.current = Math.sqrt(dx * dx + dy * dy); } }, []);
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2 && pinchDistRef.current > 0) {
-      e.preventDefault();
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const currentDist = Math.sqrt(dx * dx + dy * dy);
-      const delta = currentDist - pinchDistRef.current;
-      if (Math.abs(delta) > PINCH_THRESHOLD) {
-        setGridSize(gs => delta > 0 ? Math.min(5, gs + 1) as GridSize : Math.max(1, gs - 1) as GridSize);
-        pinchDistRef.current = currentDist;
-      }
-    }
-  }, []);
-  const handleTouchEnd = useCallback(() => { pinchDistRef.current = 0; }, []);
+  const handleManualUpdateCheck = useCallback(async () => { if (!('serviceWorker' in navigator) || !navigator.serviceWorker.ready) { setUpdateStatus('error'); setTimeout(() => setUpdateStatus('idle'), 3000); return; } setUpdateStatus('checking'); try { const registration = await navigator.serviceWorker.ready; await registration.update(); setTimeout(() => { setUpdateStatus(cs => cs === 'checking' ? 'not-found' : cs); if (updateStatus === 'not-found') setTimeout(() => setUpdateStatus('idle'), 3000); }, 5000); } catch (error) { setUpdateStatus('error'); setTimeout(() => setUpdateStatus('idle'), 3000); } }, [updateStatus]);
+  const handleUpdateClick = () => { if (waitingWorkerRef.current) { waitingWorkerRef.current.postMessage({ type: 'SKIP_WAITING' }); setIsUpdateAvailable(false); } };
+  useEffect(() => { if (stationsStatus === 'loaded' && playerState.status === 'IDLE') { const lastStationUuid = localStorage.getItem('radio-last-station-uuid'); if (lastStationUuid) { const station = stations.find(s => s.stationuuid === lastStationUuid); if (station) dispatch({ type: 'SELECT_STATION', payload: station }); } } }, [stationsStatus, stations, playerState.status]);
+  useEffect(() => { if (playerState.station) { localStorage.setItem('radio-last-station-uuid', playerState.station.stationuuid); } }, [playerState.station]);
+  useEffect(() => { let intervalId: number; const fetchAndSetInfo = async () => { if (!playerState.station) return; const { name, stationuuid } = playerState.station; let finalInfo: StationTrackInfo | null = null; if (hasSpecificHandler(name)) { const specificInfo = await fetchStationSpecificTrackInfo(name); finalInfo = specificInfo ? { ...specificInfo } : { program: null, current: null, next: null }; if (!finalInfo.program) finalInfo.program = getCurrentProgram(name); } else { const [songTitle, programName] = await Promise.all([ fetchLiveTrackInfo(stationuuid), getCurrentProgram(name) ]); const current = songTitle && songTitle.toLowerCase() !== name.toLowerCase() ? songTitle : null; finalInfo = { program: programName, current, next: null }; } setTrackInfo(finalInfo); }; if (playerState.station) { fetchAndSetInfo(); intervalId = window.setInterval(fetchAndSetInfo, 20000); } else { setTrackInfo(null); } return () => clearInterval(intervalId); }, [playerState.station]);
+  const handleReorder = (reorderedDisplayedUuids: string[]) => { const allStationUuids = stations.map(s => s.stationuuid); const currentOrderUuids = allSettings.customOrder.length > 0 ? allSettings.customOrder : allStationUuids; const reorderedSet = new Set(reorderedDisplayedUuids); const newOrder = [...reorderedDisplayedUuids, ...currentOrderUuids.filter(uuid => !reorderedSet.has(uuid))]; setAllSettings(s => ({...s, customOrder: newOrder, sortOrder: 'custom'})); };
   
-  const handleCategorySortClick = () => {
-    const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
-    const nextIndex = currentCategoryIndex !== -1 ? (currentCategoryIndex + 1) % CATEGORY_SORTS.length : 0;
-    setSortOrder(CATEGORY_SORTS[nextIndex].order);
-  };
-
+  const handleSelectStation = useCallback((station: Station) => dispatch({ type: 'SELECT_STATION', payload: station }), []);
+  const handlePlayPause = useCallback(() => { if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' }); else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] }); }, [playerState.station, displayedStations]);
+  const handlePlay = useCallback(async () => { if (playerState.status === 'PLAYING') return; if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' }); else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] }); }, [playerState.status, playerState.station, displayedStations]);
+  const handlePause = useCallback(async () => { if (playerState.status === 'PLAYING') dispatch({ type: 'TOGGLE_PAUSE' }); }, [playerState.status]);
+  const handleNext = useCallback(async () => { if (displayedStations.length === 0) return; const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid) : -1; handleSelectStation(displayedStations[(currentIndex + 1) % displayedStations.length]); }, [displayedStations, playerState.station, handleSelectStation]);
+  const handlePrev = useCallback(async () => { if (displayedStations.length === 0) return; const currentIndex = playerState.station ? displayedStations.findIndex(s => s.stationuuid === playerState.station!.stationuuid) : -1; handleSelectStation(displayedStations[(currentIndex - 1 + displayedStations.length) % displayedStations.length]); }, [displayedStations, playerState.station, handleSelectStation]);
+  const handleTouchStart = useCallback((e: React.TouchEvent) => { if (e.touches.length === 2) { e.preventDefault(); const dx = e.touches[0].clientX - e.touches[1].clientX; const dy = e.touches[0].clientY - e.touches[1].clientY; pinchDistRef.current = Math.sqrt(dx * dx + dy * dy); } }, []);
+  const handleTouchMove = useCallback((e: React.TouchEvent) => { if (e.touches.length === 2 && pinchDistRef.current > 0) { e.preventDefault(); const dx = e.touches[0].clientX - e.touches[1].clientX; const dy = e.touches[0].clientY - e.touches[1].clientY; const currentDist = Math.sqrt(dx * dx + dy * dy); const delta = currentDist - pinchDistRef.current; if (Math.abs(delta) > PINCH_THRESHOLD) { setAllSettings(s => ({...s, gridSize: (delta > 0 ? Math.min(5, s.gridSize + 1) : Math.max(1, s.gridSize - 1)) as GridSize})); pinchDistRef.current = currentDist; } } }, []);
+  const handleTouchEnd = useCallback(() => { pinchDistRef.current = 0; }, []);
+  const handleCategorySortClick = () => { const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === allSettings.sortOrder); const nextIndex = currentCategoryIndex !== -1 ? (currentCategoryIndex + 1) % CATEGORY_SORTS.length : 0; setAllSettings(s => ({...s, sortOrder: CATEGORY_SORTS[nextIndex].order})); };
   const openActionMenu = useCallback((songTitle: string) => setActionMenuState({ isOpen: true, songTitle }), []);
   const closeActionMenu = useCallback(() => setActionMenuState({ isOpen: false, songTitle: null }), []);
-  const handleCycleVisualizerStyle = useCallback(() => setVisualizerStyle(vs => VISUALIZER_STYLES[(VISUALIZER_STYLES.indexOf(vs) + 1) % VISUALIZER_STYLES.length]), []);
-  
-  const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === sortOrder);
+  const handleCycleVisualizerStyle = useCallback(() => setAllSettings(s => ({...s, visualizerStyle: VISUALIZER_STYLES[(VISUALIZER_STYLES.indexOf(s.visualizerStyle) + 1) % VISUALIZER_STYLES.length]})), []);
+
+  const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === allSettings.sortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col">
+      <MergeDataModal {...mergeModal} />
       <header className="p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-            <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הגדרות">
-              <MenuIcon className="w-6 h-6" />
-            </button>
+            <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הגדרות"><MenuIcon className="w-6 h-6" /></button>
             <div className="flex items-center bg-gray-700 rounded-full p-1">
-              <button onClick={() => setFilter(StationFilter.All)} className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.All ? 'bg-accent text-white' : 'text-gray-300'}`}>{StationFilter.All}</button>
-              <button onClick={() => setFilter(StationFilter.Favorites)} className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${filter === StationFilter.Favorites ? 'bg-accent text-white' : 'text-gray-300'}`}>{StationFilter.Favorites}</button>
+              <button onClick={() => setAllSettings(s => ({...s, filter: StationFilter.All}))} className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${allSettings.filter === StationFilter.All ? 'bg-accent text-white' : 'text-gray-300'}`}>{StationFilter.All}</button>
+              <button onClick={() => setAllSettings(s => ({...s, filter: StationFilter.Favorites}))} className={`px-4 py-1 text-sm font-medium rounded-full transition-colors ${allSettings.filter === StationFilter.Favorites ? 'bg-accent text-white' : 'text-gray-300'}`}>{StationFilter.Favorites}</button>
             </div>
             <h1 className="text-xl sm:text-2xl font-bold text-accent">רדיו פרימיום</h1>
         </div>
@@ -567,38 +366,22 @@ export default function App({ initialUser: user }: AppProps) {
             <div className="flex items-center justify-center gap-2">
                 <span className="text-xs text-text-secondary">מיון:</span>
                 <div className="flex items-center bg-gray-700 rounded-full p-1 gap-1 flex-wrap justify-center">
-                    <SortButton label="שלי" order="custom" currentOrder={sortOrder} setOrder={setSortOrder} />
-                    <SortButton label="פופולריות" order="priority" currentOrder={sortOrder} setOrder={setSortOrder} />
-                    <button onClick={() => setSortOrder(so => so === 'name_asc' ? 'name_desc' : 'name_asc')} className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${sortOrder.startsWith('name_') ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`}>{sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'}</button>
+                    <SortButton label="שלי" order="custom" currentOrder={allSettings.sortOrder} setOrder={(o) => setAllSettings(s=>({...s, sortOrder: o}))} />
+                    <SortButton label="פופולריות" order="priority" currentOrder={allSettings.sortOrder} setOrder={(o) => setAllSettings(s=>({...s, sortOrder: o}))} />
+                    <button onClick={() => setAllSettings(s => ({...s, sortOrder: s.sortOrder === 'name_asc' ? 'name_desc' : 'name_asc'}))} className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${allSettings.sortOrder.startsWith('name_') ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`}>{allSettings.sortOrder === 'name_desc' ? 'ת-א' : 'א-ת'}</button>
                     <button onClick={handleCategorySortClick} className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${currentCategoryIndex !== -1 ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`}>{categoryButtonLabel}</button>
                 </div>
             </div>
         </div>
       </header>
       <main className="flex-grow pb-48" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-        {stationsStatus === 'loading' ? (
-          <StationListSkeleton />
-        ) : stationsStatus === 'error' ? (
-          <p className="text-center text-red-400 p-4">{error}</p>
-        ) : displayedStations.length > 0 ? (
-          <StationList stations={displayedStations} currentStation={playerState.station} onSelectStation={handleSelectStation} isFavorite={isFavorite} toggleFavorite={toggleFavorite} onReorder={handleReorder} isStreamActive={playerState.status === 'PLAYING'} isStatusIndicatorEnabled={isStatusIndicatorEnabled} gridSize={gridSize} sortOrder={sortOrder} />
-        ) : (
-          <div className="text-center p-8 text-text-secondary">
-            <h2 className="text-xl font-semibold">{filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}</h2>
-            <p>{filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}</p>
-          </div>
-        )}
+        {stationsStatus === 'loading' ? ( <StationListSkeleton /> ) : stationsStatus === 'error' ? ( <p className="text-center text-red-400 p-4">{error}</p> ) : displayedStations.length > 0 ? ( <StationList stations={displayedStations} currentStation={playerState.station} onSelectStation={handleSelectStation} isFavorite={isFavorite} toggleFavorite={(uuid) => setAllSettings(s => ({...s, favorites: s.favorites.includes(uuid) ? s.favorites.filter(id => id !== uuid) : [...s.favorites, uuid]}))} onReorder={handleReorder} isStreamActive={playerState.status === 'PLAYING'} isStatusIndicatorEnabled={allSettings.isStatusIndicatorEnabled} gridSize={allSettings.gridSize} sortOrder={allSettings.sortOrder} /> ) : ( <div className="text-center p-8 text-text-secondary"> <h2 className="text-xl font-semibold">{allSettings.filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}</h2> <p>{allSettings.filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}</p> </div> )}
       </main>
-      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} currentTheme={theme} onThemeChange={setTheme} currentEqPreset={eqPreset} onEqPresetChange={setEqPreset} isNowPlayingVisualizerEnabled={isNowPlayingVisualizerEnabled} onNowPlayingVisualizerEnabledChange={setIsNowPlayingVisualizerEnabled} isPlayerBarVisualizerEnabled={isPlayerBarVisualizerEnabled} onPlayerBarVisualizerEnabledChange={setIsPlayerBarVisualizerEnabled} isStatusIndicatorEnabled={isStatusIndicatorEnabled} onStatusIndicatorEnabledChange={setIsStatusIndicatorEnabled} isVolumeControlVisible={isVolumeControlVisible} onVolumeControlVisibleChange={setIsVolumeControlVisible} showNextSong={showNextSong} onShowNextSongChange={setShowNextSong} customEqSettings={customEqSettings} onCustomEqChange={setCustomEqSettings} gridSize={gridSize} onGridSizeChange={setGridSize} isMarqueeProgramEnabled={isMarqueeProgramEnabled} onMarqueeProgramEnabledChange={setIsMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} onMarqueeCurrentTrackEnabledChange={setIsMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} onMarqueeNextTrackEnabledChange={setIsMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onMarqueeSpeedChange={setMarqueeSpeed} marqueeDelay={marqueeDelay} onMarqueeDelayChange={setMarqueeDelay} updateStatus={updateStatus} onManualUpdateCheck={handleManualUpdateCheck} user={user} onLogin={handleLogin} onLogout={handleLogout} />
-      {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={volume} onVolumeChange={setVolume} trackInfo={trackInfo} showNextSong={showNextSong} frequencyData={frequencyData} visualizerStyle={visualizerStyle} isVisualizerEnabled={isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={isVolumeControlVisible} marqueeDelay={marqueeDelay} isMarqueeProgramEnabled={isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
+      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} user={user} onLogin={signInWithGoogle} onLogout={signOutUser} currentTheme={allSettings.theme} onThemeChange={(v) => setAllSettings(s=>({...s, theme: v}))} currentEqPreset={allSettings.eqPreset} onEqPresetChange={(v) => setAllSettings(s=>({...s, eqPreset: v}))} isNowPlayingVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onNowPlayingVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isNowPlayingVisualizerEnabled: v}))} isPlayerBarVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} onPlayerBarVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isPlayerBarVisualizerEnabled: v}))} isStatusIndicatorEnabled={allSettings.isStatusIndicatorEnabled} onStatusIndicatorEnabledChange={(v) => setAllSettings(s=>({...s, isStatusIndicatorEnabled: v}))} isVolumeControlVisible={allSettings.isVolumeControlVisible} onVolumeControlVisibleChange={(v) => setAllSettings(s=>({...s, isVolumeControlVisible: v}))} showNextSong={allSettings.showNextSong} onShowNextSongChange={(v) => setAllSettings(s=>({...s, showNextSong: v}))} customEqSettings={allSettings.customEqSettings} onCustomEqChange={(v) => setAllSettings(s=>({...s, customEqSettings: v}))} gridSize={allSettings.gridSize} onGridSizeChange={(v) => setAllSettings(s=>({...s, gridSize: v}))} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} onMarqueeProgramEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeProgramEnabled: v}))} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} onMarqueeCurrentTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeCurrentTrackEnabled: v}))} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} onMarqueeNextTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeNextTrackEnabled: v}))} marqueeSpeed={allSettings.marqueeSpeed} onMarqueeSpeedChange={(v) => setAllSettings(s=>({...s, marqueeSpeed: v}))} marqueeDelay={allSettings.marqueeDelay} onMarqueeDelayChange={(v) => setAllSettings(s=>({...s, marqueeDelay: v}))} updateStatus={updateStatus} onManualUpdateCheck={handleManualUpdateCheck} />
+      {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} frequencyData={frequencyData} visualizerStyle={allSettings.visualizerStyle} isVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={allSettings.isVolumeControlVisible} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
       <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
-      <Player playerState={playerState} onPlay={handlePlay} onPause={handlePause} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} onPlayerEvent={(event) => dispatch(event)} eqPreset={eqPreset} customEqSettings={customEqSettings} volume={volume} onVolumeChange={setVolume} trackInfo={trackInfo} showNextSong={showNextSong} onOpenNowPlaying={() => setIsNowPlayingOpen(true)} setFrequencyData={setFrequencyData} frequencyData={frequencyData} isVisualizerEnabled={isPlayerBarVisualizerEnabled} marqueeDelay={marqueeDelay} isMarqueeProgramEnabled={isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={isMarqueeNextTrackEnabled} marqueeSpeed={marqueeSpeed} onOpenActionMenu={openActionMenu} />
+      <Player playerState={playerState} onPlay={handlePlay} onPause={handlePause} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} onPlayerEvent={(event) => dispatch(event)} eqPreset={allSettings.eqPreset} customEqSettings={allSettings.customEqSettings} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} onOpenNowPlaying={() => setIsNowPlayingOpen(true)} setFrequencyData={setFrequencyData} frequencyData={frequencyData} isVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} />
       {isUpdateAvailable && ( <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up"><p className="text-sm font-semibold">עדכון חדש זמין</p><button onClick={handleUpdateClick} className="py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold">רענן</button></div> )}
-       {isSyncing && (
-        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center transition-opacity duration-300">
-            <div className="loader-spinner"></div>
-        </div>
-      )}
     </div>
   );
 }

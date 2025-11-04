@@ -1,3 +1,7 @@
+import type { User as FirebaseUser } from 'firebase/auth';
+
+export type User = FirebaseUser;
+
 export interface Station {
   stationuuid: string;
   name: string;
@@ -65,3 +69,26 @@ export const GRID_SIZES = [1, 2, 3, 4, 5] as const;
 export type GridSize = typeof GRID_SIZES[number]; // 1=Smallest, 5=Largest
 
 export type SortOrder = 'priority' | 'name_asc' | 'name_desc' | 'custom' | 'category_style' | 'category_identity' | 'category_region' | 'category_nameStructure';
+
+export type AllSettings = {
+    favorites: string[];
+    customOrder: string[];
+    theme: Theme;
+    eqPreset: EqPreset;
+    customEqSettings: CustomEqSettings;
+    volume: number;
+    isNowPlayingVisualizerEnabled: boolean;
+    isPlayerBarVisualizerEnabled: boolean;
+    visualizerStyle: VisualizerStyle;
+    isStatusIndicatorEnabled: boolean;
+    isVolumeControlVisible: boolean;
+    showNextSong: boolean;
+    gridSize: GridSize;
+    isMarqueeProgramEnabled: boolean;
+    isMarqueeCurrentTrackEnabled: boolean;
+    isMarqueeNextTrackEnabled: boolean;
+    marqueeSpeed: number;
+    marqueeDelay: number;
+    filter: any; // Using any for StationFilter enum
+    sortOrder: SortOrder;
+};

@@ -1,88 +1,63 @@
-// Firebase is imported via <script> tags in index.html, creating a global 'firebase' object.
-// This declaration prevents TypeScript errors.
-// FIX: Import firebase types to resolve namespace errors.
-import type firebase from 'firebase/compat/app';
-declare const firebase: any;
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged, 
+  signOut,
+  type User
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  getDoc, 
+  setDoc,
+  serverTimestamp
+} from 'firebase/firestore';
+import { AllSettings } from '../types';
 
-// User's actual Firebase project configuration
 const firebaseConfig = {
   apiKey: "AIzaSyCtTn2euDrfnD5mJrY0mASVOXPaJLDOHbo",
   authDomain: "radio-premium-il-6a22b.firebaseapp.com",
   projectId: "radio-premium-il-6a22b",
   storageBucket: "radio-premium-il-6a22b.firebasestorage.app",
   messagingSenderId: "201862743073",
-  appId: "1:201862743073:web:2c84cbb2b1443d87884f60"
+  appId: "1:201862743073:web:2c84cbb2b1443d87884f60",
+  measurementId: "G-M16YN54E1B"
 };
 
-// Initialize Firebase
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-export const auth = firebase.auth();
-export const db = firebase.firestore();
+const provider = new GoogleAuthProvider();
 
-// Set persistence to 'local' to keep the user signed in across browser sessions.
-auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
-  .catch((error: any) => {
-    console.error("Firebase persistence error:", error.code, error.message);
-  });
+export const signInWithGoogle = () => signInWithPopup(auth, provider);
+export const signOutUser = () => signOut(auth);
+export const onAuthStateChangedListener = (callback: (user: User | null) => void) => onAuthStateChanged(auth, callback);
 
-
-const googleProvider = new firebase.auth.GoogleAuthProvider();
-
-export const signInWithGoogle = async (): Promise<firebase.User | null> => {
+export const saveUserSettings = async (userId: string, settings: AllSettings) => {
+  const userDocRef = doc(db, 'users', userId);
   try {
-    const res = await auth.signInWithPopup(googleProvider);
-    return res.user;
-  } catch (err) {
-    console.error("Google sign-in error:", err);
-    alert((err as Error).message);
-    return null;
-  }
-};
-
-export const signOut = async (): Promise<void> => {
-  await auth.signOut();
-};
-
-const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
-  const timeout = new Promise<T>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error(`Firestore operation timed out after ${ms}ms`));
-    }, ms);
-  });
-  return Promise.race([promise, timeout]);
-};
-
-export const saveUserSettings = async (userId: string, settings: any): Promise<void> => {
-  if (!userId) return;
-  try {
-    const cleanSettings = JSON.parse(JSON.stringify(settings));
-    const savePromise = db.collection('users').doc(userId).set(cleanSettings, { merge: true });
-    await withTimeout(savePromise, 8000); // 8-second timeout
+    await setDoc(userDocRef, { ...settings, lastUpdated: serverTimestamp() }, { merge: true });
   } catch (error) {
     console.error("Error saving user settings to Firestore:", error);
   }
 };
 
-interface LoadUserSettingsResult {
-  status: 'success' | 'not-found' | 'error';
-  data?: any;
-}
-
-export const loadUserSettings = async (userId: string): Promise<LoadUserSettingsResult> => {
-  if (!userId) return { status: 'error' };
+export const getUserSettings = async (userId: string): Promise<AllSettings | null> => {
+  const userDocRef = doc(db, 'users', userId);
   try {
-    const loadPromise: Promise<firebase.firestore.DocumentSnapshot> = db.collection('users').doc(userId).get();
-    const doc = await withTimeout(loadPromise, 8000); // 8-second timeout
-    if (doc.exists) {
-        return { status: 'success', data: doc.data() };
-    } else {
-        return { status: 'not-found' };
+    const docSnap = await getDoc(userDocRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      // Remove server-specific fields before returning
+      delete data.lastUpdated;
+      return data as AllSettings;
     }
+    return null;
   } catch (error) {
-    console.error("Error loading user settings from Firestore:", error);
-    return { status: 'error' };
+    console.error("Error fetching user settings from Firestore:", error);
+    return null;
   }
 };

@@ -13,6 +13,7 @@ const urlsToCache = [
   './services/stationSpecificService.js',
   './services/categoryService.js',
   './components/Auth.js',
+  './components/MergeDataModal.js',
   './components/Icons.js',
   './components/Player.js',
   './components/StationList.js',

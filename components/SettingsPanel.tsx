@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize } from '../types';
+import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize, User } from '../types';
 import Auth from './Auth';
-import type firebase from 'firebase/compat/app';
 
 type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'found' | 'not-found' | 'error';
 
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  user: User | null;
+  onLogin: () => void;
+  onLogout: () => void;
   currentTheme: Theme;
   onThemeChange: (theme: Theme) => void;
   currentEqPreset: EqPreset;
@@ -38,12 +40,19 @@ interface SettingsPanelProps {
   onMarqueeDelayChange: (delay: number) => void;
   updateStatus: UpdateStatus;
   onManualUpdateCheck: () => void;
-  user: firebase.User | null;
-  onLogin: () => void;
-  onLogout: () => void;
 }
 
 const releaseNotes = [
+  {
+    version: '2.1',
+    date: '6 בספטמבר 2024',
+    features: [
+        "הטמעת מערכת התחברות עם חשבון גוגל (Firebase).",
+        "סנכרון הגדרות (מועדפים, ערכות נושא וכו') לענן.",
+        "מצב 'אורח' עם שמירת נתונים במכשיר, ומצב 'מחובר' עם סנכרון בין מכשירים.",
+        "הוספת חלון למיזוג נתונים: בחירה בין הגדרות מקומיות להגדרות מהענן בעת התחברות.",
+    ],
+  },
   {
     version: '2.0.3',
     date: '5 בספטמבר 2024',
@@ -51,177 +60,6 @@ const releaseNotes = [
         "תיקון ארכיטקטוני למנגנון טעינת ההגדרות למניעת 'מסך שחור' לאחר התחברות.",
         "האפליקציה כעת חוזרת באופן בטוח להגדרות מקומיות במקרה של שגיאת רשת בעת טעינת נתונים מהענן.",
         "שיפור יציבות כללי וחווית המשתמש בעת סנכרון נתונים.",
-    ],
-  },
-  {
-    version: '2.0.2',
-    date: '4 בספטמבר 2024',
-    features: [
-        "תיקון קריטי: פתרון בעיית ה'מסך השחור' שהתרחשה לאחר התחברות לחשבון גוגל.",
-        "הטמעת מנגנון 'פסק זמן' (Timeout) בפניות ל-Firestore. אם אין תשובה תוך 8 שניות, האפליקציה ממשיכה לעבוד עם הגדרות מקומיות.",
-        "האפליקציה כעת עמידה יותר בפני תקלות תקשורת עם שרתי הענן.",
-        "תיקון שגיאות 404 של אייקונים חסרים.",
-    ],
-  },
-  {
-    version: '2.0.1',
-    date: '3 בספטמבר 2024',
-    features: [
-        "תיקון קריטי: סנכרון מלא בין קוד המקור לקבצי הבנייה (build) בתיקיית `docs`.",
-        "פתרון בעיית ה'מסך השחור' בגרסה החיה שנגרמה מקבצי בנייה ישנים.",
-        "הטמעה מלאה של מנגנון ה-'Gatekeeper' בגרסת הייצור, המבטיח טעינה יציבה.",
-        "הוספת אנימציית טעינה ראשונית לגרסה החיה.",
-    ],
-  },
-  {
-    version: '2.0',
-    date: '2 בספטמבר 2024',
-    features: [
-        "בנייה מחדש של מערכת ההתחברות והסנכרון לענן מהיסוד.",
-        "פתרון שורשי לבעיות תזמון, התנתקויות ברענון וטעינת הגדרות שגויות.",
-        "הפרדה מוחלטת בין הגדרות 'אורח' (במכשיר) להגדרות 'מחובר' (בענן).",
-        "תהליך התחברות והתנתקות חלק ומיידי, ללא צורך ברענון הדף.",
-        "שיפור משמעותי באמינות, מהירות ויציבות האפליקציה.",
-    ],
-  },
-  {
-    version: '1.9.9',
-    date: '1 בספטמבר 2024',
-    features: [
-        "הוספת הגנה בקובץ ההוראות הראשי (`INSTRUCTIONS.md`) למניעת מחיקה או שינוי של קבצי האייקונים המותאמים אישית (`icon-*-v2.png`).",
-        "התיעוד מבטיח שהזהות החזותית של האפליקציה תישמר בכל העדכונים העתידיים.",
-    ],
-  },
-  {
-    version: '1.9.8',
-    date: '31 באוגוסט 2024',
-    features: [
-        "ביצוע \"שבירת מטמון\" אגרסיבית לקובץ ההגדרות (manifest).",
-        "הוספת מספר גרסה ייחודי לקובץ כדי להכריח את הדפדפן לטעון אותו מחדש.",
-        "התיקון נועד לפתור באופן סופי בעיות התקנה (PWA) ואייקונים שלא התעדכנו.",
-        "העלאת גרסת המטמון ל-v19 לכפיית המנגנון החדש על כל המשתמשים.",
-    ],
-  },
-  {
-    version: '1.9.7',
-    date: '30 באוגוסט 2024',
-    features: [
-        "שינוי אסטרטגי למנגנון העדכונים (Service Worker) כדי להבטיח יציבות מירבית.",
-        "תהליך ההתקנה הפך לגמיש ועמיד יותר בפני תקלות רשת רגעיות.",
-        "התיקון מבטיח שה-Service Worker יותקן בהצלחה גם אם הורדת קובץ משני נכשלת, ופותר את בעיית העדכון שנתקע.",
-        "העלאת גרסת המטמון ל-v18 לכפיית המנגנון החדש על כל המשתמשים.",
-    ],
-  },
-  {
-    version: '1.9.6',
-    date: '29 באוגוסט 2024',
-    features: [
-        "תיקון שורשי ליציבות תהליך העדכון (Service Worker).",
-        "הסרת תלויות חיצוניות (פונטים, CDN) מתהליך ההתקנה למניעת כשלים.",
-        "פתרון סופי לבעיית העדכון שנתקע במצב \"מוריד עדכון...\"",
-        "התיקון מבטיח שהאייקון הנכון ואפשרות ההתקנה יעבדו באופן אמין.",
-        "העלאת גרסת המטמון ל-v17 לכפיית עדכון כללי.",
-    ],
-  },
-  {
-    version: '1.9.5',
-    date: '28 באוגוסט 2024',
-    features: [
-        "תיקון שורשי למנגנון העדכונים של קובץ ההגדרות (manifest).",
-        "האפליקציה תמיד תטען את הגרסה העדכנית ביותר של ההגדרות מהרשת.",
-        "פתרון סופי לבעיות ההתקנה והצגת האייקון.",
-        "העלאת גרסת המטמון ל-v16 לכפיית עדכון כללי.",
-    ],
-  },
-  {
-    version: '1.9.4',
-    date: '27 באוגוסט 2024',
-    features: [
-        "תיקון מקיף לבעיית התקנת האפליקציה (PWA) והצגת האייקון.",
-        "כפיית רענון של קובץ ה-manifest כדי להבטיח שהדפדפן תמיד טוען את הגרסה העדכנית ביותר.",
-        "עדכון גרסת ה-cache ל-v15 לניקוי יסודי של קבצים ישנים מכל המכשירים.",
-    ],
-  },
-  {
-    version: '1.9.3',
-    date: '26 באוגוסט 2024',
-    features: [
-        "תיקון סופי להצגת הלוגו המקורי של המשתמש.",
-        "החלפת קבצי הלוגו הישנים בקבצים ריקים כדי למנוע טעינתם מזיכרון המטמון.",
-        "כפיית עדכון גרסה אגרסיבי (v14) לכלל המשתמשים.",
-    ],
-  },
-  {
-    version: '1.9.2',
-    date: '25 באוגוסט 2024',
-    features: [
-        "החזרת הלוגו המקורי של המשתמש (קבצי PNG).",
-        "עדכון כלל האפליקציה לשימוש באייקונים החדשים.",
-        "הוספת הגנה בקובץ ההוראות למניעת מחיקה עתידית של קבצי הלוגו.",
-    ],
-  },
-  {
-    version: '1.9.1',
-    date: '24 באוגוסט 2024',
-    features: [
-        "עיצוב לוגו חדש ומקצועי לאפליקציה.",
-        "הטמעת הלוגו החדש כאייקון במסך הבית (PWA).",
-        "שיפור מנגנון עדכון האייקון כדי להבטיח שהשינוי יופיע אצל כל המשתמשים.",
-    ],
-  },
-  {
-    version: '1.9',
-    date: '23 באוגוסט 2024',
-    features: [
-        "תיקון יסודי למנגנון העדכונים של האפליקציה (Service Worker).",
-        "האפליקציה תזהה ותציע עדכונים חדשים באופן אמין יותר.",
-        "תיקון תאריכים בהיסטוריית הגרסאות.",
-    ],
-  },
-  {
-    version: '1.8',
-    date: '22 באוגוסט 2024',
-    features: [
-        "הסרת מסך טעינה ראשוני לטעינה מהירה יותר של האפליקציה.",
-    ],
-  },
-  {
-    version: '1.7',
-    date: '20 באוגוסט 2024',
-    features: [
-        "תיקון אגרסיבי לעדכון אייקון האפליקציה על-ידי שינוי שמות קבצי האייקון.",
-    ],
-  },
-  {
-    version: '1.6',
-    date: '18 באוגוסט 2024',
-    features: [
-        "כפיית עדכון אייקון האפליקציה במסך הבית לכלל המשתמשים.",
-    ],
-  },
-  {
-    version: '1.5',
-    date: '15 באוגוסט 2024',
-    features: [
-        "החלפת אייקון האפליקציה ושיפור מנגנון העדכון.",
-    ],
-  },
-  {
-    version: '1.4',
-    date: '25 ביולי 2024',
-    features: [
-      "הוספת היסטוריית גרסאות ומידע על פיצ'רים חדשים.",
-      "שיפורי ביצועים ויציבות כלליים.",
-    ],
-  },
-  {
-    version: '1.3',
-    date: 'יוני 2024',
-    features: [
-        'מיון תחנות לפי קטגוריות (סגנון, אופי, אזור).',
-        'שינוי גודל תצוגת התחנות באמצעות מחוות צביטה (Pinch-to-Zoom).',
-        'הוספת סגנונות תצוגה גרפית חדשים: "זוהר צפוני" ו"טבעות".',
-        'בקרת מהירות והשהייה לטקסט נע.',
     ],
   },
 ];
@@ -290,7 +128,7 @@ const EqSlider: React.FC<{
 
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
-    isOpen, onClose, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
+    isOpen, onClose, user, onLogin, onLogout, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
     isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange,
     isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange,
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
@@ -303,7 +141,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     marqueeSpeed, onMarqueeSpeedChange,
     marqueeDelay, onMarqueeDelayChange,
     updateStatus, onManualUpdateCheck,
-    user, onLogin, onLogout
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
 
