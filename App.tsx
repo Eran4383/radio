@@ -222,7 +222,9 @@ export default function App() {
         }
       } else {
         setUser(null);
-        setAllSettings(loadSettingsFromLocalStorage()); // On logout, revert to whatever is local
+        // FIX: On logout, revert to the settings that were present when the app loaded (before any user logged in),
+        // not the current state of localStorage which would contain the logged-out user's data.
+        setAllSettings(localSettingsOnLoad.current!);
       }
       setIsAuthReady(true);
     });

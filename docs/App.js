@@ -201,7 +201,7 @@ export default function App() {
         }
       } else {
         setUser(null);
-        setAllSettings(loadSettingsFromLocalStorage());
+        setAllSettings(localSettingsOnLoad.current);
       }
       setIsAuthReady(true);
     });
