@@ -14,9 +14,9 @@ export const useFavorites = (user) => {
   useEffect(() => {
     const loadData = async () => {
       setIsLoaded(false);
-      if (user) {
-        // User is logged in
-        try {
+      try {
+        if (user) {
+          // User is logged in
           const docRef = getUserDocRef(user.uid);
           const docSnap = await getDoc(docRef);
           const remoteData = docSnap.data();
@@ -40,23 +40,27 @@ export const useFavorites = (user) => {
           
           setFavorites(finalFavorites);
 
-        } catch (error) {
-          console.error("Failed to load/sync favorites from Firestore", error);
-        }
-      } else {
-        // User is not logged in
-        try {
+        } else {
+          // User is not logged in
           const storedFavorites = localStorage.getItem(FAVORITES_KEY);
           if (storedFavorites) {
             setFavorites(JSON.parse(storedFavorites));
           } else {
             setFavorites([]);
           }
-        } catch (error) {
-          console.error("Failed to load favorites from localStorage", error);
         }
+      } catch (error) {
+        console.error("Failed to load/sync favorites, falling back to local storage.", error);
+        try {
+            const storedFavorites = localStorage.getItem(FAVORITES_KEY);
+            setFavorites(storedFavorites ? JSON.parse(storedFavorites) : []);
+        } catch (e) {
+            console.error("Error parsing fallback favorites from local storage", e);
+            setFavorites([]);
+        }
+      } finally {
+        setIsLoaded(true);
       }
-      setIsLoaded(true);
     };
 
     loadData();
