@@ -1,102 +1,50 @@
+
 import { useState, useEffect, useCallback } from 'react';
-import { firestore, User } from '../services/firebaseService';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-const FAVORITES_KEY = 'radio-favorites-anonymous';
+const FAVORITES_KEY = 'radio-favorites';
 
-const getUserDocRef = (uid: string) => doc(firestore, 'user_data', uid);
-
-export const useFavorites = (user: User | null, authLoading: boolean) => {
+export const useFavorites = () => {
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
 
-  // Effect to load favorites from Firestore or localStorage
   useEffect(() => {
-    if (authLoading) {
-      return; // Do not run until authentication state is resolved.
+    try {
+      const storedFavorites = localStorage.getItem(FAVORITES_KEY);
+      if (storedFavorites) {
+        setFavorites(JSON.parse(storedFavorites));
+      }
+    } catch (error) {
+      console.error("Failed to load favorites from localStorage", error);
     }
+  }, []);
 
-    const loadData = async () => {
-      setIsLoaded(false);
-      try {
-        if (user) {
-          // User is logged in
-          const docRef = getUserDocRef(user.uid);
-          const docSnap = await getDoc(docRef);
-          const remoteData = docSnap.data();
-          
-          const localFavoritesStr = localStorage.getItem(FAVORITES_KEY);
-          const localFavorites: string[] = localFavoritesStr ? JSON.parse(localFavoritesStr) : [];
-          
-          let finalFavorites: string[] = [];
-
-          if (docSnap.exists() && remoteData?.favorites) {
-            finalFavorites = remoteData.favorites;
-          }
-
-          if (localFavorites.length > 0) {
-            // Merge local anonymous favorites with remote, giving remote precedence
-            const merged = new Set([...finalFavorites, ...localFavorites]);
-            finalFavorites = Array.from(merged);
-            await setDoc(docRef, { favorites: finalFavorites }, { merge: true });
-            localStorage.removeItem(FAVORITES_KEY); // Clean up local after merge
-          }
-          
-          setFavorites(finalFavorites);
-
-        } else {
-          // User is not logged in
-          const storedFavorites = localStorage.getItem(FAVORITES_KEY);
-          if (storedFavorites) {
-            setFavorites(JSON.parse(storedFavorites));
-          } else {
-            setFavorites([]);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load/sync favorites, falling back to local storage.", error);
-        try {
-            const storedFavorites = localStorage.getItem(FAVORITES_KEY);
-            setFavorites(storedFavorites ? JSON.parse(storedFavorites) : []);
-        } catch (e) {
-            console.error("Error parsing fallback favorites from local storage", e);
-            setFavorites([]);
-        }
-      } finally {
-        setIsLoaded(true);
-      }
-    };
-
-    loadData();
-  }, [user, authLoading]);
-
-  const saveFavorites = useCallback(async (newFavorites: string[]) => {
-    setFavorites(newFavorites);
-    if (user) {
-      try {
-        await setDoc(getUserDocRef(user.uid), { favorites: newFavorites }, { merge: true });
-      } catch (error) {
-        console.error("Failed to save favorites to Firestore", error);
-      }
-    } else {
-      try {
-        localStorage.setItem(FAVORITES_KEY, JSON.stringify(newFavorites));
-      } catch (error) {
-        console.error("Failed to save favorites to localStorage", error);
-      }
+  const saveFavorites = (newFavorites: string[]) => {
+    try {
+      setFavorites(newFavorites);
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(newFavorites));
+    } catch (error) {
+      console.error("Failed to save favorites to localStorage", error);
     }
-  }, [user]);
+  };
 
-  const toggleFavorite = useCallback((stationUuid: string) => {
-    const newFavorites = favorites.includes(stationUuid)
-      ? favorites.filter(uuid => uuid !== stationUuid)
-      : [...favorites, stationUuid];
-    saveFavorites(newFavorites);
-  }, [favorites, saveFavorites]);
+  const addFavorite = useCallback((stationUuid: string) => {
+    saveFavorites([...favorites, stationUuid]);
+  }, [favorites]);
+
+  const removeFavorite = useCallback((stationUuid: string) => {
+    saveFavorites(favorites.filter(uuid => uuid !== stationUuid));
+  }, [favorites]);
 
   const isFavorite = useCallback((stationUuid: string) => {
     return favorites.includes(stationUuid);
   }, [favorites]);
 
-  return { favorites, toggleFavorite, isFavorite, isFavoritesLoaded: isLoaded };
+  const toggleFavorite = useCallback((stationUuid: string) => {
+    if (isFavorite(stationUuid)) {
+      removeFavorite(stationUuid);
+    } else {
+      addFavorite(stationUuid);
+    }
+  }, [isFavorite, addFavorite, removeFavorite]);
+
+  return { favorites, toggleFavorite, isFavorite };
 };

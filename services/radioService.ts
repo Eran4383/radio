@@ -40,13 +40,6 @@ const fetchRadioBrowserStations = async (): Promise<Station[]> => {
         console.warn(`Failed to fetch from Radio-Browser server ${serverUrl} (status: ${response.status}), trying next.`);
         continue; // Try next server
       }
-
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        console.warn(`Radio-Browser server ${serverUrl} returned non-JSON response, trying next.`);
-        continue;
-      }
-      
       const data: Station[] = await response.json();
       if (data && data.length > 0) {
         console.log(`Successfully fetched ${data.length} raw stations from ${serverUrl}`);
@@ -83,13 +76,6 @@ const fetch100fmStations = async (): Promise<Station[]> => {
       console.warn(`Failed to fetch from 100fm API (status: ${response.status})`);
       return [];
     }
-    
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-      console.warn(`100fm API returned non-JSON response (${contentType})`);
-      return [];
-    }
-
     const data = await response.json();
     if (!data || !Array.isArray(data.stations)) {
       console.warn('100fm API returned invalid data format');
@@ -197,14 +183,6 @@ export const fetchIsraeliStations = async (): Promise<Station[]> => {
   });
   
   const finalStations = Array.from(uniqueStations.values());
-  
-  // Upgrade HTTP to HTTPS for favicons to avoid mixed content issues
-  finalStations.forEach(station => {
-      if (station.favicon?.startsWith('http://')) {
-          station.favicon = station.favicon.replace('http://', 'https://');
-      }
-  });
-
   console.log(`Successfully combined and de-duplicated ${finalStations.length} stations from all sources.`);
   return finalStations;
 };

@@ -1,7 +1,5 @@
 import React from 'react';
 import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize } from '../types';
-import Auth from './Auth';
-import { User } from '../services/firebaseService';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -24,11 +22,6 @@ interface SettingsPanelProps {
   onCustomEqChange: (settings: CustomEqSettings) => void;
   gridSize: GridSize;
   onGridSizeChange: (size: GridSize) => void;
-  // Auth props
-  user: User | null;
-  authLoading: boolean;
-  signIn: () => void;
-  signOut: () => void;
 }
 
 const SettingsButton: React.FC<{
@@ -99,7 +92,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     showNextSong, onShowNextSongChange,
     customEqSettings, onCustomEqChange,
     gridSize, onGridSizeChange,
-    user, authLoading, signIn, signOut
  }) => {
   return (
     <>
@@ -110,17 +102,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       ></div>
       
       {/* Panel */}
-      <div className={`fixed top-0 right-0 h-full w-80 bg-bg-secondary shadow-2xl z-40 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`fixed top-0 right-0 h-full w-72 bg-bg-secondary shadow-2xl z-40 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="p-4 flex flex-col h-full overflow-y-auto">
             <div className="flex justify-between items-center mb-6 flex-shrink-0">
                 <h2 className="text-xl font-bold text-text-primary">הגדרות</h2>
-            </div>
-
-            {/* Auth section */}
-             <div className="mb-6 flex-shrink-0">
-                 <h3 className="text-sm font-semibold text-text-secondary mb-2">חשבון</h3>
-                 <Auth user={user} loading={authLoading} signIn={signIn} signOut={signOut} />
-                 <p className="text-xs text-text-secondary mt-2">התחבר כדי לסנכרן את המועדפים והגדרות המיון שלך בין מכשירים.</p>
+                <div className="text-center opacity-60 cursor-not-allowed">
+                    <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center ring-2 ring-gray-600">
+                        <span className="text-xl font-bold text-gray-300">G</span>
+                    </div>
+                    <p className="text-xs text-text-secondary mt-1">התחברות</p>
+                </div>
             </div>
 
             {/* Theme Switcher */}
@@ -225,7 +216,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
 
             <div className="mt-auto text-center text-xs text-text-secondary flex-shrink-0">
-                <p>רדיו פרימיום v1.4</p>
+                <p>רדיו פרימיום v1.3</p>
             </div>
         </div>
       </div>

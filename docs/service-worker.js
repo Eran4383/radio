@@ -1,4 +1,4 @@
-const CACHE_NAME = 'my-radio-cache-v2';
+const CACHE_NAME = 'my-radio-cache-v1';
 const urlsToCache = [
   '.',
   './index.html',
@@ -16,7 +16,10 @@ const urlsToCache = [
   './components/NowPlaying.js',
   './components/Visualizer.js',
   './components/InteractiveText.js',
-  './services/scheduleService.js'
+  './services/scheduleService.js',
+  './manifest.webmanifest',
+  'https://cdn.tailwindcss.com',
+  'https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap'
 ];
 
 self.addEventListener('install', event => {
