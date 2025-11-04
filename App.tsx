@@ -83,14 +83,6 @@ function safeJsonParse<T>(jsonString: string | null, defaultValue: T): T {
     }
 }
 
-const SETTINGS_KEYS = [
-    'favorites', 'customOrder', 'theme', 'eqPreset', 'customEqSettings', 'volume',
-    'isNowPlayingVisualizerEnabled', 'isPlayerBarVisualizerEnabled', 'visualizerStyle',
-    'isStatusIndicatorEnabled', 'isVolumeControlVisible', 'showNextSong', 'gridSize',
-    'isMarqueeProgramEnabled', 'isMarqueeCurrentTrackEnabled', 'isMarqueeNextTrackEnabled',
-    'marqueeSpeed', 'marqueeDelay', 'filter', 'sortOrder'
-];
-
 const defaultSettings: AllSettings = {
     favorites: [], customOrder: [], theme: 'dark', eqPreset: 'flat',
     customEqSettings: { bass: 0, mid: 0, treble: 0 }, volume: 1,
@@ -173,8 +165,9 @@ export default function App() {
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [mergeModal, setMergeModal] = useState({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
 
-  const [allSettings, setAllSettings] = useState<AllSettings>(defaultSettings);
-  const localSettingsOnLoad = useRef<AllSettings | null>(null);
+  // FIX: Initialize state and refs synchronously to prevent race conditions on startup.
+  const [allSettings, setAllSettings] = useState<AllSettings>(() => loadSettingsFromLocalStorage());
+  const localSettingsOnLoad = useRef<AllSettings>(loadSettingsFromLocalStorage());
 
   const [error, setError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -190,13 +183,6 @@ export default function App() {
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
   const waitingWorkerRef = useRef<ServiceWorker | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
-
-  // Load settings from local storage on initial mount
-  useEffect(() => {
-    const localSettings = loadSettingsFromLocalStorage();
-    localSettingsOnLoad.current = localSettings;
-    setAllSettings(localSettings);
-  }, []);
   
   // Auth state listener
   useEffect(() => {
@@ -204,7 +190,7 @@ export default function App() {
       if (user) {
         setIsCloudSyncing(true);
         const cloudSettings = await getUserSettings(user.uid);
-        const localSettings = localSettingsOnLoad.current!;
+        const localSettings = localSettingsOnLoad.current!; // Should be safe now
 
         if (cloudSettings) {
           if (settingsHaveConflict(localSettings, cloudSettings)) {

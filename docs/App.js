@@ -146,8 +146,8 @@ export default function App() {
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [mergeModal, setMergeModal] = useState({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
 
-  const [allSettings, setAllSettings] = useState(defaultSettings);
-  const localSettingsOnLoad = useRef(null);
+  const [allSettings, setAllSettings] = useState(() => loadSettingsFromLocalStorage());
+  const localSettingsOnLoad = useRef(loadSettingsFromLocalStorage());
 
   const [error, setError] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -163,12 +163,6 @@ export default function App() {
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
   const waitingWorkerRef = useRef(null);
   const [updateStatus, setUpdateStatus] = useState('idle');
-
-  useEffect(() => {
-    const localSettings = loadSettingsFromLocalStorage();
-    localSettingsOnLoad.current = localSettings;
-    setAllSettings(localSettings);
-  }, []);
   
   useEffect(() => {
     const unsubscribe = onAuthStateChangedListener(async (user) => {
