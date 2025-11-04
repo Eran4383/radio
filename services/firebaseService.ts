@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -16,7 +16,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const firestore = getFirestore(app);
+export const firestore = initializeFirestore(app, { 
+  localCache: memoryLocalCache() 
+});
 export const googleProvider = new GoogleAuthProvider();
 
 export type User = FirebaseUser;
