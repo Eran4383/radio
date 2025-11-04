@@ -69,6 +69,12 @@ const fetchKanTrackInfo = async (stationName: string): Promise<StationTrackInfo 
             return null;
         }
 
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+            console.warn(`Kan API for ${stationName} returned non-JSON response: ${contentType}`);
+            return null;
+        }
+
         const data = await response.json();
         
         if (data && data.title) {
@@ -94,6 +100,12 @@ const fetchGaleiTzahalScheduleInfo = async (): Promise<{ program: string | null;
     try {
         const response = await fetch(url, { cache: 'no-cache' });
         if (!response.ok) return { program: null, presenters: null };
+        
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+             console.warn(`GLZ Schedule API returned non-JSON response: ${contentType}`);
+             return { program: null, presenters: null };
+        }
         
         const data = await response.json();
         // The API returns schedule for multiple days. Find today.
@@ -219,6 +231,13 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
         try {
             const response = await fetch(jsonUrl, { cache: 'no-cache' });
             if (!response.ok) return null;
+
+            const contentType = response.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                console.warn(`Expected JSON but got ${contentType} from GLZ JSON for ${slug}`);
+                return null;
+            }
+
             const data = await response.json();
             return data?.program?.trim() || null;
         } catch (error) {
