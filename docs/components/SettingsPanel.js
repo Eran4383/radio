@@ -1,5 +1,6 @@
 import React from 'react';
 import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
+import Auth from './Auth.js';
 
 const SettingsButton = ({ label, isActive, onClick }) => (
     React.createElement("button", {
@@ -55,7 +56,8 @@ const SettingsPanel = ({
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
     showNextSong, onShowNextSongChange,
     customEqSettings, onCustomEqChange,
-    gridSize, onGridSizeChange
+    gridSize, onGridSizeChange,
+    user, authLoading, signIn, signOut
  }) => {
   return (
     React.createElement(React.Fragment, null,
@@ -66,16 +68,17 @@ const SettingsPanel = ({
       }),
       
       /* Panel */
-      React.createElement("div", { className: `fixed top-0 right-0 h-full w-72 bg-bg-secondary shadow-2xl z-40 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}` },
+      React.createElement("div", { className: `fixed top-0 right-0 h-full w-80 bg-bg-secondary shadow-2xl z-40 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}` },
         React.createElement("div", { className: "p-4 flex flex-col h-full overflow-y-auto" },
             React.createElement("div", { className: "flex justify-between items-center mb-6 flex-shrink-0" },
-                React.createElement("h2", { className: "text-xl font-bold text-text-primary" }, "הגדרות"),
-                React.createElement("div", { className: "text-center opacity-60 cursor-not-allowed" },
-                    React.createElement("div", { className: "w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center ring-2 ring-gray-600" },
-                        React.createElement("span", { className: "text-xl font-bold text-gray-300" }, "G")
-                    ),
-                    React.createElement("p", { className: "text-xs text-text-secondary mt-1" }, "התחברות")
-                )
+                React.createElement("h2", { className: "text-xl font-bold text-text-primary" }, "הגדרות")
+            ),
+
+            /* Auth section */
+             React.createElement("div", { className: "mb-6 flex-shrink-0" },
+                 React.createElement("h3", { className: "text-sm font-semibold text-text-secondary mb-2" }, "חשבון"),
+                 React.createElement(Auth, { user: user, loading: authLoading, signIn: signIn, signOut: signOut }),
+                 React.createElement("p", { className: "text-xs text-text-secondary mt-2" }, "התחבר כדי לסנכרן את המועדפים והגדרות המיון שלך בין מכשירים.")
             ),
 
             /* Theme Switcher */
@@ -106,7 +109,7 @@ const SettingsPanel = ({
                         })
                     ))
                 ),
-                currentEqPreset === 'custom' && (
+                 currentEqPreset === 'custom' && (
                     React.createElement("div", { className: "p-3 rounded-lg bg-bg-primary space-y-3" },
                         React.createElement(EqSlider, { 
                             label: "בס (Bass)",
@@ -136,7 +139,7 @@ const SettingsPanel = ({
                           React.createElement("div", { className: "flex justify-between text-sm font-medium text-text-primary" },
                               React.createElement("span", null, "גודל תצוגה")
                           ),
-                           React.createElement("div", { className: "flex justify-between text-xs text-text-secondary px-1" },
+                          React.createElement("div", { className: "flex justify-between text-xs text-text-secondary px-1" },
                             React.createElement("span", null, "קטן"),
                             React.createElement("span", null, "גדול")
                           ),
@@ -161,17 +164,17 @@ const SettingsPanel = ({
                         enabled: isPlayerBarVisualizerEnabled, 
                         onChange: onPlayerBarVisualizerEnabledChange 
                     }),
-                    React.createElement(ToggleSwitch, {
+                    React.createElement(ToggleSwitch, { 
                         label: "הצג חיווי מצב",
                         enabled: isStatusIndicatorEnabled,
                         onChange: onStatusIndicatorEnabledChange
                     }),
-                    React.createElement(ToggleSwitch, {
+                    React.createElement(ToggleSwitch, { 
                         label: "הצג בקרת עוצמה",
                         enabled: isVolumeControlVisible,
                         onChange: onVolumeControlVisibleChange
                     }),
-                    React.createElement(ToggleSwitch, {
+                    React.createElement(ToggleSwitch, { 
                         label: "הצג שיר הבא",
                         enabled: showNextSong,
                         onChange: onShowNextSongChange
@@ -180,7 +183,7 @@ const SettingsPanel = ({
             ),
 
             React.createElement("div", { className: "mt-auto text-center text-xs text-text-secondary flex-shrink-0" },
-                React.createElement("p", null, "רדיו פרימיום v1.3")
+                React.createElement("p", null, "רדיו פרימיום v1.4")
             )
         )
       )
