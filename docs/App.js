@@ -188,6 +188,7 @@ export default function App() {
               },
               onDiscardLocal: () => {
                 setAllSettings(cloudSettings);
+                saveSettingsToLocalStorage(cloudSettings);
                 setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
                 setIsCloudSyncing(false);
                 setUser(user);

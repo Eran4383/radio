@@ -209,6 +209,7 @@ export default function App() {
               },
               onDiscardLocal: () => { // Discard local, use cloud
                 setAllSettings(cloudSettings);
+                saveSettingsToLocalStorage(cloudSettings); // FIX: Persist the chosen settings locally to prevent the modal from reappearing on next load.
                 setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
                 setIsCloudSyncing(false);
                 setUser(user);
