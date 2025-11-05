@@ -130,6 +130,24 @@ const settingsHaveConflict = (local, cloud) => {
     return JSON.stringify(local) !== JSON.stringify(cloud);
 };
 
+const normalizeSettings = (settings) => {
+    // Start with a deep copy of defaults to avoid mutation
+    const defaultsCopy = JSON.parse(JSON.stringify(defaultSettings));
+    
+    if (!settings) {
+        return defaultsCopy;
+    }
+    
+    return {
+        ...defaultsCopy,
+        ...settings, // Overwrite with provided settings
+        customEqSettings: { // Deep merge for the nested object
+            ...defaultsCopy.customEqSettings,
+            ...(settings.customEqSettings || {}),
+        },
+    };
+};
+
 const SortButton = ({ label, order, currentOrder, setOrder }) => (
   React.createElement("button", { onClick: () => setOrder(order), className: `px-3 py-1 text-xs font-medium rounded-full transition-colors ${ currentOrder === order ? 'bg-accent text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500' }` }, label)
 );
@@ -175,39 +193,42 @@ export default function App() {
         const rawCloudSettings = await getUserSettings(user.uid);
         const localSettings = settingsRef.current;
 
-        const cloudSettings = rawCloudSettings ? { ...defaultSettings, ...rawCloudSettings } : null;
+        const cloudSettings = normalizeSettings(rawCloudSettings);
+        
+        // For user debugging
+        console.log("--- השוואת הגדרות סנכרון ---");
+        console.log("הגדרות מקומיות (מהמכשיר):", localSettings);
+        console.log("הגדרות מהענן (לאחר נורמליזציה):", cloudSettings);
 
-        if (cloudSettings) {
-          if (settingsHaveConflict(localSettings, cloudSettings)) {
-            setMergeModal({
-              isOpen: true,
-              onMerge: () => {
-                setAllSettings(localSettings);
-                saveUserSettings(user.uid, localSettings);
-                setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
-                setIsCloudSyncing(false);
-                setUser(user);
-              },
-              onDiscardLocal: () => {
-                setAllSettings(cloudSettings);
-                saveSettingsToLocalStorage(cloudSettings);
-                setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
-                setIsCloudSyncing(false);
-                setUser(user);
-              },
-            });
-          } else {
-            setAllSettings(cloudSettings);
-            setIsCloudSyncing(false);
-            setUser(user);
-          }
-        } else {
-          await saveUserSettings(user.uid, localSettings);
+        if (settingsHaveConflict(localSettings, cloudSettings)) {
+          console.log("זוהה קונפליקט. פותח חלון מיזוג.");
+          setMergeModal({
+            isOpen: true,
+            onMerge: () => { // Keep local, push to cloud
+              setAllSettings(localSettings);
+              saveUserSettings(user.uid, localSettings);
+              setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
+              setIsCloudSyncing(false);
+              setUser(user);
+            },
+            onDiscardLocal: () => { // Discard local, use cloud
+              setAllSettings(cloudSettings);
+              saveSettingsToLocalStorage(cloudSettings); // Persist the choice
+              setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
+              setIsCloudSyncing(false);
+              setUser(user);
+            },
+          });
+        } else { // No conflict, just use cloud settings
+          console.log("לא זוהו קונפליקטים. משתמש בהגדרות מהענן.");
+          setAllSettings(cloudSettings);
           setIsCloudSyncing(false);
           setUser(user);
         }
-      } else {
+      } else { // Logout
+        console.log("המשתמש התנתק. משחזר הגדרות מקומיות.");
         setUser(null);
+        // On logout, restore the last saved local state.
         setAllSettings(loadSettingsFromLocalStorage());
       }
       setIsAuthReady(true);
