@@ -193,8 +193,12 @@ export default function App() {
     const unsubscribe = onAuthStateChangedListener(async (user) => {
       if (user) {
         setIsCloudSyncing(true);
-        const cloudSettings = await getUserSettings(user.uid);
+        const rawCloudSettings = await getUserSettings(user.uid);
         const localSettings = settingsRef.current; // Get latest local settings from ref
+
+        // FIX: Normalize cloud settings by merging with defaults to ensure a consistent object structure for comparison.
+        // This prevents the merge modal from appearing unnecessarily if the cloud data is missing newly added settings fields.
+        const cloudSettings = rawCloudSettings ? { ...defaultSettings, ...rawCloudSettings } : null;
 
         if (cloudSettings) {
           if (settingsHaveConflict(localSettings, cloudSettings)) {
@@ -209,7 +213,7 @@ export default function App() {
               },
               onDiscardLocal: () => { // Discard local, use cloud
                 setAllSettings(cloudSettings);
-                saveSettingsToLocalStorage(cloudSettings); // FIX: Persist the chosen settings locally to prevent the modal from reappearing on next load.
+                saveSettingsToLocalStorage(cloudSettings);
                 setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
                 setIsCloudSyncing(false);
                 setUser(user);

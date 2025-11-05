@@ -15,13 +15,13 @@ const MergeDataModal = ({ isOpen, onMerge, onDiscardLocal }) => {
             onClick: onMerge,
             className: "w-full bg-accent hover:bg-accent-hover text-white font-bold py-3 px-4 rounded-lg transition-colors"
           },
-            "מיזוג ושמירה בענן"
+            "שמור הגדרות ממכשיר זה"
           ),
           React.createElement("button", {
             onClick: onDiscardLocal,
             className: "w-full bg-bg-primary hover:bg-accent/20 text-text-primary font-bold py-3 px-4 rounded-lg transition-colors"
           },
-            "טעינה מהענן (מחיקת מקומי)"
+            "טען הגדרות מהחשבון שלך"
           )
         )
       )

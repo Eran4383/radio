@@ -172,8 +172,10 @@ export default function App() {
     const unsubscribe = onAuthStateChangedListener(async (user) => {
       if (user) {
         setIsCloudSyncing(true);
-        const cloudSettings = await getUserSettings(user.uid);
+        const rawCloudSettings = await getUserSettings(user.uid);
         const localSettings = settingsRef.current;
+
+        const cloudSettings = rawCloudSettings ? { ...defaultSettings, ...rawCloudSettings } : null;
 
         if (cloudSettings) {
           if (settingsHaveConflict(localSettings, cloudSettings)) {
