@@ -234,7 +234,8 @@ export default function App() {
             },
             onDiscardLocal: () => { // Discard local, use cloud
               setAllSettings(cloudSettings);
-              // FIX: Do NOT save to local storage. This preserves guest settings for logout.
+              // FIX: Save the chosen cloud settings to local storage to prevent the modal from reappearing on refresh.
+              saveSettingsToLocalStorage(cloudSettings);
               setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
               setIsCloudSyncing(false);
               setUser(user);
