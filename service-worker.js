@@ -1,7 +1,7 @@
-const CACHE_NAME = 'radio-premium-cache-v23'; // Force update for icon rendering and sync logic
+const CACHE_NAME = 'radio-premium-cache-v24'; // Force update for icon rendering and sync logic
 const urlsToCache = [
   './index.html',
-  './manifest.json?v=23',
+  './manifest.json?v=24',
   './icon.svg',
   './index.js',
   './App.js',
@@ -30,7 +30,7 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('Opened cache, caching assets for v23.');
+        console.log('Opened cache, caching assets for v24.');
         const cachePromises = urlsToCache.map(url => {
           return fetch(new Request(url, { cache: 'reload' }))
             .then(response => {
@@ -81,14 +81,14 @@ self.addEventListener('fetch', event => {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
             const urlToCache = new URL(event.request.url);
-            urlToCache.search = '?v=23';
+            urlToCache.search = '?v=24';
             cache.put(urlToCache.href, responseToCache);
           });
           return networkResponse;
         })
         .catch(() => {
            const urlToMatch = new URL(event.request.url);
-           urlToMatch.search = '?v=23';
+           urlToMatch.search = '?v=24';
           return caches.match(urlToMatch.href);
         })
     );
