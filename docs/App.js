@@ -191,8 +191,7 @@ export default function App() {
       if (user) {
         setIsCloudSyncing(true);
         const rawCloudSettings = await getUserSettings(user.uid);
-        // FIX: Read directly from localStorage to avoid potential state lag from React's lifecycle.
-        const localSettings = loadSettingsFromLocalStorage();
+        const localSettings = settingsRef.current;
 
         const cloudSettings = normalizeSettings(rawCloudSettings);
         
@@ -214,8 +213,7 @@ export default function App() {
             },
             onDiscardLocal: () => { // Discard local, use cloud
               setAllSettings(cloudSettings);
-              // Save the chosen cloud settings to local storage to prevent the modal from reappearing on refresh.
-              saveSettingsToLocalStorage(cloudSettings);
+              // FIX: Do NOT save to local storage. This preserves guest settings for logout.
               setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
               setIsCloudSyncing(false);
               setUser(user);
