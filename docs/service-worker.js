@@ -1,7 +1,7 @@
-const CACHE_NAME = 'radio-premium-cache-v27';
+const CACHE_NAME = 'radio-premium-cache-v28';
 const urlsToCache = [
   './index.html',
-  './manifest.json?v=27',
+  './manifest.json',
   './icon-192-v2.png',
   './icon-512-v2.png',
   './index.js',

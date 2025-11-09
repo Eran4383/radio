@@ -233,6 +233,7 @@ export default function App() {
             },
             onDiscardLocal: () => { // Discard local, use cloud
               setAllSettings(cloudSettings);
+              saveSettingsToLocalStorage(cloudSettings); // FIX: Explicitly save to local storage
               setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
               setIsCloudSyncing(false);
               setUser(user);
@@ -241,6 +242,7 @@ export default function App() {
         } else { // No conflict, just use cloud settings
           console.log("No conflicts. Using cloud settings.");
           setAllSettings(cloudSettings);
+          saveSettingsToLocalStorage(cloudSettings); // FIX: Explicitly save to local storage
           setIsCloudSyncing(false);
           setUser(user);
         }
