@@ -1,9 +1,8 @@
-const CACHE_NAME = 'radio-premium-cache-v30';
+const CACHE_NAME = 'radio-premium-cache-v22'; // Force update for correct icons and auth logic
 const urlsToCache = [
   './index.html',
-  './manifest.json?v=30',
-  './icon-192-v2.png',
-  './icon-512-v2.png',
+  './manifest.json?v=22',
+  './icon.svg',
   './index.js',
   './App.js',
   './types.js',
@@ -28,21 +27,25 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', event => {
-  // Perform install steps
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('[SW] Opened cache');
-        // addAll is atomic. If one file fails, the whole operation fails.
-        return cache.addAll(urlsToCache);
-      })
-      .then(() => {
-        console.log('[SW] All assets cached and ready for offline use.');
-        return self.skipWaiting(); // Force the waiting service worker to become the active service worker.
-      })
-      .catch(error => {
-        // This catch is crucial for debugging. If the install fails, this will log the reason.
-        console.error('[SW] Caching failed during install:', error);
+        console.log('Opened cache, caching assets for v22.');
+        const cachePromises = urlsToCache.map(url => {
+          return fetch(new Request(url, { cache: 'reload' }))
+            .then(response => {
+              if (response.ok) {
+                return cache.put(url, response);
+              }
+              console.warn(`Failed to cache ${url}: status ${response.status}`);
+              return Promise.resolve(); 
+            })
+            .catch(err => {
+              console.error(`Failed to fetch and cache ${url}`, err);
+              return Promise.resolve();
+            });
+        });
+        return Promise.all(cachePromises);
       })
   );
 });
@@ -54,7 +57,7 @@ self.addEventListener('activate', event => {
       return Promise.all(
         cacheNames.map(cacheName => {
           if (cacheWhitelist.indexOf(cacheName) === -1) {
-            console.log('[SW] Deleting old cache:', cacheName);
+            console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
@@ -64,33 +67,51 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // We only want to handle GET requests.
-  if (event.request.method !== 'GET' || !event.request.url.startsWith('http')) {
+  if (!event.request.url.startsWith('http')) {
     return;
   }
-  
+
+  const requestUrl = new URL(event.request.url);
+
+  // Network first for manifest.json to ensure PWA metadata is always fresh.
+  if (requestUrl.pathname.endsWith('/manifest.json')) {
+    event.respondWith(
+      fetch(event.request)
+        .then(networkResponse => {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then(cache => {
+            const urlToCache = new URL(event.request.url);
+            urlToCache.search = '?v=22';
+            cache.put(urlToCache.href, responseToCache);
+          });
+          return networkResponse;
+        })
+        .catch(() => {
+           const urlToMatch = new URL(event.request.url);
+           urlToMatch.search = '?v=22';
+          return caches.match(urlToMatch.href);
+        })
+    );
+    return;
+  }
+
+  // Cache first for all other requests.
   event.respondWith(
     caches.match(event.request)
       .then(response => {
-        // Cache hit - return response
         if (response) {
           return response;
         }
-
-        // Not in cache - fetch from network
         return fetch(event.request).then(
           networkResponse => {
-            // Check if we received a valid response
             if (!networkResponse || networkResponse.status !== 200 || (networkResponse.type !== 'basic' && networkResponse.type !== 'cors')) {
               return networkResponse;
             }
-
             const responseToCache = networkResponse.clone();
             caches.open(CACHE_NAME)
               .then(cache => {
                 cache.put(event.request, responseToCache);
               });
-
             return networkResponse;
           }
         );
