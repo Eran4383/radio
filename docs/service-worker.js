@@ -1,10 +1,10 @@
-const CACHE_NAME = 'radio-premium-cache-v25'; // Force update for icon rendering and sync logic
+const CACHE_NAME = 'radio-premium-cache-v26'; // Incremented version to force update
 const urlsToCache = [
   './index.html',
-  './manifest.json?v=25',
+  './manifest.json?v=26', // Incremented version
   './icon-192-v2.png',
   './icon-512-v2.png',
-  './icon.svg',
+  // './icon.svg', // REMOVED to fix PWA installation failure
   './index.js',
   './App.js',
   './types.js',
@@ -32,7 +32,7 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('Opened cache, caching assets for v25.');
+        console.log('Opened cache, caching assets for v26.');
         const cachePromises = urlsToCache.map(url => {
           return fetch(new Request(url, { cache: 'reload' }))
             .then(response => {
@@ -83,14 +83,14 @@ self.addEventListener('fetch', event => {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
             const urlToCache = new URL(event.request.url);
-            urlToCache.search = '?v=25';
+            urlToCache.search = '?v=26';
             cache.put(urlToCache.href, responseToCache);
           });
           return networkResponse;
         })
         .catch(() => {
            const urlToMatch = new URL(event.request.url);
-           urlToMatch.search = '?v=25';
+           urlToMatch.search = '?v=26';
           return caches.match(urlToMatch.href);
         })
     );
