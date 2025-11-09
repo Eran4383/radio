@@ -1,7 +1,7 @@
-const CACHE_NAME = 'radio-premium-cache-v28';
+const CACHE_NAME = 'radio-premium-cache-v27';
 const urlsToCache = [
   './index.html',
-  './manifest.json?v=28',
+  './manifest.json?v=27',
   './icon-192-v2.png',
   './icon-512-v2.png',
   './index.js',
@@ -28,17 +28,21 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', event => {
+  // Perform install steps
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log(`[SW] Opened cache ${CACHE_NAME}. Caching all assets.`);
+        console.log('[SW] Opened cache');
+        // addAll is atomic. If one file fails, the whole operation fails.
         return cache.addAll(urlsToCache);
       })
       .then(() => {
-        console.log('[SW] All assets cached successfully.');
+        console.log('[SW] All assets cached and ready for offline use.');
+        return self.skipWaiting(); // Force the waiting service worker to become the active service worker.
       })
       .catch(error => {
-        console.error('[SW] Failed to cache assets during install:', error);
+        // This catch is crucial for debugging. If the install fails, this will log the reason.
+        console.error('[SW] Caching failed during install:', error);
       })
   );
 });
@@ -60,10 +64,11 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  if (!event.request.url.startsWith('http')) {
+  // We only want to handle GET requests.
+  if (event.request.method !== 'GET' || !event.request.url.startsWith('http')) {
     return;
   }
-
+  
   event.respondWith(
     caches.match(event.request)
       .then(response => {
