@@ -3,6 +3,15 @@ import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
 import Auth from './Auth.js';
 
 const releaseNotes = [
+    {
+    version: '2.2',
+    date: '7 בספטמבר 2024',
+    features: [
+        "תיקון בעיית סמל האפליקציה שהופך קטן במסך הבית.",
+        "תיקון בעיית חלון סנכרון ההגדרות שהופיע בכל הפעלה מחדש.",
+        "שיפור יציבות מנגנון ההתקנה של האפליקציה (Service Worker).",
+    ],
+  },
   {
     version: '2.1',
     date: '6 בספטמבר 2024',

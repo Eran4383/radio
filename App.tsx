@@ -216,13 +216,12 @@ export default function App() {
 
         const cloudSettings = normalizeSettings(rawCloudSettings);
         
-        // For user debugging
-        console.log("--- השוואת הגדרות סנכרון ---");
-        console.log("הגדרות מקומיות (מהמכשיר):", localSettings);
-        console.log("הגדרות מהענן (לאחר נורמליזציה):", cloudSettings);
+        console.log("--- Settings Sync Comparison ---");
+        console.log("Local (device) settings:", localSettings);
+        console.log("Cloud (normalized) settings:", cloudSettings);
 
         if (settingsHaveConflict(localSettings, cloudSettings)) {
-          console.log("זוהה קונפליקט. פותח חלון מיזוג.");
+          console.log("Conflict detected. Opening merge modal.");
           setMergeModal({
             isOpen: true,
             onMerge: () => { // Keep local, push to cloud
@@ -234,36 +233,35 @@ export default function App() {
             },
             onDiscardLocal: () => { // Discard local, use cloud
               setAllSettings(cloudSettings);
-              // FIX: Do NOT save to local storage. This preserves guest settings for logout.
               setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
               setIsCloudSyncing(false);
               setUser(user);
             },
           });
         } else { // No conflict, just use cloud settings
-          console.log("לא זוהו קונפליקטים. משתמש בהגדרות מהענן.");
+          console.log("No conflicts. Using cloud settings.");
           setAllSettings(cloudSettings);
           setIsCloudSyncing(false);
           setUser(user);
         }
       } else { // Logout
-        console.log("המשתמש התנתק. משחזר הגדרות מקומיות.");
+        console.log("User signed out. Restoring local settings.");
         setUser(null);
-        // On logout, restore the last saved local state.
         setAllSettings(loadSettingsFromLocalStorage());
       }
       setIsAuthReady(true);
     });
     return unsubscribe;
-  }, []); // IMPORTANT: Empty dependency array ensures this runs only once.
+  }, []);
 
   // Settings persistence effect
   useEffect(() => {
-    // Only save settings to local storage if the user is not logged in.
-    if (!user) {
-      saveSettingsToLocalStorage(allSettings);
-    }
-    // Always save settings to the cloud if the user is logged in.
+    // Always persist the current settings to localStorage. It's the single
+    // source of truth for the app's state on the next load.
+    saveSettingsToLocalStorage(allSettings);
+
+    // If the user is logged in and we are not in the middle of an initial sync,
+    // save the settings to the cloud as well.
     if (user && !isCloudSyncing) {
         saveUserSettings(user.uid, allSettings);
     }
