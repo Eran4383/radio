@@ -74,6 +74,10 @@ const Player = ({
   const midFilterRef = useRef(null);
   const trebleFilterRef = useRef(null);
   const animationFrameRef = useRef();
+  
+  const lastTimeUpdateRef = useRef(Date.now());
+  const recoveryAttemptRef = useRef(0);
+  const watchdogIntervalRef = useRef(null);
 
   const [startAnimation, setStartAnimation] = useState(false);
   
@@ -129,9 +133,6 @@ const Player = ({
     if (!audioRef.current || audioContextRef.current) return;
     try {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      // The AudioContext constructor is inconsistent across browsers.
-      // Passing an empty object {} ensures compatibility with browsers that require an options object.
-      // FIX: The AudioContext constructor requires an options object on some browsers. Passing an empty object ensures compatibility.
       const context = new AudioContextClass({});
       audioContextRef.current = context;
       
@@ -264,6 +265,57 @@ const Player = ({
         }
     }
   }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev]);
+  
+  const attemptRecovery = useCallback(() => {
+      if (!audioRef.current || !station || recoveryAttemptRef.current >= 3) {
+          if (recoveryAttemptRef.current >= 3) {
+              console.error("Recovery failed after 3 attempts.");
+              onPlayerEvent({ type: 'STREAM_ERROR', payload: "החיבור נכשל סופית" });
+          }
+          return;
+      }
+
+      console.warn(`Stream stalled. Attempting recovery #${recoveryAttemptRef.current + 1}...`);
+      recoveryAttemptRef.current += 1;
+      lastTimeUpdateRef.current = Date.now();
+
+      const audio = audioRef.current;
+      const streamUrl = `${CORS_PROXY_URL}${station.url_resolved}`;
+      audio.src = '';
+      audio.load();
+      audio.src = `${streamUrl}?retry=${Date.now()}`;
+      audio.load();
+      audio.play().catch(e => {
+          console.error('Recovery play() failed:', e);
+          onPlayerEvent({ type: 'STREAM_ERROR', payload: 'שגיאה בהתאוששות' });
+      });
+  }, [station, onPlayerEvent]);
+
+  useEffect(() => {
+      const clearWatchdog = () => {
+          if (watchdogIntervalRef.current) {
+              clearInterval(watchdogIntervalRef.current);
+              watchdogIntervalRef.current = null;
+          }
+      };
+
+      if (status === 'PLAYING') {
+          clearWatchdog();
+          lastTimeUpdateRef.current = Date.now();
+          recoveryAttemptRef.current = 0;
+
+          watchdogIntervalRef.current = window.setInterval(() => {
+              if (Date.now() - lastTimeUpdateRef.current > 7000) { // 7-second stall threshold
+                  attemptRecovery();
+              }
+          }, 3000); // Check every 3 seconds
+      } else {
+          clearWatchdog();
+          recoveryAttemptRef.current = 0;
+      }
+
+      return clearWatchdog;
+  }, [status, attemptRecovery]);
 
   if (!station) {
     return null;
@@ -352,8 +404,20 @@ const Player = ({
         ),
         React.createElement("audio", { 
           ref: audioRef,
-          onPlaying: () => onPlayerEvent({ type: 'STREAM_STARTED' }),
+          onPlaying: () => {
+              onPlayerEvent({ type: 'STREAM_STARTED' });
+              lastTimeUpdateRef.current = Date.now();
+              recoveryAttemptRef.current = 0;
+          },
           onPause: () => onPlayerEvent({ type: 'STREAM_PAUSED' }),
+          onTimeUpdate: () => {
+              lastTimeUpdateRef.current = Date.now();
+              recoveryAttemptRef.current = 0;
+          },
+          onStalled: () => {
+              console.warn("Audio element received 'stalled' event. Triggering recovery.");
+              attemptRecovery();
+          },
           onWaiting: () => {},
           onError: () => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."}),
           crossOrigin: "anonymous"

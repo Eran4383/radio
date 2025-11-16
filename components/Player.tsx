@@ -115,6 +115,11 @@ const Player: React.FC<PlayerProps> = ({
   const midFilterRef = useRef<BiquadFilterNode | null>(null);
   const trebleFilterRef = useRef<BiquadFilterNode | null>(null);
   const animationFrameRef = useRef<number>();
+  
+  // Refs for stream recovery
+  const lastTimeUpdateRef = useRef<number>(Date.now());
+  const recoveryAttemptRef = useRef<number>(0);
+  const watchdogIntervalRef = useRef<number | null>(null);
 
   const [startAnimation, setStartAnimation] = useState(false);
   
@@ -174,10 +179,6 @@ const Player: React.FC<PlayerProps> = ({
     if (!audioRef.current || audioContextRef.current) return;
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      // The AudioContext constructor is inconsistent across browsers.
-      // Some, like older Safari versions, may throw an error if no options object is provided.
-      // Passing an empty object `{}` is the safest way to ensure compatibility.
-      // FIX: The AudioContext constructor requires an options object on some browsers. Passing an empty object ensures compatibility.
       const context = new AudioContextClass({});
       audioContextRef.current = context;
       
@@ -234,9 +235,6 @@ const Player: React.FC<PlayerProps> = ({
         try {
             await audio.play();
         } catch (e: any) {
-            // This error is expected when a user quickly switches stations.
-            // The browser aborts the previous play() request, which is correct.
-            // We'll log it for debugging but won't treat it as a user-facing error.
             if (e.name === 'AbortError') {
                 console.debug('Audio play request was interrupted by a new load request (normal behavior).');
             } else {
@@ -319,6 +317,59 @@ const Player: React.FC<PlayerProps> = ({
         }
     }
   }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev]);
+
+  // Automatic stream recovery logic
+  const attemptRecovery = useCallback(() => {
+      if (!audioRef.current || !station || recoveryAttemptRef.current >= 3) {
+          if (recoveryAttemptRef.current >= 3) {
+              console.error("Recovery failed after 3 attempts.");
+              onPlayerEvent({ type: 'STREAM_ERROR', payload: "החיבור נכשל סופית" });
+          }
+          return;
+      }
+
+      console.warn(`Stream stalled. Attempting recovery #${recoveryAttemptRef.current + 1}...`);
+      recoveryAttemptRef.current += 1;
+      lastTimeUpdateRef.current = Date.now();
+
+      const audio = audioRef.current;
+      const streamUrl = `${CORS_PROXY_URL}${station.url_resolved}`;
+      audio.src = '';
+      audio.load();
+      audio.src = `${streamUrl}?retry=${Date.now()}`;
+      audio.load();
+      audio.play().catch(e => {
+          console.error('Recovery play() failed:', e);
+          onPlayerEvent({ type: 'STREAM_ERROR', payload: 'שגיאה בהתאוששות' });
+      });
+  }, [station, onPlayerEvent]);
+
+  // Watchdog effect to detect stalled stream
+  useEffect(() => {
+      const clearWatchdog = () => {
+          if (watchdogIntervalRef.current) {
+              clearInterval(watchdogIntervalRef.current);
+              watchdogIntervalRef.current = null;
+          }
+      };
+
+      if (status === 'PLAYING') {
+          clearWatchdog();
+          lastTimeUpdateRef.current = Date.now();
+          recoveryAttemptRef.current = 0;
+
+          watchdogIntervalRef.current = window.setInterval(() => {
+              if (Date.now() - lastTimeUpdateRef.current > 7000) { // 7-second stall threshold
+                  attemptRecovery();
+              }
+          }, 3000); // Check every 3 seconds
+      } else {
+          clearWatchdog();
+          recoveryAttemptRef.current = 0;
+      }
+
+      return clearWatchdog;
+  }, [status, attemptRecovery]);
 
   if (!station) {
     return null; // Don't render the player if no station is selected
@@ -408,8 +459,20 @@ const Player: React.FC<PlayerProps> = ({
         </div>
           <audio 
             ref={audioRef}
-            onPlaying={() => onPlayerEvent({ type: 'STREAM_STARTED' })}
+            onPlaying={() => {
+                onPlayerEvent({ type: 'STREAM_STARTED' });
+                lastTimeUpdateRef.current = Date.now();
+                recoveryAttemptRef.current = 0;
+            }}
             onPause={() => onPlayerEvent({ type: 'STREAM_PAUSED' })}
+            onTimeUpdate={() => {
+                lastTimeUpdateRef.current = Date.now();
+                recoveryAttemptRef.current = 0;
+            }}
+            onStalled={() => {
+                console.warn("Audio element received 'stalled' event. Triggering recovery.");
+                attemptRecovery();
+            }}
             onWaiting={() => {}} // We use the LOADING state now
             onError={() => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."})}
             crossOrigin="anonymous"

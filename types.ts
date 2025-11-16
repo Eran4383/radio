@@ -70,6 +70,11 @@ export type GridSize = typeof GRID_SIZES[number]; // 1=Smallest, 5=Largest
 
 export type SortOrder = 'priority' | 'name_asc' | 'name_desc' | 'custom' | 'category_style' | 'category_identity' | 'category_region' | 'category_nameStructure';
 
+export enum StationFilter {
+  All = 'הכל',
+  Favorites = 'מועדפים',
+}
+
 export type AllSettings = {
     favorites: string[];
     customOrder: string[];
@@ -89,6 +94,7 @@ export type AllSettings = {
     isMarqueeNextTrackEnabled: boolean;
     marqueeSpeed: number;
     marqueeDelay: number;
-    filter: any; // Using any for StationFilter enum
-    sortOrder: SortOrder;
+    filter: StationFilter;
+    sortOrderAll: SortOrder;
+    sortOrderFavorites: SortOrder;
 };

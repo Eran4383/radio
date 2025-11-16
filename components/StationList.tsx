@@ -96,7 +96,7 @@ const StationList: React.FC<StationListProps> = ({
     const isBeingDragged = draggedUuid === station.stationuuid;
     const isCurrentlyPlaying = currentStation?.stationuuid === station.stationuuid;
 
-    const baseClasses = `relative rounded-lg flex flex-col items-center justify-center text-center cursor-pointer transform transition-all duration-300 ease-in-out`;
+    const baseClasses = `relative rounded-lg flex flex-col items-center justify-center text-center transform transition-all duration-300 ease-in-out ${isDraggable ? 'cursor-grab' : 'cursor-pointer'}`;
     const stateClasses = isCurrentlyPlaying
         ? 'bg-accent/30 ring-2 ring-accent scale-105' 
         : 'bg-bg-secondary hover:bg-accent/10 hover:scale-105';
