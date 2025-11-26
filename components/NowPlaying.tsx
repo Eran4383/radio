@@ -1,3 +1,4 @@
+
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Station, VisualizerStyle, StationTrackInfo } from '../types';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon } from './Icons';
@@ -162,7 +163,9 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
             if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY)) {
                 if (deltaX > 0) onPrev();
                 else onNext();
-            } else if (deltaY > 70 && !hasMoved.current) {
+            } else if (deltaY > 120) {
+                // If dragged down significantly (more than 120px), close the player.
+                // We do NOT check !hasMoved.current here, because a drag is a move.
                 onClose();
             }
         }
@@ -300,9 +303,15 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
                   type="range"
                   min="0"
                   max="1"
-                  step="0.05"
+                  step="0.01"
                   value={volume}
                   onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
+                  onWheel={(e) => {
+                      // Allow volume adjustment with mouse wheel when hovering
+                      const direction = e.deltaY > 0 ? -1 : 1;
+                      const newVolume = Math.min(1, Math.max(0, volume + (direction * 0.01)));
+                      onVolumeChange(newVolume);
+                  }}
                   className="w-full accent-teal-500"
                   aria-label="עוצמת שמע"
                 />
