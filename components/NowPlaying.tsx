@@ -43,6 +43,7 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
   isVisualizerFullscreen, setIsVisualizerFullscreen
 }) => {
     const dragRef = useRef<HTMLDivElement>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
     const [startAnimation, setStartAnimation] = useState(false);
     
     const stationNameRef = useRef<HTMLSpanElement>(null);
@@ -55,6 +56,7 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
     const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
     const longPressTimerRef = useRef<number | null>(null);
     const hasMoved = useRef(false);
+    const isDraggingModal = useRef(false);
 
     useEffect(() => {
       setStartAnimation(false);
@@ -104,6 +106,7 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
         clearLongPressTimer();
         const target = e.target as HTMLElement;
         const isVisualizerArea = target.closest('.visualizer-interaction-area');
+        isDraggingModal.current = false;
 
         if (e.touches.length === 1) {
             const touch = e.touches[0];
@@ -134,7 +137,23 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
 
             if (!isVisualizerFullscreen) {
                  const dragDownY = touch.clientY - touchStartRef.current.y;
-                 if (dragDownY > 0 && dragRef.current) {
+                 
+                 let shouldDragModal = false;
+                 // Only drag modal if pulling down
+                 if (dragDownY > 0) {
+                     // If we are in the scrollable content area, only drag modal if we are at the top
+                     if (scrollRef.current && scrollRef.current.contains(e.target as Node)) {
+                         if (scrollRef.current.scrollTop <= 0) {
+                             shouldDragModal = true;
+                         }
+                     } else {
+                         // Touched outside scroll area (header/footer), always allow drag
+                         shouldDragModal = true;
+                     }
+                 }
+
+                 if (shouldDragModal && dragRef.current) {
+                     isDraggingModal.current = true;
                      dragRef.current.style.transform = `translateY(${dragDownY}px)`;
                      dragRef.current.style.transition = 'none';
                  }
@@ -163,9 +182,8 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
             if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY)) {
                 if (deltaX > 0) onPrev();
                 else onNext();
-            } else if (deltaY > 120) {
-                // If dragged down significantly (more than 120px), close the player.
-                // We do NOT check !hasMoved.current here, because a drag is a move.
+            } else if (isDraggingModal.current && deltaY > 120) {
+                // If dragged down significantly (more than 120px) AND we were dragging the modal, close it.
                 onClose();
             }
         }
@@ -174,6 +192,7 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
             dragRef.current.style.transform = '';
             dragRef.current.style.transition = '';
         }
+        isDraggingModal.current = false;
     };
 
     return (
@@ -190,7 +209,10 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
             </button>
         </div>
 
-        <div className={`flex-grow flex flex-col items-center justify-center gap-4 text-center overflow-y-auto py-4 px-4 ${isVisualizerFullscreen ? 'h-full' : ''}`}>
+        <div 
+            ref={scrollRef}
+            className={`flex-grow flex flex-col items-center justify-center gap-4 text-center overflow-y-auto py-4 px-4 ${isVisualizerFullscreen ? 'h-full' : ''}`}
+        >
             <img 
               src={station?.favicon || 'https://picsum.photos/256'} 
               alt={station?.name || 'תחנה'} 
@@ -308,8 +330,9 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
                   onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
                   onWheel={(e) => {
                       // Allow volume adjustment with mouse wheel when hovering
+                      // Increased step to 0.05 for better UX
                       const direction = e.deltaY > 0 ? -1 : 1;
-                      const newVolume = Math.min(1, Math.max(0, volume + (direction * 0.01)));
+                      const newVolume = Math.min(1, Math.max(0, volume + (direction * 0.05)));
                       onVolumeChange(newVolume);
                   }}
                   className="w-full accent-teal-500"

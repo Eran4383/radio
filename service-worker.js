@@ -67,6 +67,11 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
+  // Ignore non-GET requests (like POST to Firebase)
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
   if (!event.request.url.startsWith('http')) {
     return;
   }

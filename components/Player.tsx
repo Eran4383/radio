@@ -36,6 +36,7 @@ interface PlayerProps {
   setFrequencyData: (data: Uint8Array) => void;
   frequencyData: Uint8Array;
   isVisualizerEnabled: boolean;
+  shouldUseProxy: boolean; // New prop to control direct/proxy mode
   marqueeDelay: number;
   isMarqueeProgramEnabled: boolean;
   isMarqueeCurrentTrackEnabled: boolean;
@@ -100,6 +101,7 @@ const Player: React.FC<PlayerProps> = ({
   setFrequencyData,
   frequencyData,
   isVisualizerEnabled,
+  shouldUseProxy, // Destructure new prop
   marqueeDelay,
   isMarqueeProgramEnabled,
   isMarqueeCurrentTrackEnabled,
@@ -222,15 +224,27 @@ const Player: React.FC<PlayerProps> = ({
     if (!audio || !station) return;
 
     const playAudio = async () => {
-        setupAudioContext();
-        if (audioContextRef.current?.state === 'suspended') {
-            await audioContextRef.current.resume();
+        // Only set up audio context (EQ/Visualizer) if proxy is enabled (CORS)
+        if (shouldUseProxy) {
+            setupAudioContext();
+            if (audioContextRef.current?.state === 'suspended') {
+                await audioContextRef.current.resume();
+            }
         }
         
-        const newSrc = `${CORS_PROXY_URL}${station.url_resolved}`;
-        if (audio.src !== newSrc) {
-            audio.src = newSrc;
-            audio.crossOrigin = 'anonymous';
+        // Hybrid Logic: Use Proxy URL if visualizers enabled, otherwise Direct URL
+        const streamUrl = shouldUseProxy 
+            ? `${CORS_PROXY_URL}${station.url_resolved}` 
+            : station.url_resolved;
+
+        if (audio.src !== streamUrl) {
+            audio.src = streamUrl;
+            // Only request CORS if using proxy, otherwise direct connection might fail
+            if (shouldUseProxy) {
+                audio.crossOrigin = 'anonymous';
+            } else {
+                audio.removeAttribute('crossOrigin');
+            }
         }
         try {
             await audio.play();
@@ -249,7 +263,7 @@ const Player: React.FC<PlayerProps> = ({
     } else if (status === 'PAUSED' || status === 'IDLE' || status === 'ERROR') {
       audio.pause();
     }
-  }, [status, station, setupAudioContext, onPlayerEvent]);
+  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy]);
 
 
   // Handle volume changes
@@ -277,10 +291,14 @@ const Player: React.FC<PlayerProps> = ({
   // Visualizer data loop
   useEffect(() => {
     const loop = () => {
-      if (analyserRef.current && isPlaying) {
+      // Only get data if using proxy (AudioContext is valid)
+      if (analyserRef.current && isPlaying && shouldUseProxy) {
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
         setFrequencyData(dataArray);
+      } else if (!shouldUseProxy && isPlaying) {
+          // Fallback: if visualizer is off/direct mode, send zero data so visualizers flatten
+          setFrequencyData(new Uint8Array(64));
       }
       animationFrameRef.current = requestAnimationFrame(loop);
     };
@@ -294,7 +312,7 @@ const Player: React.FC<PlayerProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPlaying, setFrequencyData]);
+  }, [isPlaying, setFrequencyData, shouldUseProxy]);
 
   // Update Media Session API
   useEffect(() => {
@@ -333,16 +351,19 @@ const Player: React.FC<PlayerProps> = ({
       lastTimeUpdateRef.current = Date.now();
 
       const audio = audioRef.current;
-      const streamUrl = `${CORS_PROXY_URL}${station.url_resolved}`;
+      const streamUrl = shouldUseProxy 
+          ? `${CORS_PROXY_URL}${station.url_resolved}` 
+          : station.url_resolved;
+          
       audio.src = '';
       audio.load();
-      audio.src = `${streamUrl}?retry=${Date.now()}`;
+      audio.src = `${streamUrl}?retry=${Date.now()}`; // Append retry to bust cache if needed
       audio.load();
       audio.play().catch(e => {
           console.error('Recovery play() failed:', e);
           onPlayerEvent({ type: 'STREAM_ERROR', payload: 'שגיאה בהתאוששות' });
       });
-  }, [station, onPlayerEvent]);
+  }, [station, onPlayerEvent, shouldUseProxy]);
 
   // Watchdog effect to detect stalled stream
   useEffect(() => {
@@ -475,7 +496,7 @@ const Player: React.FC<PlayerProps> = ({
             }}
             onWaiting={() => {}} // We use the LOADING state now
             onError={() => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."})}
-            crossOrigin="anonymous"
+            // crossorigin removed here, handled dynamically
           />
       </div>
     </div>

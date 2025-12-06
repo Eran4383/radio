@@ -67,6 +67,10 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
   if (!event.request.url.startsWith('http')) {
     return;
   }

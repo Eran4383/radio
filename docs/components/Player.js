@@ -59,6 +59,7 @@ const Player = ({
   setFrequencyData,
   frequencyData,
   isVisualizerEnabled,
+  shouldUseProxy,
   marqueeDelay,
   isMarqueeProgramEnabled,
   isMarqueeCurrentTrackEnabled,
@@ -175,15 +176,24 @@ const Player = ({
     if (!audio || !station) return;
 
     const playAudio = async () => {
-        setupAudioContext();
-        if (audioContextRef.current?.state === 'suspended') {
-            await audioContextRef.current.resume();
+        if (shouldUseProxy) {
+            setupAudioContext();
+            if (audioContextRef.current?.state === 'suspended') {
+                await audioContextRef.current.resume();
+            }
         }
         
-        const newSrc = `${CORS_PROXY_URL}${station.url_resolved}`;
-        if (audio.src !== newSrc) {
-            audio.src = newSrc;
-            audio.crossOrigin = 'anonymous';
+        const streamUrl = shouldUseProxy 
+            ? `${CORS_PROXY_URL}${station.url_resolved}` 
+            : station.url_resolved;
+
+        if (audio.src !== streamUrl) {
+            audio.src = streamUrl;
+            if (shouldUseProxy) {
+                audio.crossOrigin = 'anonymous';
+            } else {
+                audio.removeAttribute('crossOrigin');
+            }
         }
         try {
             await audio.play();
@@ -202,7 +212,7 @@ const Player = ({
     } else if (status === 'PAUSED' || status === 'IDLE' || status === 'ERROR') {
       audio.pause();
     }
-  }, [status, station, setupAudioContext, onPlayerEvent]);
+  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -226,10 +236,12 @@ const Player = ({
 
   useEffect(() => {
     const loop = () => {
-      if (analyserRef.current && isPlaying) {
+      if (analyserRef.current && isPlaying && shouldUseProxy) {
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
         setFrequencyData(dataArray);
+      } else if (!shouldUseProxy && isPlaying) {
+          setFrequencyData(new Uint8Array(64));
       }
       animationFrameRef.current = requestAnimationFrame(loop);
     };
@@ -243,7 +255,7 @@ const Player = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPlaying, setFrequencyData]);
+  }, [isPlaying, setFrequencyData, shouldUseProxy]);
 
   useEffect(() => {
     if ('mediaSession' in navigator && station) {
@@ -280,7 +292,10 @@ const Player = ({
       lastTimeUpdateRef.current = Date.now();
 
       const audio = audioRef.current;
-      const streamUrl = `${CORS_PROXY_URL}${station.url_resolved}`;
+      const streamUrl = shouldUseProxy 
+          ? `${CORS_PROXY_URL}${station.url_resolved}` 
+          : station.url_resolved;
+          
       audio.src = '';
       audio.load();
       audio.src = `${streamUrl}?retry=${Date.now()}`;
@@ -289,7 +304,7 @@ const Player = ({
           console.error('Recovery play() failed:', e);
           onPlayerEvent({ type: 'STREAM_ERROR', payload: 'שגיאה בהתאוששות' });
       });
-  }, [station, onPlayerEvent]);
+  }, [station, onPlayerEvent, shouldUseProxy]);
 
   useEffect(() => {
       const clearWatchdog = () => {
@@ -420,7 +435,7 @@ const Player = ({
           },
           onWaiting: () => {},
           onError: () => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."}),
-          crossOrigin: "anonymous"
+          crossOrigin: shouldUseProxy ? "anonymous" : undefined
         })
       )
     )

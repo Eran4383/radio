@@ -1,5 +1,6 @@
 
 
+
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon } from './Icons.js';
 import Visualizer from './Visualizer.js';
@@ -16,6 +17,7 @@ const NowPlaying = ({
   isVisualizerFullscreen, setIsVisualizerFullscreen
 }) => {
     const dragRef = useRef(null);
+    const scrollRef = useRef(null);
     const [startAnimation, setStartAnimation] = useState(false);
     
     const stationNameRef = useRef(null);
@@ -28,6 +30,7 @@ const NowPlaying = ({
     const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
     const longPressTimerRef = useRef(null);
     const hasMoved = useRef(false);
+    const isDraggingModal = useRef(false);
 
     useEffect(() => {
       setStartAnimation(false);
@@ -77,6 +80,7 @@ const NowPlaying = ({
         clearLongPressTimer();
         const target = e.target;
         const isVisualizerArea = target.closest('.visualizer-interaction-area');
+        isDraggingModal.current = false;
 
         if (e.touches.length === 1) {
             const touch = e.touches[0];
@@ -107,7 +111,23 @@ const NowPlaying = ({
 
             if (!isVisualizerFullscreen) {
                  const dragDownY = touch.clientY - touchStartRef.current.y;
-                 if (dragDownY > 0 && dragRef.current) {
+                 
+                 let shouldDragModal = false;
+                 // Only drag modal if pulling down
+                 if (dragDownY > 0) {
+                     // If we are in the scrollable content area, only drag modal if we are at the top
+                     if (scrollRef.current && scrollRef.current.contains(e.target)) {
+                         if (scrollRef.current.scrollTop <= 0) {
+                             shouldDragModal = true;
+                         }
+                     } else {
+                         // Touched outside scroll area (header/footer), always allow drag
+                         shouldDragModal = true;
+                     }
+                 }
+
+                 if (shouldDragModal && dragRef.current) {
+                     isDraggingModal.current = true;
                      dragRef.current.style.transform = `translateY(${dragDownY}px)`;
                      dragRef.current.style.transition = 'none';
                  }
@@ -136,7 +156,7 @@ const NowPlaying = ({
             if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY)) {
                 if (deltaX > 0) onPrev();
                 else onNext();
-            } else if (deltaY > 120) {
+            } else if (isDraggingModal.current && deltaY > 120) {
                 onClose();
             }
         }
@@ -145,6 +165,7 @@ const NowPlaying = ({
             dragRef.current.style.transform = '';
             dragRef.current.style.transition = '';
         }
+        isDraggingModal.current = false;
     };
 
     return (
@@ -160,7 +181,10 @@ const NowPlaying = ({
                 React.createElement(ChevronDownIcon, { className: "w-8 h-8 mx-auto" })
             )
         ),
-        React.createElement("div", { className: `flex-grow flex flex-col items-center justify-center gap-4 text-center overflow-y-auto py-4 px-4 ${isVisualizerFullscreen ? 'h-full' : ''}` },
+        React.createElement("div", { 
+            ref: scrollRef,
+            className: `flex-grow flex flex-col items-center justify-center gap-4 text-center overflow-y-auto py-4 px-4 ${isVisualizerFullscreen ? 'h-full' : ''}` 
+        },
             React.createElement("img", { 
               src: station?.favicon || 'https://picsum.photos/256', 
               alt: station?.name || 'תחנה', 
@@ -274,7 +298,7 @@ const NowPlaying = ({
                   onChange: (e) => onVolumeChange(parseFloat(e.target.value)),
                   onWheel: (e) => {
                       const direction = e.deltaY > 0 ? -1 : 1;
-                      const newVolume = Math.min(1, Math.max(0, volume + (direction * 0.01)));
+                      const newVolume = Math.min(1, Math.max(0, volume + (direction * 0.05)));
                       onVolumeChange(newVolume);
                   },
                   className: "w-full accent-teal-500",
