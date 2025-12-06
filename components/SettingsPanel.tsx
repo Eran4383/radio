@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize, User } from '../types';
 import Auth from './Auth';
@@ -44,22 +45,12 @@ interface SettingsPanelProps {
 
 const releaseNotes = [
   {
-    version: '2.1',
-    date: '6 בספטמבר 2024',
+    version: '1.0',
+    date: '06.12.2025',
     features: [
-        "הטמעת מערכת התחברות עם חשבון גוגל (Firebase).",
-        "סנכרון הגדרות (מועדפים, ערכות נושא וכו') לענן.",
-        "מצב 'אורח' עם שמירת נתונים במכשיר, ומצב 'מחובר' עם סנכרון בין מכשירים.",
-        "הוספת חלון למיזוג נתונים: בחירה בין הגדרות מקומיות להגדרות מהענן בעת התחברות.",
-    ],
-  },
-  {
-    version: '2.0.3',
-    date: '5 בספטמבר 2024',
-    features: [
-        "תיקון ארכיטקטוני למנגנון טעינת ההגדרות למניעת 'מסך שחור' לאחר התחברות.",
-        "האפליקציה כעת חוזרת באופן בטוח להגדרות מקומיות במקרה של שגיאת רשת בעת טעינת נתונים מהענן.",
-        "שיפור יציבות כללי וחווית המשתמש בעת סנכרון נתונים.",
+        "אתחול גרסה רשמי.",
+        "שיפור מנגנון זיהוי עדכונים באפליקציה מותקנת.",
+        "תיקון באג ניגון אוטומטי (Autoplay) בדפדפנים.",
     ],
   },
 ];
@@ -359,7 +350,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         tabIndex={updateStatus === 'idle' ? 0 : -1}
                         aria-live="polite"
                     >
-                        <p>רדיו פרימיום v{currentVersionInfo.version}</p>
+                        <p>רדיו פרימיום v{currentVersionInfo.version} ({currentVersionInfo.date})</p>
                         <div className="h-4 mt-1 flex items-center justify-center">
                             {getUpdateStatusContent()}
                         </div>
