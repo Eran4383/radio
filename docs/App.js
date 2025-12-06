@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService.js';
 import { 
@@ -51,6 +52,9 @@ function playerReducer(state, action) {
         return { ...state, status: 'PAUSED' };
     case 'STREAM_ERROR':
       return { ...state, status: 'ERROR', error: action.payload };
+    case 'AUTOPLAY_BLOCKED':
+      // Browser blocked autoplay (user interaction needed). Switch to PAUSED without error.
+      return { ...state, status: 'PAUSED', error: undefined };
     default:
       return state;
   }

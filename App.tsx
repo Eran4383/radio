@@ -36,7 +36,8 @@ type PlayerAction =
   | { type: 'STREAM_STARTED' }
   | { type: 'STREAM_PAUSED' }
   | { type: 'STREAM_ERROR'; payload: string }
-  | { type: 'SELECT_STATION'; payload: Station };
+  | { type: 'SELECT_STATION'; payload: Station }
+  | { type: 'AUTOPLAY_BLOCKED' };
 
 const initialPlayerState: PlayerState = {
   status: 'IDLE',
@@ -64,6 +65,9 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
         return { ...state, status: 'PAUSED' };
     case 'STREAM_ERROR':
       return { ...state, status: 'ERROR', error: action.payload };
+    case 'AUTOPLAY_BLOCKED':
+      // Browser blocked autoplay (user interaction needed). Switch to PAUSED without error.
+      return { ...state, status: 'PAUSED', error: undefined };
     default:
       return state;
   }

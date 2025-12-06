@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { EQ_PRESETS } from '../types.js';
 import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons.js';
@@ -200,6 +201,9 @@ const Player = ({
         } catch (e) {
             if (e.name === 'AbortError') {
                 console.debug('Audio play request was interrupted by a new load request (normal behavior).');
+            } else if (e.name === 'NotAllowedError') {
+                console.warn("Autoplay blocked by browser policy. User interaction required.");
+                onPlayerEvent({ type: 'AUTOPLAY_BLOCKED' });
             } else {
                 console.error("Error playing audio:", e);
                 onPlayerEvent({ type: 'STREAM_ERROR', payload: "לא ניתן לנגן את התחנה." });
