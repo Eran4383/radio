@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService.js';
 import { 
@@ -305,10 +306,17 @@ export default function App() {
     fetchInitialStations();
   }, []);
 
-  // Other effects (SW, track info etc.)
+  // Service Worker Update Handling
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./service-worker.js').then(registration => {
+        // Check for an already waiting worker (installed but not active)
+        if (registration.waiting) {
+            waitingWorkerRef.current = registration.waiting;
+            setIsUpdateAvailable(true);
+            setUpdateStatus('found');
+        }
+
         registration.onupdatefound = () => {
           setUpdateStatus('downloading');
           const installingWorker = registration.installing;
@@ -359,18 +367,35 @@ export default function App() {
   
   const handleManualUpdateCheck = useCallback(async () => { if (!('serviceWorker' in navigator) || !navigator.serviceWorker.ready) { setUpdateStatus('error'); setTimeout(() => setUpdateStatus('idle'), 3000); return; } setUpdateStatus('checking'); try { const registration = await navigator.serviceWorker.ready; await registration.update(); setTimeout(() => { setUpdateStatus(cs => cs === 'checking' ? 'not-found' : cs); if (updateStatus === 'not-found') setTimeout(() => setUpdateStatus('idle'), 3000); }, 5000); } catch (error) { setUpdateStatus('error'); setTimeout(() => setUpdateStatus('idle'), 3000); } }, [updateStatus]);
   
-  const handleUpdateClick = useCallback(() => {
-    const worker = waitingWorkerRef.current;
-    if (!worker) return;
+  const handleUpdateClick = useCallback(async () => {
+    // 1. Try to get the worker from ref
+    let worker = waitingWorkerRef.current;
 
-    const reloadPage = () => {
-      navigator.serviceWorker.removeEventListener('controllerchange', reloadPage);
+    // 2. If ref is dead/null, try to fetch it fresh from registration
+    if (!worker) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      worker = registration?.waiting || null;
+    }
+
+    if (!worker) {
+      // If still no worker, just force reload, maybe the browser handled it or it's a false positive
       window.location.reload();
+      return;
+    }
+
+    // 3. Post message to skip waiting
+    worker.postMessage({ type: 'SKIP_WAITING' });
+    setIsUpdateAvailable(false);
+
+    // 4. Wait for controller change, but also set a fallback timeout
+    const reloadPage = () => {
+        window.location.reload();
     };
 
     navigator.serviceWorker.addEventListener('controllerchange', reloadPage);
-    worker.postMessage({ type: 'SKIP_WAITING' });
-    setIsUpdateAvailable(false);
+
+    // Fallback: if controller change doesn't happen in 1000ms, reload anyway.
+    setTimeout(reloadPage, 1000);
   }, []);
   
   useEffect(() => { if (stationsStatus === 'loaded' && playerState.status === 'IDLE') { const lastStationUuid = localStorage.getItem('radio-last-station-uuid'); if (lastStationUuid) { const station = stations.find(s => s.stationuuid === lastStationUuid); if (station) dispatch({ type: 'SELECT_STATION', payload: station }); } } }, [stationsStatus, stations, playerState.status]);
