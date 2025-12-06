@@ -1,3 +1,4 @@
+
 import { PRIORITY_STATIONS } from '../constants.js';
 import { CORS_PROXY_URL } from '../constants.js';
 
@@ -197,7 +198,8 @@ export const fetchLiveTrackInfo = async (stationuuid) => {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second timeout
 
-            const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/check?uuids=${stationuuid}`;
+            // FIX: Added &t=${Date.now()} to bust proxy cache
+            const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/check?uuids=${stationuuid}&t=${Date.now()}`;
             const response = await fetch(proxiedUrl, {
                 signal: controller.signal,
                 cache: 'no-cache'

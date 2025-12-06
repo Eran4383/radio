@@ -1,3 +1,4 @@
+
 // services/stationSpecificService.ts
 
 import { CORS_PROXY_URL } from '../constants';
@@ -60,7 +61,8 @@ const fetchKanTrackInfo = async (stationName: string): Promise<StationTrackInfo 
     }
 
     try {
-        const url = `https://www.kan.org.il/radio/live-info-v2.aspx?stationId=${kanStationId}`;
+        // FIX: Added &t=${Date.now()} to bust proxy cache
+        const url = `https://www.kan.org.il/radio/live-info-v2.aspx?stationId=${kanStationId}&t=${Date.now()}`;
         const proxiedUrl = `${CORS_PROXY_URL}${url}`;
         
         const response = await fetch(proxiedUrl, {
@@ -94,7 +96,8 @@ const fetchKanTrackInfo = async (stationName: string): Promise<StationTrackInfo 
 const GLZ_SCHEDULE_ROOT_ID = '1051';
 
 const fetchGaleiTzahalScheduleInfo = async (): Promise<{ program: string | null; presenters: string | null }> => {
-    const url = `${CORS_PROXY_URL}https://glz.co.il/umbraco/api/header/GetCommonData?rootId=${GLZ_SCHEDULE_ROOT_ID}`;
+    // FIX: Added &t=${Date.now()} to bust proxy cache
+    const url = `${CORS_PROXY_URL}https://glz.co.il/umbraco/api/header/GetCommonData?rootId=${GLZ_SCHEDULE_ROOT_ID}&t=${Date.now()}`;
     try {
         const response = await fetch(url, { cache: 'no-cache' });
         if (!response.ok) return { program: null, presenters: null };
@@ -152,7 +155,8 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
         return null;
     }
 
-    const xmlUrl = `${CORS_PROXY_URL}https://glzxml.blob.core.windows.net/dalet/${slug}-onair/onair.xml`;
+    // FIX: Added ?t=${Date.now()} to bust proxy cache
+    const xmlUrl = `${CORS_PROXY_URL}https://glzxml.blob.core.windows.net/dalet/${slug}-onair/onair.xml?t=${Date.now()}`;
     
     const fetchSongsFromXml = async (): Promise<{ current: string | null; next: string | null }> => {
         try {
@@ -219,7 +223,8 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
     };
 
     const fetchProgramFromJson = async (): Promise<string | null> => {
-        const jsonUrl = `${CORS_PROXY_URL}https://glz.co.il/umbraco/api/player/UpdatePlayer?stationid=${slug}`;
+        // FIX: Added &t=${Date.now()} to bust proxy cache
+        const jsonUrl = `${CORS_PROXY_URL}https://glz.co.il/umbraco/api/player/UpdatePlayer?stationid=${slug}&t=${Date.now()}`;
         try {
             const response = await fetch(jsonUrl, { cache: 'no-cache' });
             if (!response.ok) return null;
@@ -281,7 +286,8 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
  * @returns A structured object with track/program info or null.
  */
 const fetchEco99fmTrackInfo = async (): Promise<StationTrackInfo | null> => {
-    const url = 'https://firestore.googleapis.com/v1/projects/eco-99-production/databases/(default)/documents/streamed_content/program';
+    // FIX: Added ?t=${Date.now()} to bust proxy cache
+    const url = `https://firestore.googleapis.com/v1/projects/eco-99-production/databases/(default)/documents/streamed_content/program?t=${Date.now()}`;
     const proxiedUrl = `${CORS_PROXY_URL}${url}`;
 
     try {

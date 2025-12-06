@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService';
 import { 
@@ -81,7 +82,7 @@ function safeJsonParse<T>(jsonString: string | null, defaultValue: T): T {
 const defaultSettings: AllSettings = {
     favorites: [], customOrder: [], theme: 'dark', eqPreset: 'flat',
     customEqSettings: { bass: 0, mid: 0, treble: 0 }, volume: 1,
-    isNowPlayingVisualizerEnabled: true, isPlayerBarVisualizerEnabled: true,
+    isNowPlayingVisualizerEnabled: false, isPlayerBarVisualizerEnabled: false,
     visualizerStyle: 'bars', isStatusIndicatorEnabled: true, isVolumeControlVisible: true,
     showNextSong: true, gridSize: 3, isMarqueeProgramEnabled: true,
     isMarqueeCurrentTrackEnabled: true, isMarqueeNextTrackEnabled: true,
