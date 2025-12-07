@@ -77,16 +77,37 @@ export enum StationFilter {
 }
 
 // --- Keyboard Shortcuts Types ---
-export type KeyAction = 'playPause' | 'volumeUp' | 'volumeDown' | 'nextStation' | 'prevStation' | 'toggleFullscreen';
+export type KeyAction = 
+    | 'playPause' 
+    | 'volumeUp' 
+    | 'volumeDown' 
+    | 'toggleMute'
+    | 'nextStation' 
+    | 'prevStation' 
+    | 'toggleFullscreen'
+    | 'eqFlat'
+    | 'eqBassBoost'
+    | 'eqVocalBoost'
+    | 'eqRock'
+    | 'eqMovie'
+    | 'eqCustom';
+
 export type KeyMap = Record<KeyAction, string[]>;
 
 export const KEY_ACTION_LABELS: Record<KeyAction, string> = {
     playPause: 'נגן / השהה',
     volumeUp: 'הגבר עוצמה',
     volumeDown: 'הנמך עוצמה',
+    toggleMute: 'השתק / בטל השתקה',
     nextStation: 'תחנה הבאה',
     prevStation: 'תחנה קודמת',
-    toggleFullscreen: 'מסך מלא'
+    toggleFullscreen: 'מסך מלא',
+    eqFlat: 'EQ: רגיל (0)',
+    eqBassBoost: 'EQ: בס (1)',
+    eqVocalBoost: 'EQ: קולות (2)',
+    eqRock: 'EQ: רוק (3)',
+    eqMovie: 'EQ: סרט (4)',
+    eqCustom: 'EQ: מותאם (5)',
 };
 
 export type AllSettings = {

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
 import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService';
 import { 
@@ -97,9 +98,16 @@ const defaultSettings: AllSettings = {
         playPause: [' ', 'Spacebar'],
         volumeUp: ['ArrowUp'],
         volumeDown: ['ArrowDown'],
+        toggleMute: ['m', 'M', 'צ'],
         nextStation: ['ArrowRight'],
         prevStation: ['ArrowLeft'],
-        toggleFullscreen: ['f', 'F', 'כ']
+        toggleFullscreen: ['f', 'F', 'כ'],
+        eqFlat: ['0'],
+        eqBassBoost: ['1'],
+        eqVocalBoost: ['2'],
+        eqRock: ['3'],
+        eqMovie: ['4'],
+        eqCustom: ['5']
     }
 };
 
@@ -226,6 +234,11 @@ export default function App() {
   const waitingWorkerRef = useRef<ServiceWorker | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
   
+  // Mute volume memory
+  const [preMuteVolume, setPreMuteVolume] = useState<number>(0.5);
+  // Rebinding state to pause global shortcuts
+  const [isRebinding, setIsRebinding] = useState(false);
+
   // Determine if we should use proxy (if ANY visualizer is enabled)
   const shouldUseProxy = allSettings.isNowPlayingVisualizerEnabled || allSettings.isPlayerBarVisualizerEnabled;
 
@@ -445,6 +458,9 @@ export default function App() {
   // --- Keyboard Event Listener ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+        // If user is rebinding a key in SettingsPanel, do NOT trigger global shortcuts
+        if (isRebinding) return;
+
         // Ignore if typing in input/textarea or contentEditable
         const target = e.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
@@ -472,6 +488,14 @@ export default function App() {
                 case 'volumeDown': 
                     setAllSettings(s => ({...s, volume: Math.max(0, s.volume - 0.05)})); 
                     break;
+                case 'toggleMute':
+                    if (allSettings.volume > 0) {
+                        setPreMuteVolume(allSettings.volume);
+                        setAllSettings(s => ({...s, volume: 0}));
+                    } else {
+                        setAllSettings(s => ({...s, volume: preMuteVolume || 0.5}));
+                    }
+                    break;
                 case 'nextStation': 
                     handleNext(); 
                     break;
@@ -485,13 +509,19 @@ export default function App() {
                         document.exitFullscreen().catch(console.error);
                     }
                     break;
+                case 'eqFlat': setAllSettings(s => ({...s, eqPreset: 'flat'})); break;
+                case 'eqBassBoost': setAllSettings(s => ({...s, eqPreset: 'bassBoost'})); break;
+                case 'eqVocalBoost': setAllSettings(s => ({...s, eqPreset: 'vocalBoost'})); break;
+                case 'eqRock': setAllSettings(s => ({...s, eqPreset: 'rock'})); break;
+                case 'eqMovie': setAllSettings(s => ({...s, eqPreset: 'movie'})); break;
+                case 'eqCustom': setAllSettings(s => ({...s, eqPreset: 'custom'})); break;
             }
         }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [allSettings.keyMap, handlePlayPause, handleNext, handlePrev]);
+  }, [allSettings.keyMap, allSettings.volume, handlePlayPause, handleNext, handlePrev, preMuteVolume, isRebinding]);
 
 
   return (
@@ -521,7 +551,7 @@ export default function App() {
       <main className="flex-grow pb-48" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
         {stationsStatus === 'loading' ? ( <StationListSkeleton /> ) : stationsStatus === 'error' ? ( <p className="text-center text-red-400 p-4">{error}</p> ) : displayedStations.length > 0 ? ( <StationList stations={displayedStations} currentStation={playerState.station} onSelectStation={handleSelectStation} isFavorite={isFavorite} toggleFavorite={(uuid) => setAllSettings(s => ({...s, favorites: s.favorites.includes(uuid) ? s.favorites.filter(id => id !== uuid) : [...s.favorites, uuid]}))} onReorder={handleReorder} isStreamActive={playerState.status === 'PLAYING'} isStatusIndicatorEnabled={allSettings.isStatusIndicatorEnabled} gridSize={allSettings.gridSize} sortOrder={currentSortOrder} /> ) : ( <div className="text-center p-8 text-text-secondary"> <h2 className="text-xl font-semibold">{allSettings.filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}</h2> <p>{allSettings.filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}</p> </div> )}
       </main>
-      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} user={user} onLogin={signInWithGoogle} onLogout={signOutUser} currentTheme={allSettings.theme} onThemeChange={(v) => setAllSettings(s=>({...s, theme: v}))} currentEqPreset={allSettings.eqPreset} onEqPresetChange={(v) => setAllSettings(s=>({...s, eqPreset: v}))} isNowPlayingVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onNowPlayingVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isNowPlayingVisualizerEnabled: v}))} isPlayerBarVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} onPlayerBarVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isPlayerBarVisualizerEnabled: v}))} isStatusIndicatorEnabled={allSettings.isStatusIndicatorEnabled} onStatusIndicatorEnabledChange={(v) => setAllSettings(s=>({...s, isStatusIndicatorEnabled: v}))} isVolumeControlVisible={allSettings.isVolumeControlVisible} onVolumeControlVisibleChange={(v) => setAllSettings(s=>({...s, isVolumeControlVisible: v}))} showNextSong={allSettings.showNextSong} onShowNextSongChange={(v) => setAllSettings(s=>({...s, showNextSong: v}))} customEqSettings={allSettings.customEqSettings} onCustomEqChange={(v) => setAllSettings(s=>({...s, customEqSettings: v}))} gridSize={allSettings.gridSize} onGridSizeChange={(v) => setAllSettings(s=>({...s, gridSize: v}))} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} onMarqueeProgramEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeProgramEnabled: v}))} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} onMarqueeCurrentTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeCurrentTrackEnabled: v}))} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} onMarqueeNextTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeNextTrackEnabled: v}))} marqueeSpeed={allSettings.marqueeSpeed} onMarqueeSpeedChange={(v) => setAllSettings(s=>({...s, marqueeSpeed: v}))} marqueeDelay={allSettings.marqueeDelay} onMarqueeDelayChange={(v) => setAllSettings(s=>({...s, marqueeDelay: v}))} updateStatus={updateStatus} onManualUpdateCheck={handleManualUpdateCheck} keyMap={allSettings.keyMap} onKeyMapChange={(newMap) => setAllSettings(s => ({...s, keyMap: newMap}))} />
+      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} user={user} onLogin={signInWithGoogle} onLogout={signOutUser} currentTheme={allSettings.theme} onThemeChange={(v) => setAllSettings(s=>({...s, theme: v}))} currentEqPreset={allSettings.eqPreset} onEqPresetChange={(v) => setAllSettings(s=>({...s, eqPreset: v}))} isNowPlayingVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onNowPlayingVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isNowPlayingVisualizerEnabled: v}))} isPlayerBarVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} onPlayerBarVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isPlayerBarVisualizerEnabled: v}))} isStatusIndicatorEnabled={allSettings.isStatusIndicatorEnabled} onStatusIndicatorEnabledChange={(v) => setAllSettings(s=>({...s, isStatusIndicatorEnabled: v}))} isVolumeControlVisible={allSettings.isVolumeControlVisible} onVolumeControlVisibleChange={(v) => setAllSettings(s=>({...s, isVolumeControlVisible: v}))} showNextSong={allSettings.showNextSong} onShowNextSongChange={(v) => setAllSettings(s=>({...s, showNextSong: v}))} customEqSettings={allSettings.customEqSettings} onCustomEqChange={(v) => setAllSettings(s=>({...s, customEqSettings: v}))} gridSize={allSettings.gridSize} onGridSizeChange={(v) => setAllSettings(s=>({...s, gridSize: v}))} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} onMarqueeProgramEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeProgramEnabled: v}))} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} onMarqueeCurrentTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeCurrentTrackEnabled: v}))} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} onMarqueeNextTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeNextTrackEnabled: v}))} marqueeSpeed={allSettings.marqueeSpeed} onMarqueeSpeedChange={(v) => setAllSettings(s=>({...s, marqueeSpeed: v}))} marqueeDelay={allSettings.marqueeDelay} onMarqueeDelayChange={(v) => setAllSettings(s=>({...s, marqueeDelay: v}))} updateStatus={updateStatus} onManualUpdateCheck={handleManualUpdateCheck} keyMap={allSettings.keyMap} onKeyMapChange={(newMap) => setAllSettings(s => ({...s, keyMap: newMap}))} setIsRebinding={setIsRebinding} />
       {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} frequencyData={frequencyData} visualizerStyle={allSettings.visualizerStyle} isVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={allSettings.isVolumeControlVisible} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
       <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
       <Player playerState={playerState} onPlay={handlePlay} onPause={handlePause} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} onPlayerEvent={(event) => dispatch(event)} eqPreset={allSettings.eqPreset} customEqSettings={allSettings.customEqSettings} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} onOpenNowPlaying={() => setIsNowPlayingOpen(true)} setFrequencyData={setFrequencyData} frequencyData={frequencyData} isVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} shouldUseProxy={shouldUseProxy} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} />

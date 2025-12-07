@@ -1,4 +1,5 @@
 
+
 export const THEMES = ['dark', 'light', 'blue', 'sunset', 'forest', 'ocean', 'rose', 'matrix'];
 
 export const EQ_PRESET_KEYS = ['flat', 'bassBoost', 'vocalBoost', 'rock', 'movie', 'custom'];
@@ -47,7 +48,14 @@ export const KEY_ACTION_LABELS = {
     playPause: 'נגן / השהה',
     volumeUp: 'הגבר עוצמה',
     volumeDown: 'הנמך עוצמה',
+    toggleMute: 'השתק / בטל השתקה',
     nextStation: 'תחנה הבאה',
     prevStation: 'תחנה קודמת',
-    toggleFullscreen: 'מסך מלא'
+    toggleFullscreen: 'מסך מלא',
+    eqFlat: 'EQ: רגיל (0)',
+    eqBassBoost: 'EQ: בס (1)',
+    eqVocalBoost: 'EQ: קולות (2)',
+    eqRock: 'EQ: רוק (3)',
+    eqMovie: 'EQ: סרט (4)',
+    eqCustom: 'EQ: מותאם (5)',
 };

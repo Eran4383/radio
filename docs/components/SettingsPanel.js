@@ -1,7 +1,9 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, KEY_ACTION_LABELS } from '../types.js';
 import Auth from './Auth.js';
+import { ChevronDownIcon } from './Icons.js';
 
 const releaseNotes = [
   {
@@ -17,6 +19,22 @@ const releaseNotes = [
 ];
 
 const currentVersionInfo = releaseNotes[0];
+
+const DEFAULT_KEY_MAP = {
+    playPause: [' ', 'Spacebar'],
+    volumeUp: ['ArrowUp'],
+    volumeDown: ['ArrowDown'],
+    toggleMute: ['m', 'M', 'צ'],
+    nextStation: ['ArrowRight'],
+    prevStation: ['ArrowLeft'],
+    toggleFullscreen: ['f', 'F', 'כ'],
+    eqFlat: ['0'],
+    eqBassBoost: ['1'],
+    eqVocalBoost: ['2'],
+    eqRock: ['3'],
+    eqMovie: ['4'],
+    eqCustom: ['5']
+};
 
 
 const SettingsButton = ({ label, isActive, onClick }) => (
@@ -65,6 +83,25 @@ const EqSlider = ({ label, value, onChange }) => (
     )
 );
 
+const SettingsSection = ({ title, children, isOpen, onToggle }) => {
+    return (
+        React.createElement("div", { className: "mb-4 bg-bg-secondary/50 rounded-lg border border-gray-700/50" },
+            React.createElement("button", {
+                onClick: onToggle,
+                className: `w-full flex justify-between items-center p-3 bg-gray-800/50 hover:bg-gray-700/50 transition-colors ${isOpen ? 'rounded-t-lg' : 'rounded-lg'}`
+            },
+                React.createElement("h3", { className: "text-sm font-semibold text-text-secondary" }, title),
+                React.createElement(ChevronDownIcon, { className: `w-5 h-5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}` })
+            ),
+            isOpen && (
+                React.createElement("div", { className: "p-3 space-y-3 border-t border-gray-700/30" },
+                    children
+                )
+            )
+        )
+    );
+};
+
 
 const SettingsPanel = ({ 
     isOpen, onClose, user, onLogin, onLogout, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
@@ -80,10 +117,22 @@ const SettingsPanel = ({
     marqueeSpeed, onMarqueeSpeedChange,
     marqueeDelay, onMarqueeDelayChange,
     updateStatus, onManualUpdateCheck,
-    keyMap, onKeyMapChange
+    keyMap, onKeyMapChange,
+    setIsRebinding
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
   const [listeningFor, setListeningFor] = useState(null);
+  
+  const [openSections, setOpenSections] = useState({
+      theme: true,
+      eq: true,
+      interface: true,
+      shortcuts: false
+  });
+
+  const toggleSection = (key) => {
+      setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
   useEffect(() => {
     if (!listeningFor) return;
@@ -91,20 +140,34 @@ const SettingsPanel = ({
     const handleRebind = (e) => {
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
         
         if (e.key === 'Escape') {
             setListeningFor(null);
+            setIsRebinding(false);
             return;
         }
 
         const newKey = e.key;
         onKeyMapChange({ ...keyMap, [listeningFor]: [newKey] });
         setListeningFor(null);
+        setIsRebinding(false);
     };
 
-    window.addEventListener('keydown', handleRebind);
-    return () => window.removeEventListener('keydown', handleRebind);
-  }, [listeningFor, keyMap, onKeyMapChange]);
+    window.addEventListener('keydown', handleRebind, { capture: true });
+    return () => window.removeEventListener('keydown', handleRebind, { capture: true });
+  }, [listeningFor, keyMap, onKeyMapChange, setIsRebinding]);
+
+  const handleStartRebind = (action) => {
+      setListeningFor(action);
+      setIsRebinding(true);
+  };
+
+  const handleCancelRebind = (e) => {
+      e.stopPropagation();
+      setListeningFor(null);
+      setIsRebinding(false);
+  };
 
   const getUpdateStatusContent = () => {
       switch (updateStatus) {
@@ -129,7 +192,13 @@ const SettingsPanel = ({
       /* Overlay */
       React.createElement("div", { 
         className: `fixed inset-0 bg-black/60 z-30 transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`,
-        onClick: onClose
+        onClick: () => {
+            if (listeningFor) {
+                setListeningFor(null);
+                setIsRebinding(false);
+            }
+            onClose();
+        }
       }),
       
       /* Panel */
@@ -140,9 +209,7 @@ const SettingsPanel = ({
                 React.createElement(Auth, { user: user, onLogin: onLogin, onLogout: onLogout })
             ),
 
-            /* Theme Switcher */
-            React.createElement("div", { className: "mb-6 flex-shrink-0" },
-                React.createElement("h3", { className: "text-sm font-semibold text-text-secondary mb-2" }, "ערכת נושא"),
+            React.createElement(SettingsSection, { title: "ערכת נושא", isOpen: openSections.theme, onToggle: () => toggleSection('theme') },
                 React.createElement("div", { className: "grid grid-cols-4 gap-2" },
                     THEMES.map(theme => (
                          React.createElement(SettingsButton, { 
@@ -155,9 +222,7 @@ const SettingsPanel = ({
                 )
             ),
 
-             /* Equalizer */
-            React.createElement("div", { className: "mb-6 flex-shrink-0" },
-                React.createElement("h3", { className: "text-sm font-semibold text-text-secondary mb-2" }, "אקולייזר (EQ)"),
+             React.createElement(SettingsSection, { title: "אקולייזר (EQ)", isOpen: openSections.eq, onToggle: () => toggleSection('eq') },
                 React.createElement("div", { className: "grid grid-cols-3 gap-2 mb-3" },
                     EQ_PRESET_KEYS.map(preset => (
                         React.createElement(SettingsButton, { 
@@ -189,9 +254,7 @@ const SettingsPanel = ({
                 )
             ),
 
-            /* Display Settings */
-            React.createElement("div", { className: "mb-6 flex-shrink-0" },
-                React.createElement("h3", { className: "text-sm font-semibold text-text-secondary mb-2" }, "ממשק"),
+            React.createElement(SettingsSection, { title: "ממשק", isOpen: openSections.interface, onToggle: () => toggleSection('interface') },
                 React.createElement("div", { className: "space-y-2" },
                     React.createElement("div", { className: "p-3 rounded-lg bg-bg-primary space-y-3" },
                        React.createElement("div", { className: "flex flex-col gap-1" },
@@ -295,29 +358,70 @@ const SettingsPanel = ({
                 )
             ),
 
-            /* Keyboard Shortcuts */
-            React.createElement("div", { className: "mb-6 flex-shrink-0" },
-                React.createElement("h3", { className: "text-sm font-semibold text-text-secondary mb-2" }, "קיצורי מקלדת"),
+            React.createElement(SettingsSection, { title: "קיצורי מקלדת", isOpen: openSections.shortcuts, onToggle: () => toggleSection('shortcuts') },
                 React.createElement("div", { className: "space-y-2" },
-                    Object.keys(keyMap).map(action => (
+                    /* General Shortcuts */
+                    React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-1 px-1" }, "כללי"),
+                    ['playPause', 'volumeUp', 'volumeDown', 'toggleMute', 'nextStation', 'prevStation', 'toggleFullscreen'].map(action => (
                         React.createElement("div", { key: action, className: "flex justify-between items-center p-2 bg-bg-primary rounded-lg" },
                             React.createElement("span", { className: "text-sm" }, KEY_ACTION_LABELS[action]),
-                            React.createElement("button", { 
-                                onClick: () => setListeningFor(action),
-                                className: `px-3 py-1 text-xs rounded border transition-all ${
-                                    listeningFor === action 
-                                    ? 'bg-accent text-white border-accent animate-pulse' 
-                                    : 'bg-bg-secondary border-gray-600 text-text-secondary hover:border-text-primary'
-                                }`
-                            },
-                                listeningFor === action ? 'לחץ על מקש...' : keyMap[action][0].toUpperCase().replace(' ', 'Space')
+                            React.createElement("div", { className: "flex items-center gap-2" },
+                                listeningFor === action && (
+                                    React.createElement("button", { 
+                                        onClick: handleCancelRebind, 
+                                        className: "text-red-400 hover:text-red-300 font-bold px-2",
+                                        title: "ביטול"
+                                    }, "✕")
+                                ),
+                                React.createElement("button", { 
+                                    onClick: () => handleStartRebind(action),
+                                    className: `px-3 py-1 text-xs rounded border transition-all ${
+                                        listeningFor === action 
+                                        ? 'bg-accent text-white border-accent animate-pulse' 
+                                        : 'bg-bg-secondary border-gray-600 text-text-secondary hover:border-text-primary'
+                                    }`
+                                },
+                                    listeningFor === action ? 'לחץ על מקש...' : keyMap[action][0].toUpperCase().replace(' ', 'Space')
+                                )
                             )
                         )
-                    ))
+                    )),
+
+                    /* EQ Shortcuts */
+                    React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-3 px-1" }, "אקולייזר"),
+                    ['eqFlat', 'eqBassBoost', 'eqVocalBoost', 'eqRock', 'eqMovie', 'eqCustom'].map(action => (
+                        React.createElement("div", { key: action, className: "flex justify-between items-center p-2 bg-bg-primary rounded-lg" },
+                            React.createElement("span", { className: "text-sm" }, KEY_ACTION_LABELS[action]),
+                            React.createElement("div", { className: "flex items-center gap-2" },
+                                listeningFor === action && (
+                                    React.createElement("button", { 
+                                        onClick: handleCancelRebind, 
+                                        className: "text-red-400 hover:text-red-300 font-bold px-2",
+                                        title: "ביטול"
+                                    }, "✕")
+                                ),
+                                React.createElement("button", { 
+                                    onClick: () => handleStartRebind(action),
+                                    className: `px-3 py-1 text-xs rounded border transition-all ${
+                                        listeningFor === action 
+                                        ? 'bg-accent text-white border-accent animate-pulse' 
+                                        : 'bg-bg-secondary border-gray-600 text-text-secondary hover:border-text-primary'
+                                    }`
+                                },
+                                    listeningFor === action ? 'לחץ על מקש...' : keyMap[action][0].toUpperCase().replace(' ', 'Space')
+                                )
+                            )
+                        )
+                    )),
+
+                    React.createElement("button", { 
+                        onClick: () => onKeyMapChange(DEFAULT_KEY_MAP),
+                        className: "w-full mt-4 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded border border-red-400/30 transition-colors"
+                    }, "שחזר ברירת מחדל")
                 )
             ),
 
-            React.createElement("div", { className: "mt-auto flex-shrink-0" },
+            React.createElement("div", { className: "mt-auto flex-shrink-0 pt-4" },
                 isVersionHistoryVisible && (
                     React.createElement("div", { className: "mb-4 text-xs text-text-secondary" },
                         React.createElement("h4", { className: "font-bold text-sm text-text-primary mb-2" }, "היסטוריית גרסאות"),

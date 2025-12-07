@@ -1,7 +1,9 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize, User, KeyMap, KeyAction, KEY_ACTION_LABELS } from '../types';
 import Auth from './Auth';
+import { ChevronDownIcon } from './Icons';
 
 type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'found' | 'not-found' | 'error';
 
@@ -43,6 +45,7 @@ interface SettingsPanelProps {
   onManualUpdateCheck: () => void;
   keyMap: KeyMap;
   onKeyMapChange: (keyMap: KeyMap) => void;
+  setIsRebinding: (isRebinding: boolean) => void;
 }
 
 const releaseNotes = [
@@ -59,6 +62,22 @@ const releaseNotes = [
 ];
 
 const currentVersionInfo = releaseNotes[0];
+
+const DEFAULT_KEY_MAP: KeyMap = {
+    playPause: [' ', 'Spacebar'],
+    volumeUp: ['ArrowUp'],
+    volumeDown: ['ArrowDown'],
+    toggleMute: ['m', 'M', 'צ'],
+    nextStation: ['ArrowRight'],
+    prevStation: ['ArrowLeft'],
+    toggleFullscreen: ['f', 'F', 'כ'],
+    eqFlat: ['0'],
+    eqBassBoost: ['1'],
+    eqVocalBoost: ['2'],
+    eqRock: ['3'],
+    eqMovie: ['4'],
+    eqCustom: ['5']
+};
 
 
 const SettingsButton: React.FC<{
@@ -120,6 +139,30 @@ const EqSlider: React.FC<{
     </div>
 );
 
+const SettingsSection: React.FC<{
+    title: string;
+    children: React.ReactNode;
+    isOpen: boolean;
+    onToggle: () => void;
+}> = ({ title, children, isOpen, onToggle }) => {
+    return (
+        <div className="mb-4 bg-bg-secondary/50 rounded-lg border border-gray-700/50">
+            <button 
+                onClick={onToggle}
+                className={`w-full flex justify-between items-center p-3 bg-gray-800/50 hover:bg-gray-700/50 transition-colors ${isOpen ? 'rounded-t-lg' : 'rounded-lg'}`}
+            >
+                <h3 className="text-sm font-semibold text-text-secondary">{title}</h3>
+                <ChevronDownIcon className={`w-5 h-5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isOpen && (
+                <div className="p-3 space-y-3 border-t border-gray-700/30">
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+};
+
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
     isOpen, onClose, user, onLogin, onLogout, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
@@ -135,32 +178,61 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     marqueeSpeed, onMarqueeSpeedChange,
     marqueeDelay, onMarqueeDelayChange,
     updateStatus, onManualUpdateCheck,
-    keyMap, onKeyMapChange
+    keyMap, onKeyMapChange,
+    setIsRebinding
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
   const [listeningFor, setListeningFor] = useState<KeyAction | null>(null);
+  
+  // Controlled state for sections
+  const [openSections, setOpenSections] = useState({
+      theme: true,
+      eq: true,
+      interface: true,
+      shortcuts: false
+  });
+
+  const toggleSection = (key: keyof typeof openSections) => {
+      setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
   useEffect(() => {
     if (!listeningFor) return;
 
     const handleRebind = (e: KeyboardEvent) => {
+        // Prevent default actions and bubbling up to global listeners
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
         
         // Allow escape to cancel
         if (e.key === 'Escape') {
             setListeningFor(null);
+            setIsRebinding(false);
             return;
         }
 
         const newKey = e.key;
         onKeyMapChange({ ...keyMap, [listeningFor]: [newKey] });
         setListeningFor(null);
+        setIsRebinding(false);
     };
 
-    window.addEventListener('keydown', handleRebind);
-    return () => window.removeEventListener('keydown', handleRebind);
-  }, [listeningFor, keyMap, onKeyMapChange]);
+    // Use capture phase to intercept before it bubbles to app level logic (if any)
+    window.addEventListener('keydown', handleRebind, { capture: true });
+    return () => window.removeEventListener('keydown', handleRebind, { capture: true });
+  }, [listeningFor, keyMap, onKeyMapChange, setIsRebinding]);
+
+  const handleStartRebind = (action: KeyAction) => {
+      setListeningFor(action);
+      setIsRebinding(true);
+  };
+
+  const handleCancelRebind = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setListeningFor(null);
+      setIsRebinding(false);
+  };
 
   const getUpdateStatusContent = () => {
       switch (updateStatus) {
@@ -185,7 +257,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       {/* Overlay */}
       <div 
         className={`fixed inset-0 bg-black/60 z-30 transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-        onClick={onClose}
+        onClick={() => {
+            if (listeningFor) {
+                setListeningFor(null);
+                setIsRebinding(false);
+            }
+            onClose();
+        }}
       ></div>
       
       {/* Panel */}
@@ -196,9 +274,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <Auth user={user} onLogin={onLogin} onLogout={onLogout} />
             </div>
 
-            {/* Theme Switcher */}
-            <div className="mb-6 flex-shrink-0">
-                <h3 className="text-sm font-semibold text-text-secondary mb-2">ערכת נושא</h3>
+            <SettingsSection title="ערכת נושא" isOpen={openSections.theme} onToggle={() => toggleSection('theme')}>
                 <div className="grid grid-cols-4 gap-2">
                     {THEMES.map(theme => (
                          <SettingsButton 
@@ -209,11 +285,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         />
                     ))}
                 </div>
-            </div>
+            </SettingsSection>
 
-             {/* Equalizer */}
-            <div className="mb-6 flex-shrink-0">
-                <h3 className="text-sm font-semibold text-text-secondary mb-2">אקולייזר (EQ)</h3>
+            <SettingsSection title="אקולייזר (EQ)" isOpen={openSections.eq} onToggle={() => toggleSection('eq')}>
                 <div className="grid grid-cols-3 gap-2 mb-3">
                     {EQ_PRESET_KEYS.map(preset => (
                         <SettingsButton 
@@ -243,11 +317,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         />
                     </div>
                 )}
-            </div>
+            </SettingsSection>
 
-            {/* Display Settings */}
-            <div className="mb-6 flex-shrink-0">
-                <h3 className="text-sm font-semibold text-text-secondary mb-2">ממשק</h3>
+            <SettingsSection title="ממשק" isOpen={openSections.interface} onToggle={() => toggleSection('interface')}>
                 <div className="space-y-2">
                     <div className="p-3 rounded-lg bg-bg-primary space-y-3">
                        <div className="flex flex-col gap-1">
@@ -349,31 +421,78 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         onChange={onShowNextSongChange}
                     />
                 </div>
-            </div>
+            </SettingsSection>
 
-            {/* Keyboard Shortcuts */}
-            <div className="mb-6 flex-shrink-0">
-                <h3 className="text-sm font-semibold text-text-secondary mb-2">קיצורי מקלדת</h3>
+            <SettingsSection title="קיצורי מקלדת" isOpen={openSections.shortcuts} onToggle={() => toggleSection('shortcuts')}>
                 <div className="space-y-2">
-                    {(Object.keys(keyMap) as KeyAction[]).map(action => (
+                    {/* General Shortcuts */}
+                    <h4 className="text-xs font-semibold text-text-secondary pt-1 px-1">כללי</h4>
+                    {(['playPause', 'volumeUp', 'volumeDown', 'toggleMute', 'nextStation', 'prevStation', 'toggleFullscreen'] as KeyAction[]).map(action => (
                         <div key={action} className="flex justify-between items-center p-2 bg-bg-primary rounded-lg">
                             <span className="text-sm">{KEY_ACTION_LABELS[action]}</span>
-                            <button 
-                                onClick={() => setListeningFor(action)}
-                                className={`px-3 py-1 text-xs rounded border transition-all ${
-                                    listeningFor === action 
-                                    ? 'bg-accent text-white border-accent animate-pulse' 
-                                    : 'bg-bg-secondary border-gray-600 text-text-secondary hover:border-text-primary'
-                                }`}
-                            >
-                                {listeningFor === action ? 'לחץ על מקש...' : keyMap[action][0].toUpperCase().replace(' ', 'Space')}
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {listeningFor === action && (
+                                    <button 
+                                        onClick={handleCancelRebind} 
+                                        className="text-red-400 hover:text-red-300 font-bold px-2"
+                                        title="ביטול"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                                <button 
+                                    onClick={() => handleStartRebind(action)}
+                                    className={`px-3 py-1 text-xs rounded border transition-all ${
+                                        listeningFor === action 
+                                        ? 'bg-accent text-white border-accent animate-pulse' 
+                                        : 'bg-bg-secondary border-gray-600 text-text-secondary hover:border-text-primary'
+                                    }`}
+                                >
+                                    {listeningFor === action ? 'לחץ על מקש...' : keyMap[action][0].toUpperCase().replace(' ', 'Space')}
+                                </button>
+                            </div>
                         </div>
                     ))}
-                </div>
-            </div>
 
-            <div className="mt-auto flex-shrink-0">
+                    {/* EQ Shortcuts */}
+                    <h4 className="text-xs font-semibold text-text-secondary pt-3 px-1">אקולייזר</h4>
+                    {(['eqFlat', 'eqBassBoost', 'eqVocalBoost', 'eqRock', 'eqMovie', 'eqCustom'] as KeyAction[]).map(action => (
+                        <div key={action} className="flex justify-between items-center p-2 bg-bg-primary rounded-lg">
+                            <span className="text-sm">{KEY_ACTION_LABELS[action]}</span>
+                            <div className="flex items-center gap-2">
+                                {listeningFor === action && (
+                                    <button 
+                                        onClick={handleCancelRebind} 
+                                        className="text-red-400 hover:text-red-300 font-bold px-2"
+                                        title="ביטול"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                                <button 
+                                    onClick={() => handleStartRebind(action)}
+                                    className={`px-3 py-1 text-xs rounded border transition-all ${
+                                        listeningFor === action 
+                                        ? 'bg-accent text-white border-accent animate-pulse' 
+                                        : 'bg-bg-secondary border-gray-600 text-text-secondary hover:border-text-primary'
+                                    }`}
+                                >
+                                    {listeningFor === action ? 'לחץ על מקש...' : keyMap[action][0].toUpperCase().replace(' ', 'Space')}
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+
+                    <button 
+                        onClick={() => onKeyMapChange(DEFAULT_KEY_MAP)}
+                        className="w-full mt-4 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded border border-red-400/30 transition-colors"
+                    >
+                        שחזר ברירת מחדל
+                    </button>
+                </div>
+            </SettingsSection>
+
+            <div className="mt-auto flex-shrink-0 pt-4">
                 {isVersionHistoryVisible && (
                     <div className="mb-4 text-xs text-text-secondary">
                         <h4 className="font-bold text-sm text-text-primary mb-2">היסטוריית גרסאות</h4>
