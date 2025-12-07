@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS } from '../types.js';
+import React, { useState, useEffect } from 'react';
+import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, KEY_ACTION_LABELS } from '../types.js';
 import Auth from './Auth.js';
 
 const releaseNotes = [
@@ -11,6 +11,7 @@ const releaseNotes = [
         "אתחול גרסה רשמי.",
         "שיפור מנגנון זיהוי עדכונים באפליקציה מותקנת.",
         "תיקון באג ניגון אוטומטי (Autoplay) בדפדפנים.",
+        "הוספת תמיכה בקיצורי מקלדת לדסקטופ."
     ],
   },
 ];
@@ -79,8 +80,31 @@ const SettingsPanel = ({
     marqueeSpeed, onMarqueeSpeedChange,
     marqueeDelay, onMarqueeDelayChange,
     updateStatus, onManualUpdateCheck,
+    keyMap, onKeyMapChange
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
+  const [listeningFor, setListeningFor] = useState(null);
+
+  useEffect(() => {
+    if (!listeningFor) return;
+
+    const handleRebind = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (e.key === 'Escape') {
+            setListeningFor(null);
+            return;
+        }
+
+        const newKey = e.key;
+        onKeyMapChange({ ...keyMap, [listeningFor]: [newKey] });
+        setListeningFor(null);
+    };
+
+    window.addEventListener('keydown', handleRebind);
+    return () => window.removeEventListener('keydown', handleRebind);
+  }, [listeningFor, keyMap, onKeyMapChange]);
 
   const getUpdateStatusContent = () => {
       switch (updateStatus) {
@@ -268,6 +292,28 @@ const SettingsPanel = ({
                         enabled: showNextSong,
                         onChange: onShowNextSongChange
                     })
+                )
+            ),
+
+            /* Keyboard Shortcuts */
+            React.createElement("div", { className: "mb-6 flex-shrink-0" },
+                React.createElement("h3", { className: "text-sm font-semibold text-text-secondary mb-2" }, "קיצורי מקלדת"),
+                React.createElement("div", { className: "space-y-2" },
+                    Object.keys(keyMap).map(action => (
+                        React.createElement("div", { key: action, className: "flex justify-between items-center p-2 bg-bg-primary rounded-lg" },
+                            React.createElement("span", { className: "text-sm" }, KEY_ACTION_LABELS[action]),
+                            React.createElement("button", { 
+                                onClick: () => setListeningFor(action),
+                                className: `px-3 py-1 text-xs rounded border transition-all ${
+                                    listeningFor === action 
+                                    ? 'bg-accent text-white border-accent animate-pulse' 
+                                    : 'bg-bg-secondary border-gray-600 text-text-secondary hover:border-text-primary'
+                                }`
+                            },
+                                listeningFor === action ? 'לחץ על מקש...' : keyMap[action][0].toUpperCase().replace(' ', 'Space')
+                            )
+                        )
+                    ))
                 )
             ),
 

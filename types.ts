@@ -1,3 +1,4 @@
+
 import type { User as FirebaseUser } from 'firebase/auth';
 
 export type User = FirebaseUser;
@@ -75,6 +76,19 @@ export enum StationFilter {
   Favorites = 'מועדפים',
 }
 
+// --- Keyboard Shortcuts Types ---
+export type KeyAction = 'playPause' | 'volumeUp' | 'volumeDown' | 'nextStation' | 'prevStation' | 'toggleFullscreen';
+export type KeyMap = Record<KeyAction, string[]>;
+
+export const KEY_ACTION_LABELS: Record<KeyAction, string> = {
+    playPause: 'נגן / השהה',
+    volumeUp: 'הגבר עוצמה',
+    volumeDown: 'הנמך עוצמה',
+    nextStation: 'תחנה הבאה',
+    prevStation: 'תחנה קודמת',
+    toggleFullscreen: 'מסך מלא'
+};
+
 export type AllSettings = {
     favorites: string[];
     customOrder: string[];
@@ -97,4 +111,5 @@ export type AllSettings = {
     filter: StationFilter;
     sortOrderAll: SortOrder;
     sortOrderFavorites: SortOrder;
+    keyMap: KeyMap;
 };

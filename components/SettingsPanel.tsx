@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize, User } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize, User, KeyMap, KeyAction, KEY_ACTION_LABELS } from '../types';
 import Auth from './Auth';
 
 type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'found' | 'not-found' | 'error';
@@ -41,6 +41,8 @@ interface SettingsPanelProps {
   onMarqueeDelayChange: (delay: number) => void;
   updateStatus: UpdateStatus;
   onManualUpdateCheck: () => void;
+  keyMap: KeyMap;
+  onKeyMapChange: (keyMap: KeyMap) => void;
 }
 
 const releaseNotes = [
@@ -51,6 +53,7 @@ const releaseNotes = [
         "אתחול גרסה רשמי.",
         "שיפור מנגנון זיהוי עדכונים באפליקציה מותקנת.",
         "תיקון באג ניגון אוטומטי (Autoplay) בדפדפנים.",
+        "הוספת תמיכה בקיצורי מקלדת לדסקטופ."
     ],
   },
 ];
@@ -132,8 +135,32 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     marqueeSpeed, onMarqueeSpeedChange,
     marqueeDelay, onMarqueeDelayChange,
     updateStatus, onManualUpdateCheck,
+    keyMap, onKeyMapChange
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
+  const [listeningFor, setListeningFor] = useState<KeyAction | null>(null);
+
+  useEffect(() => {
+    if (!listeningFor) return;
+
+    const handleRebind = (e: KeyboardEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Allow escape to cancel
+        if (e.key === 'Escape') {
+            setListeningFor(null);
+            return;
+        }
+
+        const newKey = e.key;
+        onKeyMapChange({ ...keyMap, [listeningFor]: [newKey] });
+        setListeningFor(null);
+    };
+
+    window.addEventListener('keydown', handleRebind);
+    return () => window.removeEventListener('keydown', handleRebind);
+  }, [listeningFor, keyMap, onKeyMapChange]);
 
   const getUpdateStatusContent = () => {
       switch (updateStatus) {
@@ -321,6 +348,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         enabled={showNextSong}
                         onChange={onShowNextSongChange}
                     />
+                </div>
+            </div>
+
+            {/* Keyboard Shortcuts */}
+            <div className="mb-6 flex-shrink-0">
+                <h3 className="text-sm font-semibold text-text-secondary mb-2">קיצורי מקלדת</h3>
+                <div className="space-y-2">
+                    {(Object.keys(keyMap) as KeyAction[]).map(action => (
+                        <div key={action} className="flex justify-between items-center p-2 bg-bg-primary rounded-lg">
+                            <span className="text-sm">{KEY_ACTION_LABELS[action]}</span>
+                            <button 
+                                onClick={() => setListeningFor(action)}
+                                className={`px-3 py-1 text-xs rounded border transition-all ${
+                                    listeningFor === action 
+                                    ? 'bg-accent text-white border-accent animate-pulse' 
+                                    : 'bg-bg-secondary border-gray-600 text-text-secondary hover:border-text-primary'
+                                }`}
+                            >
+                                {listeningFor === action ? 'לחץ על מקש...' : keyMap[action][0].toUpperCase().replace(' ', 'Space')}
+                            </button>
+                        </div>
+                    ))}
                 </div>
             </div>
 

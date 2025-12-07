@@ -8,7 +8,7 @@ import {
     saveUserSettings,
     getUserSettings
 } from './services/firebase';
-import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES, User, AllSettings, StationFilter } from './types';
+import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES, User, AllSettings, StationFilter, KeyMap, KeyAction } from './types';
 import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
@@ -92,7 +92,15 @@ const defaultSettings: AllSettings = {
     isMarqueeCurrentTrackEnabled: true, isMarqueeNextTrackEnabled: true,
     marqueeSpeed: 6, marqueeDelay: 3, filter: StationFilter.All, 
     sortOrderAll: 'priority',
-    sortOrderFavorites: 'custom'
+    sortOrderFavorites: 'custom',
+    keyMap: {
+        playPause: [' ', 'Spacebar'],
+        volumeUp: ['ArrowUp'],
+        volumeDown: ['ArrowDown'],
+        nextStation: ['ArrowRight'],
+        prevStation: ['ArrowLeft'],
+        toggleFullscreen: ['f', 'F', 'כ']
+    }
 };
 
 const loadSettingsFromLocalStorage = (): AllSettings => {
@@ -120,6 +128,7 @@ const loadSettingsFromLocalStorage = (): AllSettings => {
         filter: safeJsonParse(localStorage.getItem('radio-last-filter'), defaultSettings.filter),
         sortOrderAll: safeJsonParse(localStorage.getItem('radio-sort-order-all'), oldSortOrder ?? defaultSettings.sortOrderAll),
         sortOrderFavorites: safeJsonParse(localStorage.getItem('radio-sort-order-favorites'), defaultSettings.sortOrderFavorites),
+        keyMap: safeJsonParse(localStorage.getItem('radio-key-map'), defaultSettings.keyMap),
     };
 };
 
@@ -145,6 +154,7 @@ const saveSettingsToLocalStorage = (settings: AllSettings) => {
     localStorage.setItem('radio-last-filter', JSON.stringify(settings.filter));
     localStorage.setItem('radio-sort-order-all', JSON.stringify(settings.sortOrderAll));
     localStorage.setItem('radio-sort-order-favorites', JSON.stringify(settings.sortOrderFavorites));
+    localStorage.setItem('radio-key-map', JSON.stringify(settings.keyMap));
 };
 
 const settingsHaveConflict = (local: AllSettings, cloud: AllSettings) => {
@@ -167,6 +177,10 @@ const normalizeSettings = (settings: Partial<AllSettings> | null): AllSettings =
             ...defaultsCopy.customEqSettings,
             ...(settings.customEqSettings || {}),
         },
+        keyMap: {
+            ...defaultsCopy.keyMap,
+            ...(settings.keyMap || {}),
+        }
     };
 };
 
@@ -224,13 +238,9 @@ export default function App() {
         const rawCloudSettings = await getUserSettings(user.uid);
         const cloudSettings = normalizeSettings(rawCloudSettings);
 
-        // If the user has synced before, or if this is their very first login (no cloud data),
-        // we skip the conflict check and load directly from the cloud.
         if (hasSyncedBefore || !rawCloudSettings) {
           console.log("טוען הגדרות מהענן, מדלג על בדיקת קונפליקט.");
           setAllSettings(cloudSettings);
-          // If this is the user's first ever login, their "local" settings (which are defaults at this point)
-          // become their initial cloud settings.
           if (!rawCloudSettings) {
             await saveUserSettings(user.uid, cloudSettings);
           }
@@ -238,8 +248,6 @@ export default function App() {
           setIsCloudSyncing(false);
           setUser(user);
         } else {
-          // This is a returning user who has used the app as a guest since their last session.
-          // We need to check for conflicts between their guest data and cloud data.
           const localSettings = settingsRef.current;
           
           console.log("--- השוואת הגדרות סנכרון ---");
@@ -250,7 +258,7 @@ export default function App() {
             console.log("זוהה קונפליקט. פותח חלון מיזוג.");
             setMergeModal({
               isOpen: true,
-              onMerge: () => { // Keep local, push to cloud
+              onMerge: () => {
                 setAllSettings(localSettings);
                 saveUserSettings(user.uid, localSettings);
                 localStorage.setItem('radio-has-synced-with-account', 'true');
@@ -258,7 +266,7 @@ export default function App() {
                 setIsCloudSyncing(false);
                 setUser(user);
               },
-              onDiscardLocal: () => { // Discard local, use cloud
+              onDiscardLocal: () => {
                 setAllSettings(cloudSettings);
                 localStorage.setItem('radio-has-synced-with-account', 'true');
                 setMergeModal({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
@@ -266,7 +274,7 @@ export default function App() {
                 setUser(user);
               },
             });
-          } else { // No conflict, just use cloud settings
+          } else {
             console.log("לא זוהו קונפליקטים. משתמש בהגדרות מהענן.");
             setAllSettings(cloudSettings);
             localStorage.setItem('radio-has-synced-with-account', 'true');
@@ -274,11 +282,10 @@ export default function App() {
             setUser(user);
           }
         }
-      } else { // Logout
+      } else {
         console.log("המשתמש התנתק. משחזר הגדרות מקומיות.");
         localStorage.removeItem('radio-has-synced-with-account');
         setUser(null);
-        // On logout, restore the last saved local state.
         setAllSettings(loadSettingsFromLocalStorage());
       }
       setIsAuthReady(true);
@@ -288,11 +295,9 @@ export default function App() {
 
   // Settings persistence effect
   useEffect(() => {
-    // Only save settings to local storage if the user is not logged in.
     if (!user) {
       saveSettingsToLocalStorage(allSettings);
     }
-    // Always save settings to the cloud if the user is logged in.
     if (user && !isCloudSyncing) {
         saveUserSettings(user.uid, allSettings);
     }
@@ -330,7 +335,6 @@ export default function App() {
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./service-worker.js').then(registration => {
-        // Check for an already waiting worker (installed but not active)
         if (registration.waiting) {
             waitingWorkerRef.current = registration.waiting;
             setIsUpdateAvailable(true);
@@ -388,33 +392,21 @@ export default function App() {
   const handleManualUpdateCheck = useCallback(async () => { if (!('serviceWorker' in navigator) || !navigator.serviceWorker.ready) { setUpdateStatus('error'); setTimeout(() => setUpdateStatus('idle'), 3000); return; } setUpdateStatus('checking'); try { const registration = await navigator.serviceWorker.ready; await registration.update(); setTimeout(() => { setUpdateStatus(cs => cs === 'checking' ? 'not-found' : cs); if (updateStatus === 'not-found') setTimeout(() => setUpdateStatus('idle'), 3000); }, 5000); } catch (error) { setUpdateStatus('error'); setTimeout(() => setUpdateStatus('idle'), 3000); } }, [updateStatus]);
   
   const handleUpdateClick = useCallback(async () => {
-    // 1. Try to get the worker from ref
     let worker = waitingWorkerRef.current;
-
-    // 2. If ref is dead/null, try to fetch it fresh from registration
     if (!worker) {
       const registration = await navigator.serviceWorker.getRegistration();
       worker = registration?.waiting || null;
     }
-
     if (!worker) {
-      // If still no worker, just force reload, maybe the browser handled it or it's a false positive
       window.location.reload();
       return;
     }
-
-    // 3. Post message to skip waiting
     worker.postMessage({ type: 'SKIP_WAITING' });
     setIsUpdateAvailable(false);
-
-    // 4. Wait for controller change, but also set a fallback timeout
     const reloadPage = () => {
         window.location.reload();
     };
-
     navigator.serviceWorker.addEventListener('controllerchange', reloadPage);
-
-    // Fallback: if controller change doesn't happen in 1000ms, reload anyway.
     setTimeout(reloadPage, 1000);
   }, []);
   
@@ -450,6 +442,58 @@ export default function App() {
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === currentSortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
+  // --- Keyboard Event Listener ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        // Ignore if typing in input/textarea or contentEditable
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+
+        const { key } = e;
+        let action: KeyAction | undefined;
+        
+        // Find which action corresponds to the pressed key
+        for (const [act, keys] of Object.entries(allSettings.keyMap) as [string, string[]][]) {
+            if (keys.includes(key)) {
+                action = act as KeyAction;
+                break;
+            }
+        }
+
+        if (action) {
+            e.preventDefault(); // Prevent default browser scrolling/actions for these keys
+            switch (action) {
+                case 'playPause': 
+                    handlePlayPause(); 
+                    break;
+                case 'volumeUp': 
+                    setAllSettings(s => ({...s, volume: Math.min(1, s.volume + 0.05)})); 
+                    break;
+                case 'volumeDown': 
+                    setAllSettings(s => ({...s, volume: Math.max(0, s.volume - 0.05)})); 
+                    break;
+                case 'nextStation': 
+                    handleNext(); 
+                    break;
+                case 'prevStation': 
+                    handlePrev(); 
+                    break;
+                case 'toggleFullscreen':
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen().catch(console.error);
+                    } else {
+                        document.exitFullscreen().catch(console.error);
+                    }
+                    break;
+            }
+        }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [allSettings.keyMap, handlePlayPause, handleNext, handlePrev]);
+
+
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col">
       <MergeDataModal {...mergeModal} />
@@ -477,7 +521,7 @@ export default function App() {
       <main className="flex-grow pb-48" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
         {stationsStatus === 'loading' ? ( <StationListSkeleton /> ) : stationsStatus === 'error' ? ( <p className="text-center text-red-400 p-4">{error}</p> ) : displayedStations.length > 0 ? ( <StationList stations={displayedStations} currentStation={playerState.station} onSelectStation={handleSelectStation} isFavorite={isFavorite} toggleFavorite={(uuid) => setAllSettings(s => ({...s, favorites: s.favorites.includes(uuid) ? s.favorites.filter(id => id !== uuid) : [...s.favorites, uuid]}))} onReorder={handleReorder} isStreamActive={playerState.status === 'PLAYING'} isStatusIndicatorEnabled={allSettings.isStatusIndicatorEnabled} gridSize={allSettings.gridSize} sortOrder={currentSortOrder} /> ) : ( <div className="text-center p-8 text-text-secondary"> <h2 className="text-xl font-semibold">{allSettings.filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}</h2> <p>{allSettings.filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}</p> </div> )}
       </main>
-      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} user={user} onLogin={signInWithGoogle} onLogout={signOutUser} currentTheme={allSettings.theme} onThemeChange={(v) => setAllSettings(s=>({...s, theme: v}))} currentEqPreset={allSettings.eqPreset} onEqPresetChange={(v) => setAllSettings(s=>({...s, eqPreset: v}))} isNowPlayingVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onNowPlayingVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isNowPlayingVisualizerEnabled: v}))} isPlayerBarVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} onPlayerBarVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isPlayerBarVisualizerEnabled: v}))} isStatusIndicatorEnabled={allSettings.isStatusIndicatorEnabled} onStatusIndicatorEnabledChange={(v) => setAllSettings(s=>({...s, isStatusIndicatorEnabled: v}))} isVolumeControlVisible={allSettings.isVolumeControlVisible} onVolumeControlVisibleChange={(v) => setAllSettings(s=>({...s, isVolumeControlVisible: v}))} showNextSong={allSettings.showNextSong} onShowNextSongChange={(v) => setAllSettings(s=>({...s, showNextSong: v}))} customEqSettings={allSettings.customEqSettings} onCustomEqChange={(v) => setAllSettings(s=>({...s, customEqSettings: v}))} gridSize={allSettings.gridSize} onGridSizeChange={(v) => setAllSettings(s=>({...s, gridSize: v}))} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} onMarqueeProgramEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeProgramEnabled: v}))} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} onMarqueeCurrentTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeCurrentTrackEnabled: v}))} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} onMarqueeNextTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeNextTrackEnabled: v}))} marqueeSpeed={allSettings.marqueeSpeed} onMarqueeSpeedChange={(v) => setAllSettings(s=>({...s, marqueeSpeed: v}))} marqueeDelay={allSettings.marqueeDelay} onMarqueeDelayChange={(v) => setAllSettings(s=>({...s, marqueeDelay: v}))} updateStatus={updateStatus} onManualUpdateCheck={handleManualUpdateCheck} />
+      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} user={user} onLogin={signInWithGoogle} onLogout={signOutUser} currentTheme={allSettings.theme} onThemeChange={(v) => setAllSettings(s=>({...s, theme: v}))} currentEqPreset={allSettings.eqPreset} onEqPresetChange={(v) => setAllSettings(s=>({...s, eqPreset: v}))} isNowPlayingVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onNowPlayingVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isNowPlayingVisualizerEnabled: v}))} isPlayerBarVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} onPlayerBarVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isPlayerBarVisualizerEnabled: v}))} isStatusIndicatorEnabled={allSettings.isStatusIndicatorEnabled} onStatusIndicatorEnabledChange={(v) => setAllSettings(s=>({...s, isStatusIndicatorEnabled: v}))} isVolumeControlVisible={allSettings.isVolumeControlVisible} onVolumeControlVisibleChange={(v) => setAllSettings(s=>({...s, isVolumeControlVisible: v}))} showNextSong={allSettings.showNextSong} onShowNextSongChange={(v) => setAllSettings(s=>({...s, showNextSong: v}))} customEqSettings={allSettings.customEqSettings} onCustomEqChange={(v) => setAllSettings(s=>({...s, customEqSettings: v}))} gridSize={allSettings.gridSize} onGridSizeChange={(v) => setAllSettings(s=>({...s, gridSize: v}))} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} onMarqueeProgramEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeProgramEnabled: v}))} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} onMarqueeCurrentTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeCurrentTrackEnabled: v}))} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} onMarqueeNextTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeNextTrackEnabled: v}))} marqueeSpeed={allSettings.marqueeSpeed} onMarqueeSpeedChange={(v) => setAllSettings(s=>({...s, marqueeSpeed: v}))} marqueeDelay={allSettings.marqueeDelay} onMarqueeDelayChange={(v) => setAllSettings(s=>({...s, marqueeDelay: v}))} updateStatus={updateStatus} onManualUpdateCheck={handleManualUpdateCheck} keyMap={allSettings.keyMap} onKeyMapChange={(newMap) => setAllSettings(s => ({...s, keyMap: newMap}))} />
       {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} frequencyData={frequencyData} visualizerStyle={allSettings.visualizerStyle} isVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={allSettings.isVolumeControlVisible} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
       <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
       <Player playerState={playerState} onPlay={handlePlay} onPause={handlePause} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} onPlayerEvent={(event) => dispatch(event)} eqPreset={allSettings.eqPreset} customEqSettings={allSettings.customEqSettings} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} onOpenNowPlaying={() => setIsNowPlayingOpen(true)} setFrequencyData={setFrequencyData} frequencyData={frequencyData} isVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} shouldUseProxy={shouldUseProxy} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} />

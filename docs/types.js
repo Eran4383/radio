@@ -1,3 +1,4 @@
+
 export const THEMES = ['dark', 'light', 'blue', 'sunset', 'forest', 'ocean', 'rose', 'matrix'];
 
 export const EQ_PRESET_KEYS = ['flat', 'bassBoost', 'vocalBoost', 'rock', 'movie', 'custom'];
@@ -40,4 +41,13 @@ export const GRID_SIZES = [1, 2, 3, 4, 5];
 export const StationFilter = {
   All: 'הכל',
   Favorites: 'מועדפים',
+};
+
+export const KEY_ACTION_LABELS = {
+    playPause: 'נגן / השהה',
+    volumeUp: 'הגבר עוצמה',
+    volumeDown: 'הנמך עוצמה',
+    nextStation: 'תחנה הבאה',
+    prevStation: 'תחנה קודמת',
+    toggleFullscreen: 'מסך מלא'
 };
