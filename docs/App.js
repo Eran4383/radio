@@ -22,6 +22,7 @@ import { fetchStationSpecificTrackInfo, hasSpecificHandler } from './services/st
 import StationListSkeleton from './components/StationListSkeleton.js';
 import { getCategory } from './services/categoryService.js';
 import MergeDataModal from './components/MergeDataModal.js';
+import ConfirmRemoveModal from './components/ConfirmRemoveModal.js';
 
 
 // Player State Machine
@@ -220,6 +221,9 @@ export default function App() {
   const [preMuteVolume, setPreMuteVolume] = useState(0.5);
   // Rebinding state to pause global shortcuts
   const [isRebinding, setIsRebinding] = useState(false);
+  
+  // State for removal confirmation modal
+  const [pendingRemoval, setPendingRemoval] = useState(null);
 
   // Determine if we should use proxy (if ANY visualizer is enabled)
   const shouldUseProxy = allSettings.isNowPlayingVisualizerEnabled || allSettings.isPlayerBarVisualizerEnabled;
@@ -434,6 +438,32 @@ export default function App() {
   const closeActionMenu = useCallback(() => setActionMenuState({ isOpen: false, songTitle: null }), []);
   const handleCycleVisualizerStyle = useCallback(() => setAllSettings(s => ({...s, visualizerStyle: VISUALIZER_STYLES[(VISUALIZER_STYLES.indexOf(s.visualizerStyle) + 1) % VISUALIZER_STYLES.length]})), []);
 
+  // Handle favorite toggle with confirmation
+  const toggleFavorite = (uuid) => {
+      const isCurrentlyFavorite = allSettings.favorites.includes(uuid);
+      if (isCurrentlyFavorite) {
+          const station = stations.find(s => s.stationuuid === uuid);
+          const name = station ? station.name : 'תחנה זו';
+          setPendingRemoval({ uuid, name });
+      } else {
+          setAllSettings(s => ({...s, favorites: [...s.favorites, uuid]}));
+      }
+  };
+
+  const confirmRemoval = () => {
+      if (pendingRemoval) {
+          setAllSettings(s => ({
+              ...s, 
+              favorites: s.favorites.filter(id => id !== pendingRemoval.uuid)
+          }));
+          setPendingRemoval(null);
+      }
+  };
+
+  const cancelRemoval = () => {
+      setPendingRemoval(null);
+  };
+
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === currentSortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
@@ -504,6 +534,12 @@ export default function App() {
   return (
     React.createElement("div", { className: "min-h-screen bg-bg-primary text-text-primary flex flex-col" },
       React.createElement(MergeDataModal, { ...mergeModal }),
+      React.createElement(ConfirmRemoveModal, { 
+        isOpen: !!pendingRemoval,
+        stationName: pendingRemoval?.name || '',
+        onConfirm: confirmRemoval,
+        onCancel: cancelRemoval
+      }),
       React.createElement("header", { className: "p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md" },
         React.createElement("div", { className: "max-w-7xl mx-auto flex items-center justify-between gap-4" },
             React.createElement("button", { onClick: () => setIsSettingsOpen(true), className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הגדרות" }, React.createElement(MenuIcon, { className: "w-6 h-6" })),
@@ -526,7 +562,7 @@ export default function App() {
         )
       ),
       React.createElement("main", { className: "flex-grow pb-48", onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd },
-        stationsStatus === 'loading' ? React.createElement(StationListSkeleton, null) : stationsStatus === 'error' ? React.createElement("p", { className: "text-center text-red-400 p-4" }, error) : displayedStations.length > 0 ? React.createElement(StationList, { stations: displayedStations, currentStation: playerState.station, onSelectStation: handleSelectStation, isFavorite: isFavorite, toggleFavorite: (uuid) => setAllSettings(s => ({...s, favorites: s.favorites.includes(uuid) ? s.favorites.filter(id => id !== uuid) : [...s.favorites, uuid]})), onReorder: handleReorder, isStreamActive: playerState.status === 'PLAYING', isStatusIndicatorEnabled: allSettings.isStatusIndicatorEnabled, gridSize: allSettings.gridSize, sortOrder: currentSortOrder }) : React.createElement("div", { className: "text-center p-8 text-text-secondary" }, React.createElement("h2", { className: "text-xl font-semibold" }, allSettings.filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'), React.createElement("p", null, allSettings.filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'))
+        stationsStatus === 'loading' ? React.createElement(StationListSkeleton, null) : stationsStatus === 'error' ? React.createElement("p", { className: "text-center text-red-400 p-4" }, error) : displayedStations.length > 0 ? React.createElement(StationList, { stations: displayedStations, currentStation: playerState.station, onSelectStation: handleSelectStation, isFavorite: isFavorite, toggleFavorite: toggleFavorite, onReorder: handleReorder, isStreamActive: playerState.status === 'PLAYING', isStatusIndicatorEnabled: allSettings.isStatusIndicatorEnabled, gridSize: allSettings.gridSize, sortOrder: currentSortOrder }) : React.createElement("div", { className: "text-center p-8 text-text-secondary" }, React.createElement("h2", { className: "text-xl font-semibold" }, allSettings.filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'), React.createElement("p", null, allSettings.filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'))
       ),
       React.createElement(SettingsPanel, { isOpen: isSettingsOpen, onClose: () => setIsSettingsOpen(false), user: user, onLogin: signInWithGoogle, onLogout: signOutUser, currentTheme: allSettings.theme, onThemeChange: (v) => setAllSettings(s=>({...s, theme: v})), currentEqPreset: allSettings.eqPreset, onEqPresetChange: (v) => setAllSettings(s=>({...s, eqPreset: v})), isNowPlayingVisualizerEnabled: allSettings.isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange: (v) => setAllSettings(s=>({...s, isNowPlayingVisualizerEnabled: v})), isPlayerBarVisualizerEnabled: allSettings.isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange: (v) => setAllSettings(s=>({...s, isPlayerBarVisualizerEnabled: v})), isStatusIndicatorEnabled: allSettings.isStatusIndicatorEnabled, onStatusIndicatorEnabledChange: (v) => setAllSettings(s=>({...s, isStatusIndicatorEnabled: v})), isVolumeControlVisible: allSettings.isVolumeControlVisible, onVolumeControlVisibleChange: (v) => setAllSettings(s=>({...s, isVolumeControlVisible: v})), showNextSong: allSettings.showNextSong, onShowNextSongChange: (v) => setAllSettings(s=>({...s, showNextSong: v})), customEqSettings: allSettings.customEqSettings, onCustomEqChange: (v) => setAllSettings(s=>({...s, customEqSettings: v})), gridSize: allSettings.gridSize, onGridSizeChange: (v) => setAllSettings(s=>({...s, gridSize: v})), isMarqueeProgramEnabled: allSettings.isMarqueeProgramEnabled, onMarqueeProgramEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeProgramEnabled: v})), isMarqueeCurrentTrackEnabled: allSettings.isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeCurrentTrackEnabled: v})), isMarqueeNextTrackEnabled: allSettings.isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeNextTrackEnabled: v})), marqueeSpeed: allSettings.marqueeSpeed, onMarqueeSpeedChange: (v) => setAllSettings(s=>({...s, marqueeSpeed: v})), marqueeDelay: allSettings.marqueeDelay, onMarqueeDelayChange: (v) => setAllSettings(s=>({...s, marqueeDelay: v})), updateStatus: updateStatus, onManualUpdateCheck: handleManualUpdateCheck, keyMap: allSettings.keyMap, onKeyMapChange: (newMap) => setAllSettings(s => ({...s, keyMap: newMap})), setIsRebinding: setIsRebinding }),
       playerState.station && React.createElement(NowPlaying, { isOpen: isNowPlayingOpen, onClose: () => !isVisualizerFullscreen && setIsNowPlayingOpen(false), station: playerState.station, isPlaying: playerState.status === 'PLAYING', onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, volume: allSettings.volume, onVolumeChange: (v) => setAllSettings(s=>({...s, volume: v})), trackInfo: trackInfo, showNextSong: allSettings.showNextSong, frequencyData: frequencyData, visualizerStyle: allSettings.visualizerStyle, isVisualizerEnabled: allSettings.isNowPlayingVisualizerEnabled, onCycleVisualizerStyle: handleCycleVisualizerStyle, isVolumeControlVisible: allSettings.isVolumeControlVisible, marqueeDelay: allSettings.marqueeDelay, isMarqueeProgramEnabled: allSettings.isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: allSettings.isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: allSettings.isMarqueeNextTrackEnabled, marqueeSpeed: allSettings.marqueeSpeed, onOpenActionMenu: openActionMenu, isVisualizerFullscreen: isVisualizerFullscreen, setIsVisualizerFullscreen: setIsVisualizerFullscreen }),
