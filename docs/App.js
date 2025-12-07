@@ -309,25 +309,57 @@ export default function App() {
     }
   }, [isAuthReady, stationsStatus]);
 
+  // Initial load logic: Cache First Strategy
   useEffect(() => {
-    const fetchInitialStations = async () => {
-      setStationsStatus('loading');
+    const loadStations = async () => {
+      // 1. Try to load from cache immediately
+      const cachedStationsStr = localStorage.getItem('radio-stations-cache');
+      let hasCachedData = false;
+
+      if (cachedStationsStr) {
+        try {
+          const cachedStations = JSON.parse(cachedStationsStr);
+          if (Array.isArray(cachedStations) && cachedStations.length > 0) {
+            setStations(cachedStations);
+            setStationsStatus('loaded');
+            hasCachedData = true;
+            console.log("Loaded stations from local cache.");
+          }
+        } catch (e) {
+          console.error("Failed to parse cached stations", e);
+        }
+      }
+
+      // If no cache, set loading status (which shows skeletons/loader)
+      if (!hasCachedData) {
+        setStationsStatus('loading');
+      }
+
+      // 2. Fetch fresh data from network in background
       try {
         const fetchedStations = await fetchIsraeliStations();
-        if (fetchedStations.length === 0) {
-          setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
-          setStationsStatus('error');
-        } else {
+        if (fetchedStations.length > 0) {
           setStations(fetchedStations);
           setStationsStatus('loaded');
+          // Update cache with fresh data
+          localStorage.setItem('radio-stations-cache', JSON.stringify(fetchedStations));
+          console.log("Stations updated from network and cached.");
+        } else if (!hasCachedData) {
+           // Only show error if we have absolutely no data (no cache, no network)
+           setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
+           setStationsStatus('error');
         }
       } catch (err) {
-        setError('אירעה שגיאה בטעינת התחנות.');
-        setStationsStatus('error');
-        console.error(err);
+        console.error("Error fetching stations:", err);
+        if (!hasCachedData) {
+           setError('אירעה שגיאה בטעינת התחנות.');
+           setStationsStatus('error');
+        }
+        // If hasCachedData is true, we simply fail silently and keep showing cached data.
       }
     };
-    fetchInitialStations();
+
+    loadStations();
   }, []);
 
   // Service Worker Update Handling

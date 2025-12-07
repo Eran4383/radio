@@ -327,25 +327,57 @@ export default function App() {
     }
   }, [isAuthReady, stationsStatus]);
 
+  // Initial load logic: Cache First Strategy
   useEffect(() => {
-    const fetchInitialStations = async () => {
-      setStationsStatus('loading');
+    const loadStations = async () => {
+      // 1. Try to load from cache immediately
+      const cachedStationsStr = localStorage.getItem('radio-stations-cache');
+      let hasCachedData = false;
+
+      if (cachedStationsStr) {
+        try {
+          const cachedStations = JSON.parse(cachedStationsStr);
+          if (Array.isArray(cachedStations) && cachedStations.length > 0) {
+            setStations(cachedStations);
+            setStationsStatus('loaded');
+            hasCachedData = true;
+            console.log("Loaded stations from local cache.");
+          }
+        } catch (e) {
+          console.error("Failed to parse cached stations", e);
+        }
+      }
+
+      // If no cache, set loading status (which shows skeletons/loader)
+      if (!hasCachedData) {
+        setStationsStatus('loading');
+      }
+
+      // 2. Fetch fresh data from network in background
       try {
         const fetchedStations = await fetchIsraeliStations();
-        if (fetchedStations.length === 0) {
-          setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
-          setStationsStatus('error');
-        } else {
+        if (fetchedStations.length > 0) {
           setStations(fetchedStations);
           setStationsStatus('loaded');
+          // Update cache with fresh data
+          localStorage.setItem('radio-stations-cache', JSON.stringify(fetchedStations));
+          console.log("Stations updated from network and cached.");
+        } else if (!hasCachedData) {
+           // Only show error if we have absolutely no data (no cache, no network)
+           setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
+           setStationsStatus('error');
         }
       } catch (err) {
-        setError('אירעה שגיאה בטעינת התחנות.');
-        setStationsStatus('error');
-        console.error(err);
+        console.error("Error fetching stations:", err);
+        if (!hasCachedData) {
+           setError('אירעה שגיאה בטעינת התחנות.');
+           setStationsStatus('error');
+        }
+        // If hasCachedData is true, we simply fail silently and keep showing cached data.
       }
     };
-    fetchInitialStations();
+
+    loadStations();
   }, []);
 
   // Service Worker Update Handling
@@ -587,7 +619,46 @@ export default function App() {
       <main className="flex-grow pb-48" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
         {stationsStatus === 'loading' ? ( <StationListSkeleton /> ) : stationsStatus === 'error' ? ( <p className="text-center text-red-400 p-4">{error}</p> ) : displayedStations.length > 0 ? ( <StationList stations={displayedStations} currentStation={playerState.station} onSelectStation={handleSelectStation} isFavorite={isFavorite} toggleFavorite={toggleFavorite} onReorder={handleReorder} isStreamActive={playerState.status === 'PLAYING'} isStatusIndicatorEnabled={allSettings.isStatusIndicatorEnabled} gridSize={allSettings.gridSize} sortOrder={currentSortOrder} /> ) : ( <div className="text-center p-8 text-text-secondary"> <h2 className="text-xl font-semibold">{allSettings.filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'}</h2> <p>{allSettings.filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'}</p> </div> )}
       </main>
-      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} user={user} onLogin={signInWithGoogle} onLogout={signOutUser} currentTheme={allSettings.theme} onThemeChange={(v) => setAllSettings(s=>({...s, theme: v}))} currentEqPreset={allSettings.eqPreset} onEqPresetChange={(v) => setAllSettings(s=>({...s, eqPreset: v}))} isNowPlayingVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onNowPlayingVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isNowPlayingVisualizerEnabled: v}))} isPlayerBarVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} onPlayerBarVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isPlayerBarVisualizerEnabled: v}))} isStatusIndicatorEnabled={allSettings.isStatusIndicatorEnabled} onStatusIndicatorEnabledChange={(v) => setAllSettings(s=>({...s, isStatusIndicatorEnabled: v}))} isVolumeControlVisible={allSettings.isVolumeControlVisible} onVolumeControlVisibleChange={(v) => setAllSettings(s=>({...s, isVolumeControlVisible: v}))} showNextSong={allSettings.showNextSong} onShowNextSongChange={(v) => setAllSettings(s=>({...s, showNextSong: v}))} customEqSettings={allSettings.customEqSettings} onCustomEqChange={(v) => setAllSettings(s=>({...s, customEqSettings: v}))} gridSize={allSettings.gridSize} onGridSizeChange={(v) => setAllSettings(s=>({...s, gridSize: v}))} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} onMarqueeProgramEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeProgramEnabled: v}))} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} onMarqueeCurrentTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeCurrentTrackEnabled: v}))} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} onMarqueeNextTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeNextTrackEnabled: v}))} marqueeSpeed={allSettings.marqueeSpeed} onMarqueeSpeedChange={(v) => setAllSettings(s=>({...s, marqueeSpeed: v}))} marqueeDelay={allSettings.marqueeDelay} onMarqueeDelayChange={(v) => setAllSettings(s=>({...s, marqueeDelay: v}))} updateStatus={updateStatus} onManualUpdateCheck={handleManualUpdateCheck} keyMap={allSettings.keyMap} onKeyMapChange={(newMap) => setAllSettings(s => ({...s, keyMap: newMap}))} setIsRebinding={setIsRebinding} />
+      <SettingsPanel 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+        user={user} 
+        onLogin={signInWithGoogle} 
+        onLogout={signOutUser} 
+        currentTheme={allSettings.theme} 
+        onThemeChange={(v) => setAllSettings(s=>({...s, theme: v}))} 
+        currentEqPreset={allSettings.eqPreset} 
+        onEqPresetChange={(v) => setAllSettings(s=>({...s, eqPreset: v}))} 
+        isNowPlayingVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} 
+        onNowPlayingVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isNowPlayingVisualizerEnabled: v}))} 
+        isPlayerBarVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} 
+        onPlayerBarVisualizerEnabledChange={(v) => setAllSettings(s=>({...s, isPlayerBarVisualizerEnabled: v}))} 
+        isStatusIndicatorEnabled={allSettings.isStatusIndicatorEnabled} 
+        onStatusIndicatorEnabledChange={(v) => setAllSettings(s=>({...s, isStatusIndicatorEnabled: v}))} 
+        isVolumeControlVisible={allSettings.isVolumeControlVisible} 
+        onVolumeControlVisibleChange={(v) => setAllSettings(s=>({...s, isVolumeControlVisible: v}))} 
+        showNextSong={allSettings.showNextSong} 
+        onShowNextSongChange={(v) => setAllSettings(s=>({...s, showNextSong: v}))} 
+        customEqSettings={allSettings.customEqSettings} 
+        onCustomEqChange={(v) => setAllSettings(s=>({...s, customEqSettings: v}))} 
+        gridSize={allSettings.gridSize} 
+        onGridSizeChange={(v) => setAllSettings(s=>({...s, gridSize: v}))} 
+        isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} 
+        onMarqueeProgramEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeProgramEnabled: v}))} 
+        isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} 
+        onMarqueeCurrentTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeCurrentTrackEnabled: v}))} 
+        isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} 
+        onMarqueeNextTrackEnabledChange={(v) => setAllSettings(s=>({...s, isMarqueeNextTrackEnabled: v}))} 
+        marqueeSpeed={allSettings.marqueeSpeed} 
+        onMarqueeSpeedChange={(v) => setAllSettings(s=>({...s, marqueeSpeed: v}))} 
+        marqueeDelay={allSettings.marqueeDelay} 
+        onMarqueeDelayChange={(v) => setAllSettings(s=>({...s, marqueeDelay: v}))} 
+        updateStatus={updateStatus} 
+        onManualUpdateCheck={handleManualUpdateCheck} 
+        keyMap={allSettings.keyMap} 
+        onKeyMapChange={(newMap) => setAllSettings(s => ({...s, keyMap: newMap}))}
+        setIsRebinding={setIsRebinding} 
+      />
       {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} frequencyData={frequencyData} visualizerStyle={allSettings.visualizerStyle} isVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={allSettings.isVolumeControlVisible} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
       <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
       <Player playerState={playerState} onPlay={handlePlay} onPause={handlePause} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} onPlayerEvent={(event) => dispatch(event)} eqPreset={allSettings.eqPreset} customEqSettings={allSettings.customEqSettings} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} onOpenNowPlaying={() => setIsNowPlayingOpen(true)} setFrequencyData={setFrequencyData} frequencyData={frequencyData} isVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} shouldUseProxy={shouldUseProxy} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} />
@@ -595,3 +666,4 @@ export default function App() {
     </div>
   );
 }
+
