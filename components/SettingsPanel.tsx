@@ -1,10 +1,9 @@
 
-
-
 import React, { useState, useEffect } from 'react';
 import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize, User, KeyMap, KeyAction, KEY_ACTION_LABELS } from '../types';
 import Auth from './Auth';
 import { ChevronDownIcon } from './Icons';
+import { BUILD_INFO } from '../buildInfo';
 
 type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'found' | 'not-found' | 'error';
 
@@ -53,6 +52,15 @@ interface SettingsPanelProps {
 
 const releaseNotes = [
   {
+    version: '1.1',
+    date: '08.12.2025',
+    features: [
+        "הוספת פאנל ניהול מתקדם.",
+        "מנגנון עדכון גרסה אוטומטי.",
+        "אפשרויות מיון חדשות בתפריט הניהול.",
+    ],
+  },
+  {
     version: '1.0',
     date: '06.12.2025',
     features: [
@@ -63,8 +71,6 @@ const releaseNotes = [
     ],
   },
 ];
-
-const currentVersionInfo = releaseNotes[0];
 
 const DEFAULT_KEY_MAP: KeyMap = {
     playPause: [' ', 'Spacebar'],
@@ -507,12 +513,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </SettingsSection>
 
             <div className="mt-auto flex-shrink-0 pt-4">
-                {user && (
-                    <div className="mb-4 p-2 bg-gray-900/50 rounded text-[10px] font-mono text-gray-400 text-center break-all select-all">
-                        User: {user.email || user.uid}<br/>
-                        Role: {isAdmin ? 'Admin' : 'User'}
-                    </div>
-                )}
                 {isVersionHistoryVisible && (
                     <div className="mb-4 text-xs text-text-secondary">
                         <h4 className="font-bold text-sm text-text-primary mb-2">היסטוריית גרסאות</h4>
@@ -538,7 +538,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         tabIndex={updateStatus === 'idle' ? 0 : -1}
                         aria-live="polite"
                     >
-                        <p>רדיו פרימיום v{currentVersionInfo.version} ({currentVersionInfo.date})</p>
+                        <p>רדיו פרימיום v{BUILD_INFO.version} ({BUILD_INFO.buildDate})</p>
                         <div className="h-4 mt-1 flex items-center justify-center">
                             {getUpdateStatusContent()}
                         </div>

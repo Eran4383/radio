@@ -1,14 +1,20 @@
 
-
-
-
-
 import React, { useState, useEffect } from 'react';
 import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, KEY_ACTION_LABELS } from '../types.js';
 import Auth from './Auth.js';
 import { ChevronDownIcon } from './Icons.js';
+import { BUILD_INFO } from '../buildInfo.js';
 
 const releaseNotes = [
+  {
+    version: '1.1',
+    date: '08.12.2025',
+    features: [
+        "הוספת פאנל ניהול מתקדם.",
+        "מנגנון עדכון גרסה אוטומטי.",
+        "אפשרויות מיון חדשות בתפריט הניהול.",
+    ],
+  },
   {
     version: '1.0',
     date: '06.12.2025',
@@ -20,8 +26,6 @@ const releaseNotes = [
     ],
   },
 ];
-
-const currentVersionInfo = releaseNotes[0];
 
 const DEFAULT_KEY_MAP = {
     playPause: [' ', 'Spacebar'],
@@ -436,13 +440,6 @@ const SettingsPanel = ({
             ),
 
             React.createElement("div", { className: "mt-auto flex-shrink-0 pt-4" },
-                user && (
-                    React.createElement("div", { className: "mb-4 p-2 bg-gray-900/50 rounded text-[10px] font-mono text-gray-400 text-center break-all select-all" },
-                        `User: ${user.email || user.uid}`,
-                        React.createElement("br"),
-                        `Role: ${isAdmin ? 'Admin' : 'User'}`
-                    )
-                ),
                 isVersionHistoryVisible && (
                     React.createElement("div", { className: "mb-4 text-xs text-text-secondary" },
                         React.createElement("h4", { className: "font-bold text-sm text-text-primary mb-2" }, "היסטוריית גרסאות"),
@@ -468,7 +465,7 @@ const SettingsPanel = ({
                         tabIndex: updateStatus === 'idle' ? 0 : -1,
                         "aria-live": "polite"
                     },
-                        React.createElement("p", null, `רדיו פרימיום v${currentVersionInfo.version} (${currentVersionInfo.date})`),
+                        React.createElement("p", null, `רדיו פרימיום v${BUILD_INFO.version} (${BUILD_INFO.buildDate})`),
                         React.createElement("div", { className: "h-4 mt-1 flex items-center justify-center" },
                             getUpdateStatusContent()
                         )
