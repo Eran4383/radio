@@ -14,7 +14,7 @@
     *   **IMPORTS**: Ensure imports in the `docs/` JS files allow for browser execution (ES Modules).
 4.  **VERSIONING**:
     *   **MANDATORY**: On EVERY response that includes code changes, you MUST update `buildInfo.ts` (and `docs/buildInfo.js`).
-    *   Update `buildDate` to the current date and time (DD.MM.YYYY HH:mm).
+    *   Update `buildDate` to the current date (DD.MM.YYYY). Do NOT include the time.
     *   Increment `version` if significant features are added (optional).
 5.  **SINGLE SOURCE OF TRUTH**: This file, `INSTRUCTIONS.md`, contains the definitive workflow. Adhere to it strictly. Failure to update the `docs/` folder results in a broken app.
 
