@@ -1,6 +1,7 @@
 
 import { PRIORITY_STATIONS } from '../constants.js';
 import { CORS_PROXY_URL } from '../constants.js';
+import { fetchCustomStations } from './firebase.js';
 
 // Function to shuffle an array for load distribution
 const shuffleArray = (array) => {
@@ -11,7 +12,6 @@ const shuffleArray = (array) => {
     return array;
 };
 
-// A larger, hardcoded list of reliable API servers.
 const API_SERVERS = [
     'https://de1.api.radio-browser.info/json',
     'https://nl1.api.radio-browser.info/json',
@@ -27,7 +27,7 @@ const fetchRadioBrowserStations = async () => {
   for (const serverUrl of servers) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8-second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/bycountrycodeexact/IL?limit=300&hidebroken=true`;
       const response = await fetch(proxiedUrl, {
@@ -37,27 +37,17 @@ const fetchRadioBrowserStations = async () => {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        console.warn(`Failed to fetch from Radio-Browser server ${serverUrl} (status: ${response.status}), trying next.`);
-        continue; // Try next server
+        continue; 
       }
       const data = await response.json();
       if (data && data.length > 0) {
         console.log(`Successfully fetched ${data.length} raw stations from ${serverUrl}`);
         return data;
       }
-      
-      console.warn(`Radio-Browser server ${serverUrl} returned empty or invalid station data, trying next.`);
-
     } catch (error) {
-      if (error.name === 'AbortError') {
-        console.warn(`Request to Radio-Browser server ${serverUrl} timed out, trying next.`);
-      } else {
-        console.warn(`Error connecting to Radio-Browser server ${serverUrl}:`, error);
-      }
+      // silent fail try next
     }
   }
-
-  console.error('Error fetching stations from Radio-Browser: All API servers failed.');
   return [];
 };
 
@@ -73,12 +63,10 @@ const fetch100fmStations = async () => {
     clearTimeout(timeoutId);
     
     if (!response.ok) {
-      console.warn(`Failed to fetch from 100fm API (status: ${response.status})`);
       return [];
     }
     const data = await response.json();
     if (!data || !Array.isArray(data.stations)) {
-      console.warn('100fm API returned invalid data format');
       return [];
     }
 
@@ -89,21 +77,19 @@ const fetch100fmStations = async () => {
       favicon: s.cover || s.logo,
       tags: s.description?.split('\n')[0] || s.name,
       countrycode: 'IL',
-      codec: 'AAC', // Assume AAC for HLS streams
-      bitrate: 128, // Default bitrate
+      codec: 'AAC',
+      bitrate: 128, 
     }));
 
-    console.log(`Successfully fetched ${newStations.length} stations from 100fm API`);
-    return newStations.filter(s => s.url_resolved); // Ensure stations have a stream URL
+    return newStations.filter(s => s.url_resolved); 
 
   } catch (error) {
-    console.error('Error fetching stations from 100fm API:', error);
     return [];
   }
 };
 
 
-export const fetchIsraeliStations = async () => {
+export const fetchDefaultIsraeliStations = async () => {
   const [radioBrowserResult, fm100Result] = await Promise.allSettled([
     fetchRadioBrowserStations(),
     fetch100fmStations(),
@@ -113,14 +99,10 @@ export const fetchIsraeliStations = async () => {
 
   if (radioBrowserResult.status === 'fulfilled') {
     allStations = allStations.concat(radioBrowserResult.value);
-  } else {
-    console.error('Radio-Browser fetch failed:', radioBrowserResult.reason);
   }
 
   if (fm100Result.status === 'fulfilled') {
     allStations = allStations.concat(fm100Result.value);
-  } else {
-    console.error('100fm fetch failed:', fm100Result.reason);
   }
 
   if (allStations.length === 0) {
@@ -128,7 +110,6 @@ export const fetchIsraeliStations = async () => {
     return [];
   }
 
-  // Clean up station names for specific providers like "JOINT RADIO"
   allStations.forEach(station => {
     if (station.name.toUpperCase().includes('JOINT RADIO')) {
         station.name = station.name
@@ -138,7 +119,6 @@ export const fetchIsraeliStations = async () => {
     }
   });
 
-  // --- Enhanced De-duplication Logic ---
   const uniqueStations = new Map();
 
   const getCanonicalName = (name) => {
@@ -163,11 +143,9 @@ export const fetchIsraeliStations = async () => {
           if (!existingStation) {
               shouldReplace = true;
           } else {
-              // Prefer higher bitrate
               if (station.bitrate > existingStation.bitrate) {
                   shouldReplace = true;
               } 
-              // If bitrates are equal, prefer 100fm source over radio-browser as it's curated
               else if (station.bitrate === existingStation.bitrate && station.stationuuid.startsWith('100fm-') && !existingStation.stationuuid.startsWith('100fm-')) {
                   shouldReplace = true;
               }
@@ -182,11 +160,26 @@ export const fetchIsraeliStations = async () => {
       }
   });
   
-  const finalStations = Array.from(uniqueStations.values());
-  console.log(`Successfully combined and de-duplicated ${finalStations.length} stations from all sources.`);
-  return finalStations;
+  return Array.from(uniqueStations.values());
 };
 
+// Main function to get stations - prioritizes Cloud Firestore
+export const fetchStations = async () => {
+    // 1. Try to fetch from Firestore (Custom Admin List)
+    try {
+        const customStations = await fetchCustomStations();
+        if (customStations && Array.isArray(customStations)) {
+            console.log(`Loaded ${customStations.length} stations from Cloud Storage.`);
+            return customStations;
+        }
+    } catch (e) {
+        console.warn("Failed to load custom stations, falling back to default API.", e);
+    }
+
+    // 2. Fallback to default API logic
+    console.log("Loading default stations from external APIs...");
+    return fetchDefaultIsraeliStations();
+};
 
 export const fetchLiveTrackInfo = async (stationuuid) => {
     if (!stationuuid) return null;
@@ -196,9 +189,8 @@ export const fetchLiveTrackInfo = async (stationuuid) => {
     for (const serverUrl of servers) {
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second timeout
+            const timeoutId = setTimeout(() => controller.abort(), 5000); 
 
-            // FIX: Added &t=${Date.now()} to bust proxy cache
             const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/check?uuids=${stationuuid}&t=${Date.now()}`;
             const response = await fetch(proxiedUrl, {
                 signal: controller.signal,
@@ -220,10 +212,8 @@ export const fetchLiveTrackInfo = async (stationuuid) => {
                 }
             }
         } catch (error) {
-            // Silent on errors, just try the next server
+            // Silent on errors
         }
     }
-
-    console.warn(`Could not fetch live track info for ${stationuuid} from any server.`);
     return null;
 };

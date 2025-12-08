@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, KEY_ACTION_LABELS } from '../types.js';
 import Auth from './Auth.js';
@@ -104,7 +103,7 @@ const SettingsSection = ({ title, children, isOpen, onToggle }) => {
 
 
 const SettingsPanel = ({ 
-    isOpen, onClose, user, onLogin, onLogout, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
+    isOpen, onClose, user, isAdmin, onOpenAdminPanel, onLogin, onLogout, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
     isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange,
     isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange,
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
@@ -207,6 +206,17 @@ const SettingsPanel = ({
             React.createElement("div", { className: "flex justify-between items-center mb-6 flex-shrink-0" },
                 React.createElement("h2", { className: "text-xl font-bold text-text-primary" }, "הגדרות"),
                 React.createElement(Auth, { user: user, onLogin: onLogin, onLogout: onLogout })
+            ),
+
+            isAdmin && (
+                React.createElement("div", { className: "mb-6 animate-fade-in-up" },
+                    React.createElement("button", {
+                        onClick: () => { onClose(); onOpenAdminPanel(); },
+                        className: "w-full bg-accent/20 hover:bg-accent/40 text-accent border border-accent/50 font-bold py-3 px-4 rounded-lg transition-all"
+                    },
+                        "🛠️ פאנל ניהול"
+                    )
+                )
             ),
 
             React.createElement(SettingsSection, { title: "ערכת נושא", isOpen: openSections.theme, onToggle: () => toggleSection('theme') },
