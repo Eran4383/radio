@@ -1,6 +1,8 @@
 
 
 
+
+
 import React, { useState, useEffect } from 'react';
 import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, KEY_ACTION_LABELS } from '../types.js';
 import Auth from './Auth.js';
@@ -41,7 +43,7 @@ const DEFAULT_KEY_MAP = {
 const SettingsButton = ({ label, isActive, onClick }) => (
     React.createElement("button", {
         onClick: onClick,
-        className: `px-4 py-2 text-xs font-medium rounded-md transition-colors w-full capitalize ${
+        className: `px-2 py-2 text-xs font-medium rounded-md transition-colors w-full min-h-[2.5rem] flex items-center justify-center text-center whitespace-normal leading-tight ${
             isActive ? 'bg-accent text-white' : 'bg-bg-primary hover:bg-accent/20'
         }`
     },
@@ -51,8 +53,8 @@ const SettingsButton = ({ label, isActive, onClick }) => (
 
 const ToggleSwitch = ({ label, enabled, onChange, disabled = false }) => (
      React.createElement("label", { className: `w-full flex items-center justify-between p-3 rounded-lg transition-colors duration-200 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-accent/10'} bg-bg-primary` },
-        React.createElement("span", { className: "font-medium text-text-primary" }, label),
-        React.createElement("div", { className: "relative inline-flex items-center cursor-pointer" },
+        React.createElement("span", { className: "font-medium text-text-primary text-sm whitespace-normal leading-tight max-w-[70%]" }, label),
+        React.createElement("div", { className: "relative inline-flex items-center cursor-pointer flex-shrink-0" },
             React.createElement("input", { 
                 type: "checkbox", 
                 checked: enabled, 
