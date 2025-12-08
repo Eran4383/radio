@@ -76,13 +76,13 @@ const STATIONS_DOC_ID = 'stations_list';
 export const checkAdminRole = async (email: string): Promise<boolean> => {
     if (!email) return false;
     try {
-        // Use the email directly as the document ID
-        const docRef = doc(db, ADMINS_COLLECTION, email);
+        // Use the email directly as the document ID (normalized to lowercase)
+        const normalizedEmail = email.toLowerCase();
+        const docRef = doc(db, ADMINS_COLLECTION, normalizedEmail);
         const docSnap = await getDoc(docRef);
         
         const exists = docSnap.exists();
-        console.log(`[Admin Check] Checking permissions for: ${email}`);
-        console.log(`[Admin Check] Document path: ${ADMINS_COLLECTION}/${email}`);
+        console.log(`[Admin Check] Checking permissions for: ${normalizedEmail}`);
         console.log(`[Admin Check] Is Admin? ${exists}`);
         
         return exists;
@@ -106,7 +106,8 @@ export const fetchAdmins = async (): Promise<string[]> => {
 // Add a new admin
 export const addAdmin = async (email: string) => {
     try {
-        await setDoc(doc(db, ADMINS_COLLECTION, email), {
+        const normalizedEmail = email.toLowerCase();
+        await setDoc(doc(db, ADMINS_COLLECTION, normalizedEmail), {
             addedAt: serverTimestamp(),
             role: 'admin'
         });
@@ -120,7 +121,8 @@ export const addAdmin = async (email: string) => {
 // Remove an admin
 export const removeAdmin = async (email: string) => {
     try {
-        await deleteDoc(doc(db, ADMINS_COLLECTION, email));
+        const normalizedEmail = email.toLowerCase();
+        await deleteDoc(doc(db, ADMINS_COLLECTION, normalizedEmail));
         return true;
     } catch (error) {
         console.error("Error removing admin:", error);

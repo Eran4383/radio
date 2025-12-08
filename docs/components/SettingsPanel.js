@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect } from 'react';
 import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, KEY_ACTION_LABELS } from '../types.js';
 import Auth from './Auth.js';
@@ -432,6 +434,13 @@ const SettingsPanel = ({
             ),
 
             React.createElement("div", { className: "mt-auto flex-shrink-0 pt-4" },
+                user && (
+                    React.createElement("div", { className: "mb-4 p-2 bg-gray-900/50 rounded text-[10px] font-mono text-gray-400 text-center break-all select-all" },
+                        `User: ${user.email || user.uid}`,
+                        React.createElement("br"),
+                        `Role: ${isAdmin ? 'Admin' : 'User'}`
+                    )
+                ),
                 isVersionHistoryVisible && (
                     React.createElement("div", { className: "mb-4 text-xs text-text-secondary" },
                         React.createElement("h4", { className: "font-bold text-sm text-text-primary mb-2" }, "היסטוריית גרסאות"),

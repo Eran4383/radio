@@ -507,6 +507,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </SettingsSection>
 
             <div className="mt-auto flex-shrink-0 pt-4">
+                {user && (
+                    <div className="mb-4 p-2 bg-gray-900/50 rounded text-[10px] font-mono text-gray-400 text-center break-all select-all">
+                        User: {user.email || user.uid}<br/>
+                        Role: {isAdmin ? 'Admin' : 'User'}
+                    </div>
+                )}
                 {isVersionHistoryVisible && (
                     <div className="mb-4 text-xs text-text-secondary">
                         <h4 className="font-bold text-sm text-text-primary mb-2">היסטוריית גרסאות</h4>
