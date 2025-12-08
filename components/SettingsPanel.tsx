@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect } from 'react';
 import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize, User, KeyMap, KeyAction, KEY_ACTION_LABELS } from '../types';
 import Auth from './Auth';
@@ -11,6 +12,8 @@ interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
   user: User | null;
+  isAdmin: boolean;
+  onOpenAdminPanel: () => void;
   onLogin: () => void;
   onLogout: () => void;
   currentTheme: Theme;
@@ -165,7 +168,7 @@ const SettingsSection: React.FC<{
 
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
-    isOpen, onClose, user, onLogin, onLogout, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
+    isOpen, onClose, user, isAdmin, onOpenAdminPanel, onLogin, onLogout, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
     isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange,
     isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange,
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
@@ -273,6 +276,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <h2 className="text-xl font-bold text-text-primary">הגדרות</h2>
                 <Auth user={user} onLogin={onLogin} onLogout={onLogout} />
             </div>
+
+            {isAdmin && (
+                <div className="mb-6 animate-fade-in-up">
+                    <button 
+                        onClick={() => { onClose(); onOpenAdminPanel(); }}
+                        className="w-full bg-accent/20 hover:bg-accent/40 text-accent border border-accent/50 font-bold py-3 px-4 rounded-lg transition-all"
+                    >
+                        🛠️ פאנל ניהול
+                    </button>
+                </div>
+            )}
 
             <SettingsSection title="ערכת נושא" isOpen={openSections.theme} onToggle={() => toggleSection('theme')}>
                 <div className="grid grid-cols-4 gap-2">

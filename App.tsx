@@ -1,13 +1,15 @@
 
 
+
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
-import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService';
+import { fetchStations, fetchLiveTrackInfo } from './services/radioService';
 import { 
     signInWithGoogle, 
     signOutUser, 
     onAuthStateChangedListener,
     saveUserSettings,
-    getUserSettings
+    getUserSettings,
+    checkAdminRole
 } from './services/firebase';
 import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES, User, AllSettings, StationFilter, KeyMap, KeyAction } from './types';
 import Player from './components/Player';
@@ -15,6 +17,7 @@ import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
 import NowPlaying from './components/NowPlaying';
 import ActionMenu from './components/ActionMenu';
+import AdminPanel from './components/AdminPanel';
 import { PRIORITY_STATIONS } from './constants';
 import { MenuIcon } from './components/Icons';
 import { getCurrentProgram } from './services/scheduleService';
@@ -208,6 +211,7 @@ export default function App() {
   const [playerState, dispatch] = useReducer(playerReducer, initialPlayerState);
   
   const [user, setUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [mergeModal, setMergeModal] = useState({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
@@ -222,6 +226,7 @@ export default function App() {
 
   const [error, setError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
   const [isVisualizerFullscreen, setIsVisualizerFullscreen] = useState(false);
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
@@ -251,6 +256,10 @@ export default function App() {
     const unsubscribe = onAuthStateChangedListener(async (user) => {
       if (user) {
         setIsCloudSyncing(true);
+        if (user.email) {
+             checkAdminRole(user.email).then(setIsAdmin);
+        }
+        
         const hasSyncedBefore = localStorage.getItem('radio-has-synced-with-account') === 'true';
         const rawCloudSettings = await getUserSettings(user.uid);
         const cloudSettings = normalizeSettings(rawCloudSettings);
@@ -303,6 +312,7 @@ export default function App() {
         console.log("המשתמש התנתק. משחזר הגדרות מקומיות.");
         localStorage.removeItem('radio-has-synced-with-account');
         setUser(null);
+        setIsAdmin(false);
         setAllSettings(loadSettingsFromLocalStorage());
       }
       setIsAuthReady(true);
@@ -353,15 +363,15 @@ export default function App() {
         setStationsStatus('loading');
       }
 
-      // 2. Fetch fresh data from network in background
+      // 2. Fetch fresh data from network in background (Firestore preferred)
       try {
-        const fetchedStations = await fetchIsraeliStations();
+        const fetchedStations = await fetchStations();
         if (fetchedStations.length > 0) {
           setStations(fetchedStations);
           setStationsStatus('loaded');
           // Update cache with fresh data
           localStorage.setItem('radio-stations-cache', JSON.stringify(fetchedStations));
-          console.log("Stations updated from network and cached.");
+          console.log("Stations updated from network/cloud and cached.");
         } else if (!hasCachedData) {
            // Only show error if we have absolutely no data (no cache, no network)
            setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
@@ -373,7 +383,6 @@ export default function App() {
            setError('אירעה שגיאה בטעינת התחנות.');
            setStationsStatus('error');
         }
-        // If hasCachedData is true, we simply fail silently and keep showing cached data.
       }
     };
 
@@ -513,6 +522,11 @@ export default function App() {
   const cancelRemoval = () => {
       setPendingRemoval(null);
   };
+  
+  const handleAdminUpdate = (newStations: Station[]) => {
+      setStations(newStations);
+      localStorage.setItem('radio-stations-cache', JSON.stringify(newStations));
+  };
 
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === currentSortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
@@ -595,6 +609,14 @@ export default function App() {
         onConfirm={confirmRemoval}
         onCancel={cancelRemoval}
       />
+      <AdminPanel 
+        isOpen={isAdminPanelOpen}
+        onClose={() => setIsAdminPanelOpen(false)}
+        currentStations={stations}
+        onStationsUpdate={handleAdminUpdate}
+        currentUserEmail={user?.email || null}
+      />
+      
       <header className="p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
             <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הגדרות"><MenuIcon className="w-6 h-6" /></button>
@@ -623,6 +645,8 @@ export default function App() {
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)} 
         user={user} 
+        isAdmin={isAdmin}
+        onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
         onLogin={signInWithGoogle} 
         onLogout={signOutUser} 
         currentTheme={allSettings.theme} 
@@ -666,4 +690,3 @@ export default function App() {
     </div>
   );
 }
-

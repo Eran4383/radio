@@ -2,6 +2,7 @@
 import { Station } from '../types';
 import { PRIORITY_STATIONS } from '../constants';
 import { CORS_PROXY_URL } from '../constants';
+import { fetchCustomStations } from './firebase';
 
 // Function to shuffle an array for load distribution
 const shuffleArray = <T>(array: T[]): T[] => {
@@ -104,7 +105,8 @@ const fetch100fmStations = async (): Promise<Station[]> => {
 };
 
 
-export const fetchIsraeliStations = async (): Promise<Station[]> => {
+// Renamed to fetchDefaultIsraeliStations to indicate this is the fallback logic
+export const fetchDefaultIsraeliStations = async (): Promise<Station[]> => {
   const [radioBrowserResult, fm100Result] = await Promise.allSettled([
     fetchRadioBrowserStations(),
     fetch100fmStations(),
@@ -186,6 +188,24 @@ export const fetchIsraeliStations = async (): Promise<Station[]> => {
   const finalStations = Array.from(uniqueStations.values());
   console.log(`Successfully combined and de-duplicated ${finalStations.length} stations from all sources.`);
   return finalStations;
+};
+
+// Main function to get stations - prioritizes Cloud Firestore
+export const fetchStations = async (): Promise<Station[]> => {
+    // 1. Try to fetch from Firestore (Custom Admin List)
+    try {
+        const customStations = await fetchCustomStations();
+        if (customStations && Array.isArray(customStations)) { // Empty array is valid (means admin deleted all)
+            console.log(`Loaded ${customStations.length} stations from Cloud Storage.`);
+            return customStations;
+        }
+    } catch (e) {
+        console.warn("Failed to load custom stations, falling back to default API.", e);
+    }
+
+    // 2. Fallback to default API logic
+    console.log("Loading default stations from external APIs...");
+    return fetchDefaultIsraeliStations();
 };
 
 export const fetchLiveTrackInfo = async (stationuuid: string): Promise<string | null> => {
