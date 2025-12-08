@@ -1,10 +1,6 @@
 
-
-
-
-
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
-import { fetchStations, fetchLiveTrackInfo } from './services/radioService';
+import { fetchStations, fetchLiveTrackInfo, fetch100fmPlaylist } from './services/radioService';
 import { 
     signInWithGoogle, 
     signOutUser, 
@@ -13,7 +9,7 @@ import {
     getUserSettings,
     checkAdminRole
 } from './services/firebase';
-import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES, User, AllSettings, StationFilter, KeyMap, KeyAction } from './types';
+import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES, User, AllSettings, StationFilter, KeyMap, KeyAction, SmartPlaylistItem } from './types';
 import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
@@ -114,7 +110,8 @@ const defaultSettings: AllSettings = {
         eqRock: ['3'],
         eqMovie: ['4'],
         eqCustom: ['5']
-    }
+    },
+    is100fmSmartPlayerEnabled: true
 };
 
 const loadSettingsFromLocalStorage = (): AllSettings => {
@@ -143,6 +140,7 @@ const loadSettingsFromLocalStorage = (): AllSettings => {
         sortOrderAll: safeJsonParse(localStorage.getItem('radio-sort-order-all'), oldSortOrder ?? defaultSettings.sortOrderAll),
         sortOrderFavorites: safeJsonParse(localStorage.getItem('radio-sort-order-favorites'), defaultSettings.sortOrderFavorites),
         keyMap: safeJsonParse(localStorage.getItem('radio-key-map'), defaultSettings.keyMap),
+        is100fmSmartPlayerEnabled: safeJsonParse(localStorage.getItem('radio-100fm-smart-player-enabled'), defaultSettings.is100fmSmartPlayerEnabled),
     };
 };
 
@@ -169,6 +167,7 @@ const saveSettingsToLocalStorage = (settings: AllSettings) => {
     localStorage.setItem('radio-sort-order-all', JSON.stringify(settings.sortOrderAll));
     localStorage.setItem('radio-sort-order-favorites', JSON.stringify(settings.sortOrderFavorites));
     localStorage.setItem('radio-key-map', JSON.stringify(settings.keyMap));
+    localStorage.setItem('radio-100fm-smart-player-enabled', JSON.stringify(settings.is100fmSmartPlayerEnabled));
 };
 
 const settingsHaveConflict = (local: AllSettings, cloud: AllSettings) => {
@@ -236,6 +235,9 @@ export default function App() {
   const pinchDistRef = useRef(0);
   const PINCH_THRESHOLD = 40;
   const [actionMenuState, setActionMenuState] = useState<{isOpen: boolean; songTitle: string | null}>({ isOpen: false, songTitle: null });
+
+  // Smart Playlist State
+  const [smartPlaylist, setSmartPlaylist] = useState<SmartPlaylistItem[]>([]);
 
   const isFavorite = useCallback((stationUuid: string) => allSettings.favorites.includes(stationUuid), [allSettings.favorites]);
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
@@ -472,7 +474,65 @@ export default function App() {
   
   useEffect(() => { if (stationsStatus === 'loaded' && playerState.status === 'IDLE') { const lastStationUuid = localStorage.getItem('radio-last-station-uuid'); if (lastStationUuid) { const station = stations.find(s => s.stationuuid === lastStationUuid); if (station) dispatch({ type: 'SELECT_STATION', payload: station }); } } }, [stationsStatus, stations, playerState.status]);
   useEffect(() => { if (playerState.station) { localStorage.setItem('radio-last-station-uuid', playerState.station.stationuuid); } }, [playerState.station]);
-  useEffect(() => { let intervalId: number; const fetchAndSetInfo = async () => { if (!playerState.station) return; const { name, stationuuid } = playerState.station; let finalInfo: StationTrackInfo | null = null; if (hasSpecificHandler(name)) { const specificInfo = await fetchStationSpecificTrackInfo(name); finalInfo = specificInfo ? { ...specificInfo } : { program: null, current: null, next: null }; if (!finalInfo.program) finalInfo.program = getCurrentProgram(name); } else { const [songTitle, programName] = await Promise.all([ fetchLiveTrackInfo(stationuuid), getCurrentProgram(name) ]); const current = songTitle && songTitle.toLowerCase() !== name.toLowerCase() ? songTitle : null; finalInfo = { program: programName, current, next: null }; } setTrackInfo(finalInfo); }; if (playerState.station) { fetchAndSetInfo(); intervalId = window.setInterval(fetchAndSetInfo, 20000); } else { setTrackInfo(null); } return () => clearInterval(intervalId); }, [playerState.station]);
+  
+  // Track Info Fetching
+  useEffect(() => { 
+      let intervalId: number; 
+      const fetchAndSetInfo = async () => { 
+          if (!playerState.station) return; 
+          const { name, stationuuid, url_resolved } = playerState.station; 
+          
+          let finalInfo: StationTrackInfo | null = null; 
+          
+          // --- 100FM Smart Player Logic ---
+          if (allSettings.is100fmSmartPlayerEnabled && (stationuuid.startsWith('100fm-') || url_resolved.includes('streamgates.net'))) {
+              const playlist = await fetch100fmPlaylist(stationuuid);
+              setSmartPlaylist(playlist);
+              
+              if (playlist.length > 0) {
+                  const now = Math.floor(Date.now() / 1000);
+                  // Current item is the one that started most recently but before 'now'
+                  const currentItem = [...playlist].reverse().find(i => i.timestamp <= now + 5); 
+                  const nextItem = playlist.find(i => i.timestamp > now + 5);
+                  
+                  finalInfo = {
+                      program: name, // Default program name to station name for 100FM
+                      current: currentItem ? `${currentItem.name} - ${currentItem.artist}` : null,
+                      next: nextItem ? `${nextItem.name} - ${nextItem.artist}` : null
+                  };
+              } else {
+                  finalInfo = { program: name, current: null, next: null };
+              }
+          } 
+          // --- Standard Stations Logic ---
+          else {
+              setSmartPlaylist([]); // Clear playlist for standard stations
+              
+              if (hasSpecificHandler(name)) { 
+                  const specificInfo = await fetchStationSpecificTrackInfo(name); 
+                  finalInfo = specificInfo ? { ...specificInfo } : { program: null, current: null, next: null }; 
+                  if (!finalInfo.program) finalInfo.program = getCurrentProgram(name); 
+              } else { 
+                  const [songTitle, programName] = await Promise.all([ fetchLiveTrackInfo(stationuuid), getCurrentProgram(name) ]); 
+                  const current = songTitle && songTitle.toLowerCase() !== name.toLowerCase() ? songTitle : null; 
+                  finalInfo = { program: programName, current, next: null }; 
+              } 
+          }
+          
+          setTrackInfo(finalInfo); 
+      }; 
+      
+      if (playerState.station) { 
+          fetchAndSetInfo(); 
+          intervalId = window.setInterval(fetchAndSetInfo, 20000); 
+      } else { 
+          setTrackInfo(null); 
+          setSmartPlaylist([]);
+      } 
+      
+      return () => clearInterval(intervalId); 
+  }, [playerState.station, allSettings.is100fmSmartPlayerEnabled]);
+
   const handleReorder = (reorderedDisplayedUuids: string[]) => { 
       const allStationUuids = stations.map(s => s.stationuuid); 
       const currentOrderUuids = allSettings.customOrder.length > 0 ? allSettings.customOrder : allStationUuids; 
@@ -685,10 +745,39 @@ export default function App() {
         keyMap={allSettings.keyMap} 
         onKeyMapChange={(newMap) => setAllSettings(s => ({...s, keyMap: newMap}))}
         setIsRebinding={setIsRebinding} 
+        is100fmSmartPlayerEnabled={allSettings.is100fmSmartPlayerEnabled}
+        on100fmSmartPlayerEnabledChange={(enabled) => setAllSettings(s => ({...s, is100fmSmartPlayerEnabled: enabled}))}
       />
       {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} frequencyData={frequencyData} visualizerStyle={allSettings.visualizerStyle} isVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={allSettings.isVolumeControlVisible} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
       <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
-      <Player playerState={playerState} onPlay={handlePlay} onPause={handlePause} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} onPlayerEvent={(event) => dispatch(event)} eqPreset={allSettings.eqPreset} customEqSettings={allSettings.customEqSettings} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} onOpenNowPlaying={() => setIsNowPlayingOpen(true)} setFrequencyData={setFrequencyData} frequencyData={frequencyData} isVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} shouldUseProxy={shouldUseProxy} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} />
+      <Player 
+        playerState={playerState} 
+        onPlay={handlePlay} 
+        onPause={handlePause} 
+        onPlayPause={handlePlayPause} 
+        onNext={handleNext} 
+        onPrev={handlePrev} 
+        onPlayerEvent={(event) => dispatch(event)} 
+        eqPreset={allSettings.eqPreset} 
+        customEqSettings={allSettings.customEqSettings} 
+        volume={allSettings.volume} 
+        onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} 
+        trackInfo={trackInfo} 
+        showNextSong={allSettings.showNextSong} 
+        onOpenNowPlaying={() => setIsNowPlayingOpen(true)}
+        setFrequencyData={setFrequencyData} 
+        frequencyData={frequencyData} 
+        isVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} 
+        shouldUseProxy={shouldUseProxy} 
+        marqueeDelay={allSettings.marqueeDelay} 
+        isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} 
+        isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} 
+        isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} 
+        marqueeSpeed={allSettings.marqueeSpeed} 
+        onOpenActionMenu={openActionMenu} 
+        is100fmSmartPlayerEnabled={allSettings.is100fmSmartPlayerEnabled}
+        smartPlaylist={smartPlaylist} // NEW PROP
+      />
       {isUpdateAvailable && ( <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up"><p className="text-sm font-semibold">עדכון חדש זמין</p><button onClick={handleUpdateClick} className="py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold">עדכן גירסה</button></div> )}
     </div>
   );

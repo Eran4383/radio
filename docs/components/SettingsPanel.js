@@ -7,6 +7,14 @@ import { BUILD_INFO } from '../buildInfo.js';
 
 const releaseNotes = [
   {
+    version: '1.2',
+    date: '08.12.2025',
+    features: [
+        "חדש: נגן חכם לתחנות 100FM המאפשר חזרה בזמן ומעבר בין שירים.",
+        "שיפורים ביציבות זיהוי שירים.",
+    ],
+  },
+  {
     version: '1.1',
     date: '08.12.2025',
     features: [
@@ -125,7 +133,8 @@ const SettingsPanel = ({
     marqueeDelay, onMarqueeDelayChange,
     updateStatus, onManualUpdateCheck,
     keyMap, onKeyMapChange,
-    setIsRebinding
+    setIsRebinding,
+    is100fmSmartPlayerEnabled, on100fmSmartPlayerEnabledChange
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
   const [listeningFor, setListeningFor] = useState(null);
@@ -348,6 +357,11 @@ const SettingsPanel = ({
                     ),
 
                     React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-2 px-3" }, "כללי"),
+                    React.createElement(ToggleSwitch, { 
+                        label: "נגן חכם (100FM)",
+                        enabled: is100fmSmartPlayerEnabled,
+                        onChange: on100fmSmartPlayerEnabledChange
+                    }),
                     React.createElement(ToggleSwitch, { 
                         label: "תצוגה גרפית (מסך מלא)", 
                         enabled: isNowPlayingVisualizerEnabled, 

@@ -1,5 +1,5 @@
 
-import { Station } from '../types';
+import { Station, SmartPlaylistItem } from '../types';
 import { PRIORITY_STATIONS } from '../constants';
 import { CORS_PROXY_URL } from '../constants';
 import { fetchCustomStations } from './firebase';
@@ -246,4 +246,53 @@ export const fetchLiveTrackInfo = async (stationuuid: string): Promise<string | 
 
     console.warn(`Could not fetch live track info for ${stationuuid} from any server.`);
     return null;
+};
+
+// --- New Function for 100fm Smart Player ---
+export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<SmartPlaylistItem[]> => {
+    // Extract slug from ID if present (e.g., '100fm-retro' -> 'retro')
+    const slug = stationIdOrSlug.replace('100fm-', '');
+    
+    // Default URL for last 12 tracks
+    const url = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
+    const proxiedUrl = `${CORS_PROXY_URL}${url}`;
+
+    try {
+        const response = await fetch(proxiedUrl, { 
+            cache: 'no-cache',
+            headers: { 'Accept': 'application/xml, text/xml, */*' }
+        });
+        
+        if (!response.ok) {
+            console.warn(`Failed to fetch 100fm playlist for ${slug}: ${response.status}`);
+            return [];
+        }
+
+        const text = await response.text();
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(text, "text/xml");
+        
+        // Parse <track> elements. Note: The API might return a root element containing tracks or just a list of tracks.
+        // XML parser handles the root structure automatically.
+        const trackElements = xmlDoc.getElementsByTagName('track');
+        const playlist: SmartPlaylistItem[] = [];
+
+        for (let i = 0; i < trackElements.length; i++) {
+            const track = trackElements[i];
+            const artist = track.getElementsByTagName('artist')[0]?.textContent || '';
+            const name = track.getElementsByTagName('name')[0]?.textContent || '';
+            const timestamp = parseInt(track.getElementsByTagName('timestamp')[0]?.textContent || '0', 10);
+            const before = parseInt(track.getElementsByTagName('before')[0]?.textContent || '0', 10);
+
+            if (timestamp > 0) {
+                playlist.push({ artist, name, timestamp, before });
+            }
+        }
+
+        return playlist.sort((a, b) => a.timestamp - b.timestamp); // Sort by time (oldest first)
+
+    } catch (error) {
+        console.error(`Error parsing 100fm playlist for ${slug}:`, error);
+        return [];
+    }
 };

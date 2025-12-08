@@ -48,9 +48,19 @@ interface SettingsPanelProps {
   keyMap: KeyMap;
   onKeyMapChange: (keyMap: KeyMap) => void;
   setIsRebinding: (isRebinding: boolean) => void;
+  is100fmSmartPlayerEnabled: boolean;
+  on100fmSmartPlayerEnabledChange: (enabled: boolean) => void;
 }
 
 const releaseNotes = [
+  {
+    version: '1.2',
+    date: '08.12.2025',
+    features: [
+        "חדש: נגן חכם לתחנות 100FM המאפשר חזרה בזמן ומעבר בין שירים.",
+        "שיפורים ביציבות זיהוי שירים.",
+    ],
+  },
   {
     version: '1.1',
     date: '08.12.2025',
@@ -188,7 +198,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     marqueeDelay, onMarqueeDelayChange,
     updateStatus, onManualUpdateCheck,
     keyMap, onKeyMapChange,
-    setIsRebinding
+    setIsRebinding,
+    is100fmSmartPlayerEnabled, on100fmSmartPlayerEnabledChange
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
   const [listeningFor, setListeningFor] = useState<KeyAction | null>(null);
@@ -415,6 +426,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     </div>
 
                     <h4 className="text-xs font-semibold text-text-secondary pt-2 px-3">כללי</h4>
+                    <ToggleSwitch 
+                        label="נגן חכם (100FM)"
+                        enabled={is100fmSmartPlayerEnabled}
+                        onChange={on100fmSmartPlayerEnabledChange}
+                    />
                     <ToggleSwitch 
                         label="תצוגה גרפית (מסך מלא)" 
                         enabled={isNowPlayingVisualizerEnabled} 
