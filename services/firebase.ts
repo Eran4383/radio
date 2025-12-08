@@ -76,9 +76,16 @@ const STATIONS_DOC_ID = 'stations_list';
 export const checkAdminRole = async (email: string): Promise<boolean> => {
     if (!email) return false;
     try {
+        // Use the email directly as the document ID
         const docRef = doc(db, ADMINS_COLLECTION, email);
         const docSnap = await getDoc(docRef);
-        return docSnap.exists();
+        
+        const exists = docSnap.exists();
+        console.log(`[Admin Check] Checking permissions for: ${email}`);
+        console.log(`[Admin Check] Document path: ${ADMINS_COLLECTION}/${email}`);
+        console.log(`[Admin Check] Is Admin? ${exists}`);
+        
+        return exists;
     } catch (error) {
         console.error("Error checking admin role:", error);
         return false;
