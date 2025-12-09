@@ -1,12 +1,20 @@
 
-
-
 import React, { useState, useEffect } from 'react';
 import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, KEY_ACTION_LABELS } from '../types.js';
 import Auth from './Auth.js';
 import { ChevronDownIcon } from './Icons.js';
 
 const releaseNotes = [
+  {
+    version: '1.2',
+    date: '08.12.2025',
+    features: [
+        "זכירת מצב התפריטים בהגדרות (פתוח/סגור) לכל משתמש.",
+        "פאנל ניהול חדש להוספת ועריכת תחנות.",
+        "מנגנון לזיהוי חכם של שמות שירים בתחנות 100FM.",
+        "שיפור יציבות הנגן ומניעת ניתוקים."
+    ],
+  },
   {
     version: '1.0',
     date: '06.12.2025',
@@ -119,22 +127,12 @@ const SettingsPanel = ({
     marqueeDelay, onMarqueeDelayChange,
     updateStatus, onManualUpdateCheck,
     keyMap, onKeyMapChange,
-    setIsRebinding
+    setIsRebinding,
+    openSections, onToggleSection
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
   const [listeningFor, setListeningFor] = useState(null);
   
-  const [openSections, setOpenSections] = useState({
-      theme: true,
-      eq: true,
-      interface: true,
-      shortcuts: false
-  });
-
-  const toggleSection = (key) => {
-      setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
   useEffect(() => {
     if (!listeningFor) return;
 
@@ -221,7 +219,7 @@ const SettingsPanel = ({
                 )
             ),
 
-            React.createElement(SettingsSection, { title: "ערכת נושא", isOpen: openSections.theme, onToggle: () => toggleSection('theme') },
+            React.createElement(SettingsSection, { title: "ערכת נושא", isOpen: openSections.theme, onToggle: () => onToggleSection('theme') },
                 React.createElement("div", { className: "grid grid-cols-4 gap-2" },
                     THEMES.map(theme => (
                          React.createElement(SettingsButton, { 
@@ -234,7 +232,7 @@ const SettingsPanel = ({
                 )
             ),
 
-             React.createElement(SettingsSection, { title: "אקולייזר (EQ)", isOpen: openSections.eq, onToggle: () => toggleSection('eq') },
+             React.createElement(SettingsSection, { title: "אקולייזר (EQ)", isOpen: openSections.eq, onToggle: () => onToggleSection('eq') },
                 React.createElement("div", { className: "grid grid-cols-3 gap-2 mb-3" },
                     EQ_PRESET_KEYS.map(preset => (
                         React.createElement(SettingsButton, { 
@@ -266,7 +264,7 @@ const SettingsPanel = ({
                 )
             ),
 
-            React.createElement(SettingsSection, { title: "ממשק", isOpen: openSections.interface, onToggle: () => toggleSection('interface') },
+            React.createElement(SettingsSection, { title: "ממשק", isOpen: openSections.interface, onToggle: () => onToggleSection('interface') },
                 React.createElement("div", { className: "space-y-2" },
                     React.createElement("div", { className: "p-3 rounded-lg bg-bg-primary space-y-3" },
                        React.createElement("div", { className: "flex flex-col gap-1" },
@@ -370,7 +368,7 @@ const SettingsPanel = ({
                 )
             ),
 
-            React.createElement(SettingsSection, { title: "קיצורי מקלדת", isOpen: openSections.shortcuts, onToggle: () => toggleSection('shortcuts') },
+            React.createElement(SettingsSection, { title: "קיצורי מקלדת", isOpen: openSections.shortcuts, onToggle: () => onToggleSection('shortcuts') },
                 React.createElement("div", { className: "space-y-2" },
                     /* General Shortcuts */
                     React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-1 px-1" }, "כללי"),

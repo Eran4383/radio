@@ -1,8 +1,6 @@
 
-
-
 import React, { useState, useEffect } from 'react';
-import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize, User, KeyMap, KeyAction, KEY_ACTION_LABELS } from '../types';
+import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize, User, KeyMap, KeyAction, KEY_ACTION_LABELS, SettingsSectionsState } from '../types';
 import Auth from './Auth';
 import { ChevronDownIcon } from './Icons';
 
@@ -49,9 +47,21 @@ interface SettingsPanelProps {
   keyMap: KeyMap;
   onKeyMapChange: (keyMap: KeyMap) => void;
   setIsRebinding: (isRebinding: boolean) => void;
+  openSections: SettingsSectionsState;
+  onToggleSection: (key: keyof SettingsSectionsState) => void;
 }
 
 const releaseNotes = [
+  {
+    version: '1.2',
+    date: '08.12.2025',
+    features: [
+        "זכירת מצב התפריטים בהגדרות (פתוח/סגור) לכל משתמש.",
+        "פאנל ניהול חדש להוספת ועריכת תחנות.",
+        "מנגנון לזיהוי חכם של שמות שירים בתחנות 100FM.",
+        "שיפור יציבות הנגן ומניעת ניתוקים."
+    ],
+  },
   {
     version: '1.0',
     date: '06.12.2025',
@@ -182,23 +192,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     marqueeDelay, onMarqueeDelayChange,
     updateStatus, onManualUpdateCheck,
     keyMap, onKeyMapChange,
-    setIsRebinding
+    setIsRebinding,
+    openSections, onToggleSection
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
   const [listeningFor, setListeningFor] = useState<KeyAction | null>(null);
   
-  // Controlled state for sections
-  const [openSections, setOpenSections] = useState({
-      theme: true,
-      eq: true,
-      interface: true,
-      shortcuts: false
-  });
-
-  const toggleSection = (key: keyof typeof openSections) => {
-      setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
   useEffect(() => {
     if (!listeningFor) return;
 
@@ -288,7 +287,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </div>
             )}
 
-            <SettingsSection title="ערכת נושא" isOpen={openSections.theme} onToggle={() => toggleSection('theme')}>
+            <SettingsSection title="ערכת נושא" isOpen={openSections.theme} onToggle={() => onToggleSection('theme')}>
                 <div className="grid grid-cols-4 gap-2">
                     {THEMES.map(theme => (
                          <SettingsButton 
@@ -301,7 +300,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </div>
             </SettingsSection>
 
-            <SettingsSection title="אקולייזר (EQ)" isOpen={openSections.eq} onToggle={() => toggleSection('eq')}>
+            <SettingsSection title="אקולייזר (EQ)" isOpen={openSections.eq} onToggle={() => onToggleSection('eq')}>
                 <div className="grid grid-cols-3 gap-2 mb-3">
                     {EQ_PRESET_KEYS.map(preset => (
                         <SettingsButton 
@@ -333,7 +332,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 )}
             </SettingsSection>
 
-            <SettingsSection title="ממשק" isOpen={openSections.interface} onToggle={() => toggleSection('interface')}>
+            <SettingsSection title="ממשק" isOpen={openSections.interface} onToggle={() => onToggleSection('interface')}>
                 <div className="space-y-2">
                     <div className="p-3 rounded-lg bg-bg-primary space-y-3">
                        <div className="flex flex-col gap-1">
@@ -437,7 +436,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </div>
             </SettingsSection>
 
-            <SettingsSection title="קיצורי מקלדת" isOpen={openSections.shortcuts} onToggle={() => toggleSection('shortcuts')}>
+            <SettingsSection title="קיצורי מקלדת" isOpen={openSections.shortcuts} onToggle={() => onToggleSection('shortcuts')}>
                 <div className="space-y-2">
                     {/* General Shortcuts */}
                     <h4 className="text-xs font-semibold text-text-secondary pt-1 px-1">כללי</h4>

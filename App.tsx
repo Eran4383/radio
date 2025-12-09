@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
 import { fetchStations, fetchLiveTrackInfo } from './services/radioService';
 import { 
@@ -11,7 +9,7 @@ import {
     getUserSettings,
     checkAdminRole
 } from './services/firebase';
-import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES, User, AllSettings, StationFilter, KeyMap, KeyAction } from './types';
+import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES, User, AllSettings, StationFilter, KeyMap, KeyAction, SettingsSectionsState } from './types';
 import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
@@ -112,6 +110,12 @@ const defaultSettings: AllSettings = {
         eqRock: ['3'],
         eqMovie: ['4'],
         eqCustom: ['5']
+    },
+    settingsSections: {
+        theme: true,
+        eq: true,
+        interface: true,
+        shortcuts: false
     }
 };
 
@@ -141,6 +145,7 @@ const loadSettingsFromLocalStorage = (): AllSettings => {
         sortOrderAll: safeJsonParse(localStorage.getItem('radio-sort-order-all'), oldSortOrder ?? defaultSettings.sortOrderAll),
         sortOrderFavorites: safeJsonParse(localStorage.getItem('radio-sort-order-favorites'), defaultSettings.sortOrderFavorites),
         keyMap: safeJsonParse(localStorage.getItem('radio-key-map'), defaultSettings.keyMap),
+        settingsSections: safeJsonParse(localStorage.getItem('radio-settings-sections'), defaultSettings.settingsSections),
     };
 };
 
@@ -167,6 +172,7 @@ const saveSettingsToLocalStorage = (settings: AllSettings) => {
     localStorage.setItem('radio-sort-order-all', JSON.stringify(settings.sortOrderAll));
     localStorage.setItem('radio-sort-order-favorites', JSON.stringify(settings.sortOrderFavorites));
     localStorage.setItem('radio-key-map', JSON.stringify(settings.keyMap));
+    localStorage.setItem('radio-settings-sections', JSON.stringify(settings.settingsSections));
 };
 
 const settingsHaveConflict = (local: AllSettings, cloud: AllSettings) => {
@@ -192,6 +198,10 @@ const normalizeSettings = (settings: Partial<AllSettings> | null): AllSettings =
         keyMap: {
             ...defaultsCopy.keyMap,
             ...(settings.keyMap || {}),
+        },
+        settingsSections: {
+            ...defaultsCopy.settingsSections,
+            ...(settings.settingsSections || {}),
         }
     };
 };
@@ -249,7 +259,7 @@ export default function App() {
   const [pendingRemoval, setPendingRemoval] = useState<{uuid: string, name: string} | null>(null);
 
   // Determine if we should use proxy (if ANY visualizer is enabled)
-  const shouldUseProxy = allSettings.isNowPlayingVisualizerEnabled || allSettings.isPlayerBarVisualizerEnabled;
+  const shouldUseProxy = false; // Forced direct stream for stability
 
   // Auth state listener - runs only once on mount
   useEffect(() => {
@@ -681,7 +691,9 @@ export default function App() {
         onManualUpdateCheck={handleManualUpdateCheck} 
         keyMap={allSettings.keyMap} 
         onKeyMapChange={(newMap) => setAllSettings(s => ({...s, keyMap: newMap}))}
-        setIsRebinding={setIsRebinding} 
+        setIsRebinding={setIsRebinding}
+        openSections={allSettings.settingsSections}
+        onToggleSection={(key) => setAllSettings(s => ({...s, settingsSections: { ...s.settingsSections, [key]: !s.settingsSections[key] }}))}
       />
       {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} frequencyData={frequencyData} visualizerStyle={allSettings.visualizerStyle} isVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={allSettings.isVolumeControlVisible} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
       <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
