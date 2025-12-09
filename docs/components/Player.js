@@ -5,6 +5,7 @@ import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons.js'
 import { CORS_PROXY_URL } from '../constants.js';
 import InteractiveText from './InteractiveText.js';
 import MarqueeText from './MarqueeText.js';
+import { fetch100fmPlaylist } from '../services/radioService.js';
 
 const PlayerVisualizer = ({ frequencyData }) => {
     const canvasRef = useRef(null);
@@ -67,8 +68,7 @@ const Player = ({
   isMarqueeNextTrackEnabled,
   marqueeSpeed,
   onOpenActionMenu,
-  is100fmSmartPlayerEnabled,
-  smartPlaylist
+  is100fmSmartPlayerEnabled
 }) => {
   const audioRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -91,7 +91,9 @@ const Player = ({
   const [marqueeConfig, setMarqueeConfig] = useState({ duration: 0, isOverflowing: [false, false, false] });
 
   // Smart Player
+  const [smartPlaylist, setSmartPlaylist] = useState([]);
   const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
+  const playlistIntervalRef = useRef(null);
 
   const { status, station, error } = playerState;
   const isPlaying = status === 'PLAYING';
@@ -177,6 +179,30 @@ const Player = ({
     }
   }, []);
   
+  useEffect(() => {
+      if (isSmartPlayerActive && station) {
+          const fetchList = async () => {
+              const list = await fetch100fmPlaylist(station.stationuuid);
+              if (list && list.length > 0) {
+                  setSmartPlaylist(list);
+              }
+          };
+          fetchList(); 
+          playlistIntervalRef.current = window.setInterval(fetchList, 20000);
+      } else {
+          setSmartPlaylist([]);
+          if (playlistIntervalRef.current) {
+              clearInterval(playlistIntervalRef.current);
+              playlistIntervalRef.current = null;
+          }
+      }
+      return () => {
+          if (playlistIntervalRef.current) {
+              clearInterval(playlistIntervalRef.current);
+          }
+      };
+  }, [isSmartPlayerActive, station]);
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !station) return;
@@ -440,14 +466,15 @@ const Player = ({
               onClick: onOpenNowPlaying,
               onError: (e) => { (e.target).src = 'https://picsum.photos/48'; }
             }),
-            React.createElement("div", { className: "min-w-0 cursor-pointer", key: station.stationuuid, onClick: onOpenNowPlaying },
+            React.createElement("div", { className: "min-w-0", key: station.stationuuid },
                React.createElement(MarqueeText, {
                   loopDelay: marqueeDelay,
                   duration: marqueeConfig.duration,
                   startAnimation: startAnimation,
                   isOverflowing: marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled,
                   contentRef: stationNameRef,
-                  className: "font-bold text-text-primary"
+                  className: "font-bold text-text-primary cursor-pointer",
+                  onClick: onOpenNowPlaying
               },
                   React.createElement("span", null, `${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`)
               ),
@@ -472,7 +499,7 @@ const Player = ({
                 ) : null
               ),
                status !== 'ERROR' && showNextSong && trackInfo?.next && (
-                  React.createElement("div", { className: "text-xs opacity-80 h-[1.125rem] flex items-center" },
+                  React.createElement("div", { className: "text-xs opacity-80 h-[1.125rem] flex items-center cursor-pointer", onClick: onOpenNowPlaying },
                     React.createElement("span", { className: "font-semibold flex-shrink-0" }, "הבא:\u00A0"),
                     React.createElement(MarqueeText, { 
                         loopDelay: marqueeDelay, 
