@@ -269,11 +269,12 @@ export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<Smart
         }
 
         const text = await response.text();
+        // LOG RAW RESPONSE TO DEBUG
+        // console.log(`[100FM RAW] ${slug}:`, text.substring(0, 200));
+
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(text, "text/xml");
         
-        // Parse <track> elements. Note: The API might return a root element containing tracks or just a list of tracks.
-        // XML parser handles the root structure automatically.
         const trackElements = xmlDoc.getElementsByTagName('track');
         const playlist: SmartPlaylistItem[] = [];
 
@@ -284,8 +285,11 @@ export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<Smart
             const timestamp = parseInt(track.getElementsByTagName('timestamp')[0]?.textContent || '0', 10);
             const before = parseInt(track.getElementsByTagName('before')[0]?.textContent || '0', 10);
 
-            if (timestamp > 0) {
+            // Filter out obviously bad data (like 'P' track names)
+            if (timestamp > 0 && name.length > 1 && name !== 'P') {
                 playlist.push({ artist, name, timestamp, before });
+            } else {
+                console.warn(`[100FM Filter] Skipped invalid track: ${name} / ${timestamp}`);
             }
         }
 

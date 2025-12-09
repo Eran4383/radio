@@ -248,8 +248,10 @@ export const fetch100fmPlaylist = async (stationIdOrSlug) => {
             const timestamp = parseInt(track.getElementsByTagName('timestamp')[0]?.textContent || '0', 10);
             const before = parseInt(track.getElementsByTagName('before')[0]?.textContent || '0', 10);
 
-            if (timestamp > 0) {
+            if (timestamp > 0 && name.length > 1 && name !== 'P') {
                 playlist.push({ artist, name, timestamp, before });
+            } else {
+                console.warn(`[100FM Filter] Skipped invalid track: ${name} / ${timestamp}`);
             }
         }
 

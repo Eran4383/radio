@@ -91,12 +91,29 @@ const Player = ({
   const nextTrackRef = useRef(null);
   const [marqueeConfig, setMarqueeConfig] = useState({ duration: 0, isOverflowing: [false, false, false] });
 
+  const [serverTimeOffset, setServerTimeOffset] = useState(0);
+
   // Smart Player
   const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
 
   const { status, station, error } = playerState;
   const isPlaying = status === 'PLAYING';
   const isLoading = status === 'LOADING';
+
+  useEffect(() => {
+      if (smartPlaylist.length > 0) {
+          const latestTrack = smartPlaylist[smartPlaylist.length - 1];
+          const now = Math.floor(Date.now() / 1000);
+          
+          if (latestTrack.timestamp > now + 60) {
+              const diff = latestTrack.timestamp - now;
+              console.log(`[SmartPlayer] Detected future timestamp. Adjusting offset by ${diff}s`);
+              setServerTimeOffset(diff);
+          } else {
+              setServerTimeOffset(0);
+          }
+      }
+  }, [smartPlaylist]);
 
   useEffect(() => {
     setStartAnimation(false);
@@ -354,24 +371,22 @@ const Player = ({
       return clearWatchdog;
   }, [status, attemptRecovery]);
 
-  const getCurrentUnixTime = () => Math.floor(Date.now() / 1000);
+  const getCurrentUnixTime = () => Math.floor(Date.now() / 1000) + serverTimeOffset;
 
   const calculateSeekTime = (targetUnixTimestamp) => {
       const audio = audioRef.current;
       if (!audio) return;
       
       let livePosition = 0;
+      
       if (audio.seekable.length > 0) {
           livePosition = audio.seekable.end(0);
       } else {
-          console.log("[SmartSeek] Stream not seekable yet, ignoring command.");
-          return;
+          console.warn("[SmartSeek] Stream report: Not seekable. URL:", audio.src);
+          livePosition = audio.currentTime;
       }
 
       const now = getCurrentUnixTime();
-      // Logic: target position is relative to live edge.
-      // If song started 60s ago in real time: lag is 60s.
-      // Target Buffer Pos = Live Buffer End - 60s.
       const secondsAgo = now - targetUnixTimestamp;
       const targetPosition = Math.max(0, livePosition - secondsAgo);
       
@@ -385,33 +400,31 @@ const Player = ({
 
   const getVirtualPlaybackTime = () => {
       const audio = audioRef.current;
-      if (!audio || audio.seekable.length === 0) return getCurrentUnixTime();
+      if (!audio) return getCurrentUnixTime();
 
-      const liveEdge = audio.seekable.end(0);
+      let liveEdge = audio.currentTime;
+      if (audio.seekable.length > 0) {
+          liveEdge = audio.seekable.end(0);
+      }
+
       const currentPos = audio.currentTime;
       const lag = liveEdge - currentPos;
       
-      // If lag is very small, we are live.
-      // Virtual Time = Real Time - Lag.
       return getCurrentUnixTime() - lag;
   };
 
   const handleSmartPrev = () => {
       if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
       
-      // Calculate where we are "virtually" in history
       const virtualNow = getVirtualPlaybackTime();
       console.log(`[SmartPrev] Virtual Time: ${virtualNow}`);
 
-      // Find the track that is playing at this virtual time
-      // Track matches if timestamp <= virtualNow and (nextTrack.timestamp > virtualNow OR isLast)
       const sortedPlaylist = [...smartPlaylist].sort((a, b) => a.timestamp - b.timestamp);
       let currentIndex = -1;
 
       for (let i = 0; i < sortedPlaylist.length; i++) {
           const track = sortedPlaylist[i];
           const nextTrack = sortedPlaylist[i+1];
-          // Adding 5 seconds buffer to 'virtualNow' to handle edge cases where song just ended
           if (track.timestamp <= virtualNow + 5 && (!nextTrack || nextTrack.timestamp > virtualNow + 5)) {
               currentIndex = i;
               break;
@@ -425,13 +438,10 @@ const Player = ({
           console.log(`[SmartPrev] Found Index: ${currentIndex}, Track: ${currentTrack.name}, Time Since Start: ${timeSinceStart}`);
 
           if (timeSinceStart > 10) {
-              // Restart current song
               calculateSeekTime(currentTrack.timestamp);
           } else if (currentIndex > 0) {
-              // Go to previous song
               calculateSeekTime(sortedPlaylist[currentIndex - 1].timestamp);
           } else {
-              // Start of playlist
               calculateSeekTime(currentTrack.timestamp);
           }
       } else {
@@ -462,11 +472,11 @@ const Player = ({
           console.log(`[SmartNext] Jumping to next track: ${nextTrack.name}`);
           calculateSeekTime(nextTrack.timestamp);
       } else {
-          // We are at the last song (Live). Jump to Live Edge.
           const audio = audioRef.current;
-          if (audio && audio.seekable.length) {
+          if (audio) {
+              const edge = audio.seekable.length > 0 ? audio.seekable.end(0) : audio.currentTime;
               console.log(`[SmartNext] Already at latest. Jumping to Live Edge.`);
-              audio.currentTime = audio.seekable.end(0);
+              audio.currentTime = edge;
           }
       }
   };
@@ -477,6 +487,7 @@ const Player = ({
           if (command.type === 'PREV') handleSmartPrev();
       }
   }, [command]);
+
 
   if (!station) {
     return null;

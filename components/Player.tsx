@@ -139,12 +139,35 @@ const Player: React.FC<PlayerProps> = ({
   const nextTrackRef = useRef<HTMLSpanElement>(null);
   const [marqueeConfig, setMarqueeConfig] = useState<{ duration: number; isOverflowing: boolean[] }>({ duration: 0, isOverflowing: [false, false, false] });
 
+  // Time Sync Offset
+  const [serverTimeOffset, setServerTimeOffset] = useState(0);
+
   // --- Smart Player State ---
   const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
 
   const { status, station, error } = playerState;
   const isPlaying = status === 'PLAYING';
   const isLoading = status === 'LOADING';
+
+  // Calculate Time Offset when playlist loads
+  useEffect(() => {
+      if (smartPlaylist.length > 0) {
+          const latestTrack = smartPlaylist[smartPlaylist.length - 1];
+          const now = Math.floor(Date.now() / 1000);
+          // If the latest track says it started in 2026, but now is 2025, we have a massive offset.
+          // Or if it started 2 minutes ago, offset is 0.
+          
+          // Assumption: The latest track in the list is "Now Playing" or very recent.
+          // If latestTrack.timestamp > now + 60, something is wrong with clocks.
+          if (latestTrack.timestamp > now + 60) {
+              const diff = latestTrack.timestamp - now;
+              console.log(`[SmartPlayer] Detected future timestamp. Adjusting offset by ${diff}s`);
+              setServerTimeOffset(diff);
+          } else {
+              setServerTimeOffset(0);
+          }
+      }
+  }, [smartPlaylist]);
 
   // Effect for initial animation delay
   useEffect(() => {
@@ -422,18 +445,25 @@ const Player: React.FC<PlayerProps> = ({
   }, [status, attemptRecovery]);
 
   // --- Smart Seeking Logic ---
-  const getCurrentUnixTime = () => Math.floor(Date.now() / 1000);
+  const getCurrentUnixTime = () => Math.floor(Date.now() / 1000) + serverTimeOffset;
 
   const calculateSeekTime = (targetUnixTimestamp: number) => {
       const audio = audioRef.current;
       if (!audio) return;
       
       let livePosition = 0;
+      
+      // RELAXED CHECK: If seekable is missing, warn but assume we can try setting currentTime 
+      // relative to current time if infinite? No, for infinite streams we need buffer range.
+      // But HLS usually provides seekable ranges.
       if (audio.seekable.length > 0) {
           livePosition = audio.seekable.end(0);
       } else {
-          console.log("[SmartSeek] Stream not seekable yet, ignoring command.");
-          return;
+          console.warn("[SmartSeek] Stream report: Not seekable. URL:", audio.src);
+          // Fallback: If we assume we are at live edge (e.g. initial play)
+          // But without buffer info, setting currentTime might fail.
+          // Let's try to assume livePosition = audio.currentTime if we are playing
+          livePosition = audio.currentTime;
       }
 
       const now = getCurrentUnixTime();
@@ -453,9 +483,13 @@ const Player: React.FC<PlayerProps> = ({
 
   const getVirtualPlaybackTime = () => {
       const audio = audioRef.current;
-      if (!audio || audio.seekable.length === 0) return getCurrentUnixTime();
+      if (!audio) return getCurrentUnixTime();
 
-      const liveEdge = audio.seekable.end(0);
+      let liveEdge = audio.currentTime;
+      if (audio.seekable.length > 0) {
+          liveEdge = audio.seekable.end(0);
+      }
+
       const currentPos = audio.currentTime;
       const lag = liveEdge - currentPos;
       
@@ -532,9 +566,10 @@ const Player: React.FC<PlayerProps> = ({
       } else {
           // We are at the last song (Live). Jump to Live Edge.
           const audio = audioRef.current;
-          if (audio && audio.seekable.length) {
+          if (audio) {
+              const edge = audio.seekable.length > 0 ? audio.seekable.end(0) : audio.currentTime;
               console.log(`[SmartNext] Already at latest. Jumping to Live Edge.`);
-              audio.currentTime = audio.seekable.end(0);
+              audio.currentTime = edge;
           }
       }
   };
