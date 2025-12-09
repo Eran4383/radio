@@ -1,13 +1,13 @@
 
-
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
-import { fetchIsraeliStations, fetchLiveTrackInfo } from './services/radioService';
+import { fetchStations, fetchLiveTrackInfo } from './services/radioService';
 import { 
     signInWithGoogle, 
     signOutUser, 
     onAuthStateChangedListener,
     saveUserSettings,
-    getUserSettings
+    getUserSettings,
+    checkAdminRole
 } from './services/firebase';
 import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES, User, AllSettings, StationFilter, KeyMap, KeyAction } from './types';
 import Player from './components/Player';
@@ -15,6 +15,7 @@ import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
 import NowPlaying from './components/NowPlaying';
 import ActionMenu from './components/ActionMenu';
+import AdminPanel from './components/AdminPanel';
 import { PRIORITY_STATIONS } from './constants';
 import { MenuIcon } from './components/Icons';
 import { getCurrentProgram } from './services/scheduleService';
@@ -110,8 +111,7 @@ const defaultSettings: AllSettings = {
         eqMovie: ['4'],
         eqCustom: ['5']
     },
-    useProxyForVisualizer: false,
-    isVisualizerSimulationEnabled: true
+    is100fmSmartPlayerEnabled: true
 };
 
 const loadSettingsFromLocalStorage = (): AllSettings => {
@@ -140,8 +140,7 @@ const loadSettingsFromLocalStorage = (): AllSettings => {
         sortOrderAll: safeJsonParse(localStorage.getItem('radio-sort-order-all'), oldSortOrder ?? defaultSettings.sortOrderAll),
         sortOrderFavorites: safeJsonParse(localStorage.getItem('radio-sort-order-favorites'), defaultSettings.sortOrderFavorites),
         keyMap: safeJsonParse(localStorage.getItem('radio-key-map'), defaultSettings.keyMap),
-        useProxyForVisualizer: safeJsonParse(localStorage.getItem('radio-use-proxy-visualizer'), defaultSettings.useProxyForVisualizer),
-        isVisualizerSimulationEnabled: safeJsonParse(localStorage.getItem('radio-visualizer-simulation-enabled'), defaultSettings.isVisualizerSimulationEnabled),
+        is100fmSmartPlayerEnabled: safeJsonParse(localStorage.getItem('radio-100fm-smart-player-enabled'), defaultSettings.is100fmSmartPlayerEnabled),
     };
 };
 
@@ -168,8 +167,7 @@ const saveSettingsToLocalStorage = (settings: AllSettings) => {
     localStorage.setItem('radio-sort-order-all', JSON.stringify(settings.sortOrderAll));
     localStorage.setItem('radio-sort-order-favorites', JSON.stringify(settings.sortOrderFavorites));
     localStorage.setItem('radio-key-map', JSON.stringify(settings.keyMap));
-    localStorage.setItem('radio-use-proxy-visualizer', JSON.stringify(settings.useProxyForVisualizer));
-    localStorage.setItem('radio-visualizer-simulation-enabled', JSON.stringify(settings.isVisualizerSimulationEnabled));
+    localStorage.setItem('radio-100fm-smart-player-enabled', JSON.stringify(settings.is100fmSmartPlayerEnabled));
 };
 
 const settingsHaveConflict = (local: AllSettings, cloud: AllSettings) => {
@@ -214,6 +212,7 @@ export default function App() {
   const [playerState, dispatch] = useReducer(playerReducer, initialPlayerState);
   
   const [user, setUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [mergeModal, setMergeModal] = useState({ isOpen: false, onMerge: () => {}, onDiscardLocal: () => {} });
@@ -228,6 +227,7 @@ export default function App() {
 
   const [error, setError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
   const [isVisualizerFullscreen, setIsVisualizerFullscreen] = useState(false);
   const [frequencyData, setFrequencyData] = useState(new Uint8Array(64));
@@ -249,14 +249,18 @@ export default function App() {
   // State for removal confirmation modal
   const [pendingRemoval, setPendingRemoval] = useState<{uuid: string, name: string} | null>(null);
 
-  // Determine if we should use proxy (if ANY visualizer is enabled AND proxy usage is enabled)
-  const shouldUseProxy = (allSettings.isNowPlayingVisualizerEnabled || allSettings.isPlayerBarVisualizerEnabled) && allSettings.useProxyForVisualizer;
+  // Determine if we should use proxy (if ANY visualizer is enabled)
+  const shouldUseProxy = allSettings.isNowPlayingVisualizerEnabled || allSettings.isPlayerBarVisualizerEnabled;
 
   // Auth state listener - runs only once on mount
   useEffect(() => {
     const unsubscribe = onAuthStateChangedListener(async (user) => {
       if (user) {
         setIsCloudSyncing(true);
+        if (user.email) {
+             checkAdminRole(user.email).then(setIsAdmin);
+        }
+        
         const hasSyncedBefore = localStorage.getItem('radio-has-synced-with-account') === 'true';
         const rawCloudSettings = await getUserSettings(user.uid);
         const cloudSettings = normalizeSettings(rawCloudSettings);
@@ -309,6 +313,7 @@ export default function App() {
         console.log("המשתמש התנתק. משחזר הגדרות מקומיות.");
         localStorage.removeItem('radio-has-synced-with-account');
         setUser(null);
+        setIsAdmin(false);
         setAllSettings(loadSettingsFromLocalStorage());
       }
       setIsAuthReady(true);
@@ -359,15 +364,15 @@ export default function App() {
         setStationsStatus('loading');
       }
 
-      // 2. Fetch fresh data from network in background
+      // 2. Fetch fresh data from network in background (Firestore preferred)
       try {
-        const fetchedStations = await fetchIsraeliStations();
+        const fetchedStations = await fetchStations();
         if (fetchedStations.length > 0) {
           setStations(fetchedStations);
           setStationsStatus('loaded');
           // Update cache with fresh data
           localStorage.setItem('radio-stations-cache', JSON.stringify(fetchedStations));
-          console.log("Stations updated from network and cached.");
+          console.log("Stations updated from network/cloud and cached.");
         } else if (!hasCachedData) {
            // Only show error if we have absolutely no data (no cache, no network)
            setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
@@ -379,7 +384,6 @@ export default function App() {
            setError('אירעה שגיאה בטעינת התחנות.');
            setStationsStatus('error');
         }
-        // If hasCachedData is true, we simply fail silently and keep showing cached data.
       }
     };
 
@@ -519,6 +523,11 @@ export default function App() {
   const cancelRemoval = () => {
       setPendingRemoval(null);
   };
+  
+  const handleAdminUpdate = (newStations: Station[]) => {
+      setStations(newStations);
+      localStorage.setItem('radio-stations-cache', JSON.stringify(newStations));
+  };
 
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === currentSortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
@@ -601,6 +610,15 @@ export default function App() {
         onConfirm={confirmRemoval}
         onCancel={cancelRemoval}
       />
+      <AdminPanel 
+        isOpen={isAdminPanelOpen}
+        onClose={() => setIsAdminPanelOpen(false)}
+        currentStations={stations}
+        onStationsUpdate={handleAdminUpdate}
+        currentUserEmail={user?.email || null}
+        favorites={allSettings.favorites}
+      />
+      
       <header className="p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
             <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הגדרות"><MenuIcon className="w-6 h-6" /></button>
@@ -629,6 +647,8 @@ export default function App() {
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)} 
         user={user} 
+        isAdmin={isAdmin}
+        onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
         onLogin={signInWithGoogle} 
         onLogout={signOutUser} 
         currentTheme={allSettings.theme} 
@@ -664,14 +684,12 @@ export default function App() {
         keyMap={allSettings.keyMap} 
         onKeyMapChange={(newMap) => setAllSettings(s => ({...s, keyMap: newMap}))}
         setIsRebinding={setIsRebinding} 
-        useProxyForVisualizer={allSettings.useProxyForVisualizer}
-        onUseProxyForVisualizerChange={(v) => setAllSettings(s => ({...s, useProxyForVisualizer: v}))}
-        isVisualizerSimulationEnabled={allSettings.isVisualizerSimulationEnabled}
-        onVisualizerSimulationEnabledChange={(v) => setAllSettings(s => ({...s, isVisualizerSimulationEnabled: v}))}
+        is100fmSmartPlayerEnabled={allSettings.is100fmSmartPlayerEnabled}
+        on100fmSmartPlayerEnabledChange={(enabled) => setAllSettings(s => ({...s, is100fmSmartPlayerEnabled: enabled}))}
       />
       {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} frequencyData={frequencyData} visualizerStyle={allSettings.visualizerStyle} isVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={allSettings.isVolumeControlVisible} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
       <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
-      <Player playerState={playerState} onPlay={handlePlay} onPause={handlePause} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} onPlayerEvent={(event) => dispatch(event)} eqPreset={allSettings.eqPreset} customEqSettings={allSettings.customEqSettings} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} onOpenNowPlaying={() => setIsNowPlayingOpen(true)} setFrequencyData={setFrequencyData} frequencyData={frequencyData} isVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} shouldUseProxy={shouldUseProxy} isVisualizerSimulationEnabled={allSettings.isVisualizerSimulationEnabled} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} />
+      <Player playerState={playerState} onPlay={handlePlay} onPause={handlePause} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} onPlayerEvent={(event) => dispatch(event)} eqPreset={allSettings.eqPreset} customEqSettings={allSettings.customEqSettings} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} onOpenNowPlaying: () => setIsNowPlayingOpen(true) setFrequencyData={setFrequencyData} frequencyData={frequencyData} isVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} shouldUseProxy={shouldUseProxy} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} is100fmSmartPlayerEnabled={allSettings.is100fmSmartPlayerEnabled} />
       {isUpdateAvailable && ( <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up"><p className="text-sm font-semibold">עדכון חדש זמין</p><button onClick={handleUpdateClick} className="py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold">עדכן גירסה</button></div> )}
     </div>
   );

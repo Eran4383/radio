@@ -1,7 +1,8 @@
 
-import { Station } from '../types';
+import { Station, SmartPlaylistItem } from '../types';
 import { PRIORITY_STATIONS } from '../constants';
 import { CORS_PROXY_URL } from '../constants';
+import { fetchCustomStations } from './firebase';
 
 // Function to shuffle an array for load distribution
 const shuffleArray = <T>(array: T[]): T[] => {
@@ -104,7 +105,8 @@ const fetch100fmStations = async (): Promise<Station[]> => {
 };
 
 
-export const fetchIsraeliStations = async (): Promise<Station[]> => {
+// Renamed to fetchDefaultIsraeliStations to indicate this is the fallback logic
+export const fetchDefaultIsraeliStations = async (): Promise<Station[]> => {
   const [radioBrowserResult, fm100Result] = await Promise.allSettled([
     fetchRadioBrowserStations(),
     fetch100fmStations(),
@@ -188,6 +190,24 @@ export const fetchIsraeliStations = async (): Promise<Station[]> => {
   return finalStations;
 };
 
+// Main function to get stations - prioritizes Cloud Firestore
+export const fetchStations = async (): Promise<Station[]> => {
+    // 1. Try to fetch from Firestore (Custom Admin List)
+    try {
+        const customStations = await fetchCustomStations();
+        if (customStations && Array.isArray(customStations)) { // Empty array is valid (means admin deleted all)
+            console.log(`Loaded ${customStations.length} stations from Cloud Storage.`);
+            return customStations;
+        }
+    } catch (e) {
+        console.warn("Failed to load custom stations, falling back to default API.", e);
+    }
+
+    // 2. Fallback to default API logic
+    console.log("Loading default stations from external APIs...");
+    return fetchDefaultIsraeliStations();
+};
+
 export const fetchLiveTrackInfo = async (stationuuid: string): Promise<string | null> => {
     if (!stationuuid) return null;
 
@@ -226,4 +246,53 @@ export const fetchLiveTrackInfo = async (stationuuid: string): Promise<string | 
 
     console.warn(`Could not fetch live track info for ${stationuuid} from any server.`);
     return null;
+};
+
+// --- New Function for 100fm Smart Player ---
+export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<SmartPlaylistItem[]> => {
+    // Extract slug from ID if present (e.g., '100fm-retro' -> 'retro')
+    const slug = stationIdOrSlug.replace('100fm-', '');
+    
+    // Default URL for last 12 tracks
+    const url = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
+    const proxiedUrl = `${CORS_PROXY_URL}${url}`;
+
+    try {
+        const response = await fetch(proxiedUrl, { 
+            cache: 'no-cache',
+            headers: { 'Accept': 'application/xml, text/xml, */*' }
+        });
+        
+        if (!response.ok) {
+            console.warn(`Failed to fetch 100fm playlist for ${slug}: ${response.status}`);
+            return [];
+        }
+
+        const text = await response.text();
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(text, "text/xml");
+        
+        // Parse <track> elements. Note: The API might return a root element containing tracks or just a list of tracks.
+        // XML parser handles the root structure automatically.
+        const trackElements = xmlDoc.getElementsByTagName('track');
+        const playlist: SmartPlaylistItem[] = [];
+
+        for (let i = 0; i < trackElements.length; i++) {
+            const track = trackElements[i];
+            const artist = track.getElementsByTagName('artist')[0]?.textContent || '';
+            const name = track.getElementsByTagName('name')[0]?.textContent || '';
+            const timestamp = parseInt(track.getElementsByTagName('timestamp')[0]?.textContent || '0', 10);
+            const before = parseInt(track.getElementsByTagName('before')[0]?.textContent || '0', 10);
+
+            if (timestamp > 0) {
+                playlist.push({ artist, name, timestamp, before });
+            }
+        }
+
+        return playlist.sort((a, b) => a.timestamp - b.timestamp); // Sort by time (oldest first)
+
+    } catch (error) {
+        console.error(`Error parsing 100fm playlist for ${slug}:`, error);
+        return [];
+    }
 };

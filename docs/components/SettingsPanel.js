@@ -1,13 +1,28 @@
 
-
-
-
 import React, { useState, useEffect } from 'react';
 import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, KEY_ACTION_LABELS } from '../types.js';
 import Auth from './Auth.js';
 import { ChevronDownIcon } from './Icons.js';
+import { BUILD_INFO } from '../buildInfo.js';
 
 const releaseNotes = [
+  {
+    version: '1.2',
+    date: '08.12.2025',
+    features: [
+        "חדש: נגן חכם לתחנות 100FM המאפשר חזרה בזמן ומעבר בין שירים.",
+        "שיפורים ביציבות זיהוי שירים.",
+    ],
+  },
+  {
+    version: '1.1',
+    date: '08.12.2025',
+    features: [
+        "הוספת פאנל ניהול מתקדם.",
+        "מנגנון עדכון גרסה אוטומטי.",
+        "אפשרויות מיון חדשות בתפריט הניהול.",
+    ],
+  },
   {
     version: '1.0',
     date: '06.12.2025',
@@ -19,8 +34,6 @@ const releaseNotes = [
     ],
   },
 ];
-
-const currentVersionInfo = releaseNotes[0];
 
 const DEFAULT_KEY_MAP = {
     playPause: [' ', 'Spacebar'],
@@ -42,7 +55,7 @@ const DEFAULT_KEY_MAP = {
 const SettingsButton = ({ label, isActive, onClick }) => (
     React.createElement("button", {
         onClick: onClick,
-        className: `px-4 py-2 text-xs font-medium rounded-md transition-colors w-full capitalize ${
+        className: `px-2 py-2 text-xs font-medium rounded-md transition-colors w-full min-h-[2.5rem] flex items-center justify-center text-center whitespace-normal leading-tight ${
             isActive ? 'bg-accent text-white' : 'bg-bg-primary hover:bg-accent/20'
         }`
     },
@@ -52,8 +65,8 @@ const SettingsButton = ({ label, isActive, onClick }) => (
 
 const ToggleSwitch = ({ label, enabled, onChange, disabled = false }) => (
      React.createElement("label", { className: `w-full flex items-center justify-between p-3 rounded-lg transition-colors duration-200 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-accent/10'} bg-bg-primary` },
-        React.createElement("span", { className: "font-medium text-text-primary" }, label),
-        React.createElement("div", { className: "relative inline-flex items-center cursor-pointer" },
+        React.createElement("span", { className: "font-medium text-text-primary text-sm whitespace-normal leading-tight max-w-[70%]" }, label),
+        React.createElement("div", { className: "relative inline-flex items-center cursor-pointer flex-shrink-0" },
             React.createElement("input", { 
                 type: "checkbox", 
                 checked: enabled, 
@@ -106,7 +119,7 @@ const SettingsSection = ({ title, children, isOpen, onToggle }) => {
 
 
 const SettingsPanel = ({ 
-    isOpen, onClose, user, onLogin, onLogout, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
+    isOpen, onClose, user, isAdmin, onOpenAdminPanel, onLogin, onLogout, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
     isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange,
     isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange,
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
@@ -121,8 +134,7 @@ const SettingsPanel = ({
     updateStatus, onManualUpdateCheck,
     keyMap, onKeyMapChange,
     setIsRebinding,
-    useProxyForVisualizer, onUseProxyForVisualizerChange,
-    isVisualizerSimulationEnabled, onVisualizerSimulationEnabledChange
+    is100fmSmartPlayerEnabled, on100fmSmartPlayerEnabledChange
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
   const [listeningFor, setListeningFor] = useState(null);
@@ -211,6 +223,17 @@ const SettingsPanel = ({
             React.createElement("div", { className: "flex justify-between items-center mb-6 flex-shrink-0" },
                 React.createElement("h2", { className: "text-xl font-bold text-text-primary" }, "הגדרות"),
                 React.createElement(Auth, { user: user, onLogin: onLogin, onLogout: onLogout })
+            ),
+
+            isAdmin && (
+                React.createElement("div", { className: "mb-6 animate-fade-in-up" },
+                    React.createElement("button", {
+                        onClick: () => { onClose(); onOpenAdminPanel(); },
+                        className: "w-full bg-accent/20 hover:bg-accent/40 text-accent border border-accent/50 font-bold py-3 px-4 rounded-lg transition-all"
+                    },
+                        "🛠️ פאנל ניהול"
+                    )
+                )
             ),
 
             React.createElement(SettingsSection, { title: "ערכת נושא", isOpen: openSections.theme, onToggle: () => toggleSection('theme') },
@@ -335,6 +358,11 @@ const SettingsPanel = ({
 
                     React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-2 px-3" }, "כללי"),
                     React.createElement(ToggleSwitch, { 
+                        label: "נגן חכם (100FM)",
+                        enabled: is100fmSmartPlayerEnabled,
+                        onChange: on100fmSmartPlayerEnabledChange
+                    }),
+                    React.createElement(ToggleSwitch, { 
                         label: "תצוגה גרפית (מסך מלא)", 
                         enabled: isNowPlayingVisualizerEnabled, 
                         onChange: onNowPlayingVisualizerEnabledChange 
@@ -343,17 +371,6 @@ const SettingsPanel = ({
                         label: "תצוגה גרפית (נגן תחתון)", 
                         enabled: isPlayerBarVisualizerEnabled, 
                         onChange: onPlayerBarVisualizerEnabledChange 
-                    }),
-                    React.createElement(ToggleSwitch, { 
-                        label: "סימולציה ויזואלית", 
-                        enabled: isVisualizerSimulationEnabled, 
-                        onChange: onVisualizerSimulationEnabledChange,
-                        disabled: useProxyForVisualizer 
-                    }),
-                    React.createElement(ToggleSwitch, { 
-                        label: "השתמש בנתוני אמת (לא יציב)", 
-                        enabled: useProxyForVisualizer, 
-                        onChange: onUseProxyForVisualizerChange 
                     }),
                     React.createElement(ToggleSwitch, { 
                         label: "הצג חיווי מצב",
@@ -462,7 +479,7 @@ const SettingsPanel = ({
                         tabIndex: updateStatus === 'idle' ? 0 : -1,
                         "aria-live": "polite"
                     },
-                        React.createElement("p", null, `רדיו פרימיום v${currentVersionInfo.version} (${currentVersionInfo.date})`),
+                        React.createElement("p", null, `רדיו פרימיום v${BUILD_INFO.version} (${BUILD_INFO.buildDate})`),
                         React.createElement("div", { className: "h-4 mt-1 flex items-center justify-center" },
                             getUpdateStatusContent()
                         )

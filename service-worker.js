@@ -1,8 +1,6 @@
 
 
-
-
-const CACHE_NAME = 'radio-premium-cache-1.0-06.12.2025-v7'; // Simplified update process
+const CACHE_NAME = 'radio-premium-cache-1.0-06.12.2025-v6'; // Simplified update process
 const urlsToCache = [
   './index.html',
   './manifest.json?v=23',
@@ -91,14 +89,14 @@ self.addEventListener('fetch', event => {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
             const urlToCache = new URL(event.request.url);
-            urlToCache.search = '?v=1.0-06.12.2025-v7';
+            urlToCache.search = '?v=1.0-06.12.2025-v6';
             cache.put(urlToCache.href, responseToCache);
           });
           return networkResponse;
         })
         .catch(() => {
            const urlToMatch = new URL(event.request.url);
-           urlToMatch.search = '?v=1.0-06.12.2025-v7';
+           urlToMatch.search = '?v=1.0-06.12.2025-v6';
           return caches.match(urlToMatch.href);
         })
     );
