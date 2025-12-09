@@ -20,13 +20,6 @@ export interface StationTrackInfo {
     next: string | null;
 }
 
-export interface SmartPlaylistItem {
-    artist: string;
-    name: string;
-    timestamp: number; // Unix timestamp in seconds
-    before: number;
-}
-
 export const THEMES = ['dark', 'light', 'blue', 'sunset', 'forest', 'ocean', 'rose', 'matrix'] as const;
 export type Theme = typeof THEMES[number];
 
@@ -140,5 +133,4 @@ export type AllSettings = {
     sortOrderAll: SortOrder;
     sortOrderFavorites: SortOrder;
     keyMap: KeyMap;
-    is100fmSmartPlayerEnabled: boolean;
 };
