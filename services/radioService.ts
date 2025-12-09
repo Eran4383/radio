@@ -249,7 +249,6 @@ export const fetchLiveTrackInfo = async (stationuuid: string): Promise<string | 
 };
 
 // --- New Function for 100fm Smart Player ---
-// Uses Regex parsing instead of DOMParser to handle broken/partial XML responses
 export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<SmartPlaylistItem[]> => {
     const slug = stationIdOrSlug.replace('100fm-', '');
     const url = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
@@ -269,18 +268,18 @@ export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<Smart
         const text = await response.text();
         const playlist: SmartPlaylistItem[] = [];
 
-        // Regex to match <track>...</track> blocks
-        const trackBlockRegex = /<track>(.*?)<\/track>/gs;
+        // Regex to match <track>...</track> blocks, handling attributes and newlines
+        const trackBlockRegex = /<track\b[^>]*>(.*?)<\/track>/gs;
         let trackMatch;
 
         while ((trackMatch = trackBlockRegex.exec(text)) !== null) {
             const blockContent = trackMatch[1];
             
             // Extract fields using Regex
-            const artistMatch = blockContent.match(/<artist>(.*?)<\/artist>/);
-            const nameMatch = blockContent.match(/<name>(.*?)<\/name>/);
-            const timestampMatch = blockContent.match(/<timestamp>(.*?)<\/timestamp>/);
-            const beforeMatch = blockContent.match(/<before>(.*?)<\/before>/);
+            const artistMatch = blockContent.match(/<artist>(.*?)<\/artist>/s);
+            const nameMatch = blockContent.match(/<name>(.*?)<\/name>/s);
+            const timestampMatch = blockContent.match(/<timestamp>(.*?)<\/timestamp>/s);
+            const beforeMatch = blockContent.match(/<before>(.*?)<\/before>/s);
 
             const artist = artistMatch ? artistMatch[1].trim() : '';
             const name = nameMatch ? nameMatch[1].trim() : '';
@@ -292,9 +291,8 @@ export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<Smart
             }
         }
 
-        if (playlist.length === 0) {
-             // Fallback logging if Regex fails but text exists
-             console.warn(`[100FM] No tracks found via Regex. Raw text length: ${text.length}`);
+        if (playlist.length === 0 && text.length > 0) {
+             console.warn(`[100FM] No tracks found via Regex. Raw response start: ${text.substring(0, 100)}`);
         }
 
         return playlist.sort((a, b) => a.timestamp - b.timestamp);
@@ -302,5 +300,48 @@ export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<Smart
     } catch (error) {
         console.error(`Error processing 100fm playlist for ${slug}:`, error);
         return [];
+    }
+};
+
+// Helper to fetch and parse HLS Program Date Time for accurate sync
+export const fetchHlsProgramDateTime = async (masterPlaylistUrl: string): Promise<number | null> => {
+    try {
+        const proxyUrl = `${CORS_PROXY_URL}${masterPlaylistUrl}`;
+        const masterRes = await fetch(proxyUrl);
+        if (!masterRes.ok) return null;
+        const masterText = await masterRes.text();
+
+        // Find the media playlist URL (chunklist)
+        // Usually ends with .m3u8 and doesn't start with #
+        const lines = masterText.split('\n');
+        let mediaUrl = lines.find(l => l.trim() && !l.startsWith('#'));
+        
+        if (!mediaUrl) return null;
+
+        // Resolve relative URL
+        if (!mediaUrl.startsWith('http')) {
+            const baseUrl = masterPlaylistUrl.substring(0, masterPlaylistUrl.lastIndexOf('/') + 1);
+            mediaUrl = baseUrl + mediaUrl;
+        }
+
+        // Fetch Media Playlist
+        const mediaRes = await fetch(`${CORS_PROXY_URL}${mediaUrl}`);
+        if (!mediaRes.ok) return null;
+        const mediaText = await mediaRes.text();
+
+        // Extract PROGRAM-DATE-TIME
+        // Format: #EXT-X-PROGRAM-DATE-TIME:2025-11-20T10:00:00Z
+        const dateTimeMatch = mediaText.match(/#EXT-X-PROGRAM-DATE-TIME:(.*)/);
+        if (dateTimeMatch && dateTimeMatch[1]) {
+            const dateStr = dateTimeMatch[1].trim();
+            const timestamp = Math.floor(new Date(dateStr).getTime() / 1000);
+            console.log(`[HLS Sync] Found server time: ${dateStr} -> ${timestamp}`);
+            return timestamp;
+        }
+        
+        return null;
+    } catch (e) {
+        console.error("Error fetching HLS date time:", e);
+        return null;
     }
 };

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
-import { fetchStations, fetchLiveTrackInfo, fetch100fmPlaylist } from './services/radioService.js';
+import { fetchStations, fetchLiveTrackInfo, fetch100fmPlaylist, fetchHlsProgramDateTime } from './services/radioService.js';
 import { 
     signInWithGoogle, 
     signOutUser, 
@@ -220,8 +220,8 @@ export default function App() {
 
   // Smart Playlist State
   const [smartPlaylist, setSmartPlaylist] = useState([]);
-  // Smart Player Command (for cross-component communication)
   const [smartPlayerCommand, setSmartPlayerCommand] = useState(null);
+  const [liveStreamDate, setLiveStreamDate] = useState(null);
 
   const isFavorite = useCallback((stationUuid) => allSettings.favorites.includes(stationUuid), [allSettings.favorites]);
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
@@ -377,7 +377,6 @@ export default function App() {
            setError('אירעה שגיאה בטעינת התחנות.');
            setStationsStatus('error');
         }
-        // If hasCachedData is true, we simply fail silently and keep showing cached data.
       }
     };
 
@@ -477,17 +476,31 @@ export default function App() {
           
           // --- 100FM Smart Player Logic ---
           if (allSettings.is100fmSmartPlayerEnabled && (stationuuid.startsWith('100fm-') || url_resolved.includes('streamgates.net'))) {
-              const playlist = await fetch100fmPlaylist(stationuuid);
+              // Fetch Songs
+              const playlistPromise = fetch100fmPlaylist(stationuuid);
+              // Fetch Server Time (once per station select or periodically)
+              const timePromise = liveStreamDate === null ? fetchHlsProgramDateTime(url_resolved) : Promise.resolve(liveStreamDate);
+
+              const [playlist, serverTime] = await Promise.all([playlistPromise, timePromise]);
               setSmartPlaylist(playlist);
               
+              if (serverTime !== null) {
+                  setLiveStreamDate(serverTime);
+              }
+
               if (playlist.length > 0) {
                   const now = Math.floor(Date.now() / 1000);
-                  const currentItem = [...playlist].reverse().find(i => i.timestamp <= now + 5); 
-                  const nextItem = playlist.find(i => i.timestamp > now + 5);
+                  const currentItem = [...playlist].reverse().find(i => i.timestamp <= now + 120); 
+                  
+                  // Fallback to last track if timestamp matching fails (e.g. server time drift)
+                  const trackToShow = currentItem || playlist[playlist.length - 1];
+
+                  const nextItemIndex = playlist.findIndex(i => i === trackToShow) + 1;
+                  const nextItem = nextItemIndex < playlist.length ? playlist[nextItemIndex] : null;
                   
                   finalInfo = {
                       program: name,
-                      current: currentItem ? `${currentItem.name} - ${currentItem.artist}` : null,
+                      current: trackToShow ? `${trackToShow.name} - ${trackToShow.artist}` : null,
                       next: nextItem ? `${nextItem.name} - ${nextItem.artist}` : null
                   };
               } else {
@@ -497,6 +510,7 @@ export default function App() {
           // --- Standard Stations Logic ---
           else {
               setSmartPlaylist([]); 
+              setLiveStreamDate(null);
               
               if (hasSpecificHandler(name)) { 
                   const specificInfo = await fetchStationSpecificTrackInfo(name); 
@@ -518,6 +532,7 @@ export default function App() {
       } else { 
           setTrackInfo(null); 
           setSmartPlaylist([]);
+          setLiveStreamDate(null);
       } 
       
       return () => clearInterval(intervalId); 
@@ -535,7 +550,11 @@ export default function App() {
       }
   };
   
-  const handleSelectStation = useCallback((station) => dispatch({ type: 'SELECT_STATION', payload: station }), []);
+  const handleSelectStation = useCallback((station) => {
+      setLiveStreamDate(null);
+      dispatch({ type: 'SELECT_STATION', payload: station });
+  }, []);
+
   const handlePlayPause = useCallback(() => { if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' }); else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] }); }, [playerState.station, displayedStations]);
   const handlePlay = useCallback(async () => { if (playerState.status === 'PLAYING') return; if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' }); else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] }); }, [playerState.status, playerState.station, displayedStations]);
   const handlePause = useCallback(async () => { if (playerState.status === 'PLAYING') dispatch({ type: 'TOGGLE_PAUSE' }); }, [playerState.status]);
@@ -549,11 +568,9 @@ export default function App() {
   const closeActionMenu = useCallback(() => setActionMenuState({ isOpen: false, songTitle: null }), []);
   const handleCycleVisualizerStyle = useCallback(() => setAllSettings(s => ({...s, visualizerStyle: VISUALIZER_STYLES[(VISUALIZER_STYLES.indexOf(s.visualizerStyle) + 1) % VISUALIZER_STYLES.length]})), []);
 
-  // Smart Player Handlers
   const triggerSmartNext = useCallback(() => setSmartPlayerCommand({ type: 'NEXT', id: Date.now() }), []);
   const triggerSmartPrev = useCallback(() => setSmartPlayerCommand({ type: 'PREV', id: Date.now() }), []);
 
-  // Handle favorite toggle with confirmation
   const toggleFavorite = (uuid) => {
       const isCurrentlyFavorite = allSettings.favorites.includes(uuid);
       if (isCurrentlyFavorite) {
@@ -719,10 +736,10 @@ export default function App() {
         onOpenActionMenu: openActionMenu, 
         isVisualizerFullscreen: isVisualizerFullscreen, 
         setIsVisualizerFullscreen: setIsVisualizerFullscreen,
-        // Smart Player props
         isSmartPlayerActive: isSmartPlayerActive,
         onSmartNext: triggerSmartNext,
-        onSmartPrev: triggerSmartPrev
+        onSmartPrev: triggerSmartPrev,
+        liveStreamDate: liveStreamDate
       }),
       React.createElement(ActionMenu, { isOpen: actionMenuState.isOpen, onClose: closeActionMenu, songTitle: actionMenuState.songTitle }),
       React.createElement(Player, { 
@@ -752,8 +769,8 @@ export default function App() {
         onOpenActionMenu: openActionMenu, 
         is100fmSmartPlayerEnabled: allSettings.is100fmSmartPlayerEnabled,
         smartPlaylist: smartPlaylist,
-        // Pass command
-        command: smartPlayerCommand
+        command: smartPlayerCommand,
+        liveStreamDate: liveStreamDate
       }),
       isUpdateAvailable && React.createElement("div", { className: "fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up" }, React.createElement("p", { className: "text-sm font-semibold" }, "עדכון חדש זמין"), React.createElement("button", { onClick: handleUpdateClick, className: "py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold" }, "עדכן גירסה"))
     )

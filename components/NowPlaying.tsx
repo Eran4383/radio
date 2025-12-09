@@ -35,6 +35,7 @@ interface NowPlayingProps {
   isSmartPlayerActive: boolean;
   onSmartNext: () => void;
   onSmartPrev: () => void;
+  liveStreamDate?: number | null;
 }
 
 const NowPlaying: React.FC<NowPlayingProps> = ({
@@ -50,7 +51,19 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
     const dragRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const [startAnimation, setStartAnimation] = useState(false);
+    // HLS support check also needed here to sync UI with Player bar
+    const [isHlsSupported, setIsHlsSupported] = useState(false);
     
+    useEffect(() => {
+        const audio = document.createElement('audio');
+        const canPlayM3u8 = audio.canPlayType('application/vnd.apple.mpegurl') || 
+                            audio.canPlayType('audio/mpegurl');
+        const hlsJsSupported = (window as any).Hls && (window as any).Hls.isSupported();
+        setIsHlsSupported(!!canPlayM3u8 || !!hlsJsSupported);
+    }, []);
+
+    const canUseSmartFeatures = isSmartPlayerActive && isHlsSupported;
+
     const stationNameRef = useRef<HTMLSpanElement>(null);
     const programNameRef = useRef<HTMLSpanElement>(null);
     const currentTrackRef = useRef<HTMLSpanElement>(null);
@@ -313,10 +326,10 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
                 <SkipNextIcon className="w-8 h-8 sm:w-12 sm:h-12" />
               </button>
 
-              {/* Previous Song (Smart) - User Requested FastForward here */}
-              {isSmartPlayerActive && (
+              {/* Previous Song (Smart) - Rewind Icon */}
+              {canUseSmartFeatures && (
                   <button onClick={onSmartPrev} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="שיר קודם">
-                    <FastForwardIcon className="w-6 h-6 sm:w-8 sm:h-8" />
+                    <RewindIcon className="w-6 h-6 sm:w-8 sm:h-8" />
                   </button>
               )}
 
@@ -329,10 +342,10 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
                 {isPlaying ? <PauseIcon className="w-10 h-10 sm:w-14 sm:h-14" /> : <PlayIcon className="w-10 h-10 sm:w-14 sm:h-14" />}
               </button>
 
-              {/* Next Song (Smart) - User Requested Rewind here */}
-              {isSmartPlayerActive && (
+              {/* Next Song (Smart) - FastForward Icon */}
+              {canUseSmartFeatures && (
                   <button onClick={onSmartNext} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="שיר הבא">
-                    <RewindIcon className="w-6 h-6 sm:w-8 sm:h-8" />
+                    <FastForwardIcon className="w-6 h-6 sm:w-8 sm:h-8" />
                   </button>
               )}
 

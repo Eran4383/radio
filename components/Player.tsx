@@ -48,6 +48,7 @@ interface PlayerProps {
   is100fmSmartPlayerEnabled: boolean; // New prop for feature toggle
   smartPlaylist: SmartPlaylistItem[]; // NEW PROP
   command?: { type: 'NEXT' | 'PREV', id: number } | null;
+  liveStreamDate: number | null; // The server time of the HLS stream (Unix Timestamp)
 }
 
 const PlayerVisualizer: React.FC<{ frequencyData: Uint8Array }> = ({ frequencyData }) => {
@@ -115,7 +116,8 @@ const Player: React.FC<PlayerProps> = ({
   onOpenActionMenu,
   is100fmSmartPlayerEnabled,
   smartPlaylist,
-  command
+  command,
+  liveStreamDate
 }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -132,6 +134,10 @@ const Player: React.FC<PlayerProps> = ({
   const watchdogIntervalRef = useRef<number | null>(null);
 
   const [startAnimation, setStartAnimation] = useState(false);
+  const [isHlsSupported, setIsHlsSupported] = useState(false);
+  
+  // HLS.js Reference
+  const hlsRef = useRef<any>(null);
   
   // Refs for marquee synchronization
   const stationNameRef = useRef<HTMLSpanElement>(null);
@@ -139,35 +145,27 @@ const Player: React.FC<PlayerProps> = ({
   const nextTrackRef = useRef<HTMLSpanElement>(null);
   const [marqueeConfig, setMarqueeConfig] = useState<{ duration: number; isOverflowing: boolean[] }>({ duration: 0, isOverflowing: [false, false, false] });
 
-  // Time Sync Offset
-  const [serverTimeOffset, setServerTimeOffset] = useState(0);
-
   // --- Smart Player State ---
-  const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
+  // Only active if enabled, it's a 100fm station
+  const isSmartPlayerActive = is100fmSmartPlayerEnabled && 
+                              (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
+  
+  const canUseSmartFeatures = isSmartPlayerActive && isHlsSupported;
 
   const { status, station, error } = playerState;
   const isPlaying = status === 'PLAYING';
   const isLoading = status === 'LOADING';
 
-  // Calculate Time Offset when playlist loads
+  // Check HLS Support on mount (Native or via hls.js)
   useEffect(() => {
-      if (smartPlaylist.length > 0) {
-          const latestTrack = smartPlaylist[smartPlaylist.length - 1];
-          const now = Math.floor(Date.now() / 1000);
-          
-          // Heuristic: If the latest song started more than 60 seconds in the future
-          // (allowing for some clock drift), we assume the server time is ahead/different.
-          // Or if it's way in the past, it doesn't matter as much, but usually 100FM
-          // sends timestamps like 2026 when it's 2025.
-          if (latestTrack.timestamp > now + 60) {
-              const diff = latestTrack.timestamp - now;
-              console.log(`[SmartPlayer] Detected future timestamp. Adjusting offset by ${diff}s`);
-              setServerTimeOffset(diff);
-          } else {
-              setServerTimeOffset(0);
-          }
-      }
-  }, [smartPlaylist]);
+      const audio = document.createElement('audio');
+      const nativeHls = audio.canPlayType('application/vnd.apple.mpegurl') || 
+                          audio.canPlayType('audio/mpegurl');
+      
+      const hlsJsSupported = (window as any).Hls && (window as any).Hls.isSupported();
+      
+      setIsHlsSupported(!!nativeHls || !!hlsJsSupported);
+  }, []);
 
   // Effect for initial animation delay
   useEffect(() => {
@@ -257,6 +255,12 @@ const Player: React.FC<PlayerProps> = ({
     const audio = audioRef.current;
     if (!audio || !station) return;
 
+    // Cleanup previous HLS instance
+    if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+    }
+
     const playAudio = async () => {
         // Only set up audio context (EQ/Visualizer) if proxy is enabled (CORS)
         if (shouldUseProxy) {
@@ -267,34 +271,78 @@ const Player: React.FC<PlayerProps> = ({
         }
         
         let streamUrl = station.url_resolved;
+        let useHlsJs = false;
 
         // --- Smart Player URL Overwrite ---
         if (isSmartPlayerActive) {
             // Force DVR URL if we detect a 100FM stream on streamgates that isn't already DVR
             if (streamUrl.includes('streamgates.net') && !streamUrl.includes('dvr_timeshift')) {
-                // Heuristic replacement to point to the DVR manifest
                 const lastSlashIndex = streamUrl.lastIndexOf('/');
                 if (lastSlashIndex !== -1) {
                     const baseUrl = streamUrl.substring(0, lastSlashIndex);
+                    // Force the playlist URL, not chunks
                     streamUrl = `${baseUrl}/playlist_dvr_timeshift-36000.m3u8`;
                 }
+            }
+            
+            // Determine if we need hls.js (Desktop) or Native (Mobile)
+            const audioEl = document.createElement('audio');
+            const nativeHls = audioEl.canPlayType('application/vnd.apple.mpegurl') || 
+                              audioEl.canPlayType('audio/mpegurl');
+            
+            if (!nativeHls && (window as any).Hls && (window as any).Hls.isSupported()) {
+                useHlsJs = true;
             }
         }
 
         // Apply Proxy if needed
-        if (shouldUseProxy) {
+        if (shouldUseProxy && !useHlsJs) { // HLS.js usually handles its own XHR
             streamUrl = `${CORS_PROXY_URL}${streamUrl}`;
         }
 
-        if (audio.src !== streamUrl) {
-            audio.src = streamUrl;
-            // Only request CORS if using proxy, otherwise direct connection might fail
-            if (shouldUseProxy) {
-                audio.crossOrigin = 'anonymous';
-            } else {
-                audio.removeAttribute('crossOrigin');
+        if (useHlsJs) {
+             console.log('[Player] Initializing HLS.js for URL:', streamUrl);
+             const Hls = (window as any).Hls;
+             const hls = new Hls({
+                 enableWorker: true,
+                 lowLatencyMode: true,
+             });
+             hls.loadSource(streamUrl);
+             hls.attachMedia(audio);
+             hlsRef.current = hls;
+             
+             hls.on(Hls.Events.ERROR, function (event: any, data: any) {
+                if (data.fatal) {
+                    console.error('[HLS.js] Fatal Error:', data.type, data.details);
+                    switch (data.type) {
+                    case Hls.ErrorTypes.NETWORK_ERROR:
+                        console.log('[HLS.js] Network error, attempting recovery...');
+                        hls.startLoad();
+                        break;
+                    case Hls.ErrorTypes.MEDIA_ERROR:
+                        console.log('[HLS.js] Media error, attempting recovery...');
+                        hls.recoverMediaError();
+                        break;
+                    default:
+                        console.log('[HLS.js] Unrecoverable error.');
+                        hls.destroy();
+                        break;
+                    }
+                }
+             });
+
+        } else {
+            if (audio.src !== streamUrl) {
+                audio.src = streamUrl;
+                // Only request CORS if using proxy, otherwise direct connection might fail
+                if (shouldUseProxy) {
+                    audio.crossOrigin = 'anonymous';
+                } else {
+                    audio.removeAttribute('crossOrigin');
+                }
             }
         }
+
         try {
             await audio.play();
         } catch (e: any) {
@@ -403,6 +451,14 @@ const Player: React.FC<PlayerProps> = ({
       lastTimeUpdateRef.current = Date.now();
 
       const audio = audioRef.current;
+      
+      // Basic recovery for HLS might need internal HLS.js recovery
+      if (hlsRef.current) {
+          hlsRef.current.recoverMediaError();
+          audio.play();
+          return;
+      }
+
       const streamUrl = shouldUseProxy 
           ? `${CORS_PROXY_URL}${station.url_resolved}` 
           : station.url_resolved;
@@ -444,73 +500,62 @@ const Player: React.FC<PlayerProps> = ({
       return clearWatchdog;
   }, [status, attemptRecovery]);
 
-  // --- Smart Seeking Logic ---
-  const getCurrentUnixTime = () => Math.floor(Date.now() / 1000) + serverTimeOffset;
+  // --- Smart Seeking Logic (Anchor: Live Edge) ---
+  
+  const getSeekableEnd = () => {
+      const audio = audioRef.current;
+      if (!audio || audio.seekable.length === 0) return 0;
+      return audio.seekable.end(0);
+  }
 
-  const calculateSeekTime = (targetUnixTimestamp: number) => {
+  const executeSeekToSecondsAgo = (secondsAgo: number) => {
       const audio = audioRef.current;
       if (!audio) return;
+
+      const liveEdge = getSeekableEnd();
       
-      let livePosition = 0;
-      
-      if (audio.seekable.length > 0) {
-          livePosition = audio.seekable.end(0);
-      } else {
-          console.warn("[SmartSeek] Stream report: Not seekable. URL:", audio.src);
-          // Fallback: If we assume we are at live edge (e.g. initial play)
-          // But without buffer info, setting currentTime might fail.
-          livePosition = audio.currentTime;
+      if (liveEdge < 60) {
+          console.warn("[SmartSeek] Buffer too small for seeking. Live Edge: " + liveEdge);
+          // With HLS.js, we might need to wait for buffer to grow or check config
       }
 
-      const now = getCurrentUnixTime();
-      // Logic: target position is relative to live edge.
-      // If song started 60s ago in real time: lag is 60s.
-      // Target Buffer Pos = Live Buffer End - 60s.
-      const secondsAgo = now - targetUnixTimestamp;
-      const targetPosition = Math.max(0, livePosition - secondsAgo);
+      const targetPos = Math.max(0, liveEdge - secondsAgo);
       
-      console.log(`[SmartSeek] Song Start: ${targetUnixTimestamp}, Now: ${now}, Seconds Ago: ${secondsAgo}`);
-      console.log(`[SmartSeek] Live Buffer End: ${livePosition}, Target Buffer Pos: ${targetPosition}`);
-
-      if (isFinite(targetPosition)) {
-          audio.currentTime = targetPosition;
-      }
-  };
-
-  const getVirtualPlaybackTime = () => {
-      const audio = audioRef.current;
-      if (!audio) return getCurrentUnixTime();
-
-      let liveEdge = audio.currentTime;
-      if (audio.seekable.length > 0) {
-          liveEdge = audio.seekable.end(0);
-      }
-
-      const currentPos = audio.currentTime;
-      const lag = liveEdge - currentPos;
+      console.log(`[SmartSeek] Live Edge: ${liveEdge}, Seconds Ago: ${secondsAgo}, Target: ${targetPos}`);
       
-      // Virtual Time = Real Time - Lag.
-      return getCurrentUnixTime() - lag;
+      if (isFinite(targetPos)) {
+          audio.currentTime = targetPos;
+      }
   };
 
   const handleSmartPrev = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
-          console.warn("[SmartPrev] No playlist data available.");
+      if (!canUseSmartFeatures || smartPlaylist.length === 0) {
+          console.warn("[SmartPrev] Smart features unavailable.");
           return;
       }
       
-      // Calculate where we are "virtually" in history
-      const virtualNow = getVirtualPlaybackTime();
+      // ANCHOR LOGIC: The last track in the playlist IS the live edge.
+      const lastTrack = smartPlaylist[smartPlaylist.length - 1];
+      const liveAnchorTime = lastTrack.timestamp; 
+      
+      // Calculate current virtual position based on audio buffer
+      const audio = audioRef.current;
+      if (!audio) return;
+      
+      const liveEdgePos = getSeekableEnd();
+      const currentPos = audio.currentTime;
+      const secondsBehindLive = liveEdgePos - currentPos;
+      
+      // Virtual Time = (Last Song Time) - (Seconds Behind Buffer End)
+      const virtualNow = liveAnchorTime - secondsBehindLive;
       console.log(`[SmartPrev] Virtual Time: ${virtualNow}`);
 
-      // Find the track that is playing at this virtual time
-      const sortedPlaylist = [...smartPlaylist].sort((a, b) => a.timestamp - b.timestamp);
+      // Find current track index based on virtual time
       let currentIndex = -1;
-
-      for (let i = 0; i < sortedPlaylist.length; i++) {
-          const track = sortedPlaylist[i];
-          const nextTrack = sortedPlaylist[i+1];
-          // Adding buffer to 'virtualNow' to handle edge cases
+      for (let i = 0; i < smartPlaylist.length; i++) {
+          const track = smartPlaylist[i];
+          const nextTrack = smartPlaylist[i+1];
+          // Use a small buffer
           if (track.timestamp <= virtualNow + 5 && (!nextTrack || nextTrack.timestamp > virtualNow + 5)) {
               currentIndex = i;
               break;
@@ -518,59 +563,65 @@ const Player: React.FC<PlayerProps> = ({
       }
 
       if (currentIndex !== -1) {
-          const currentTrack = sortedPlaylist[currentIndex];
+          const currentTrack = smartPlaylist[currentIndex];
           const timeSinceStart = virtualNow - currentTrack.timestamp;
           
-          console.log(`[SmartPrev] Found Index: ${currentIndex}, Track: ${currentTrack.name}, Time Since Start: ${timeSinceStart}`);
-
           if (timeSinceStart > 10) {
               // Restart current song
-              calculateSeekTime(currentTrack.timestamp);
+              // Seek Amount = (Last Track Time) - (Current Track Time)
+              const seekSecondsAgo = liveAnchorTime - currentTrack.timestamp;
+              executeSeekToSecondsAgo(seekSecondsAgo);
           } else if (currentIndex > 0) {
-              // Go to previous song
-              calculateSeekTime(sortedPlaylist[currentIndex - 1].timestamp);
+              // Prev song
+              const prevTrack = smartPlaylist[currentIndex - 1];
+              const seekSecondsAgo = liveAnchorTime - prevTrack.timestamp;
+              executeSeekToSecondsAgo(seekSecondsAgo);
           } else {
               // Start of playlist
-              calculateSeekTime(currentTrack.timestamp);
+              const seekSecondsAgo = liveAnchorTime - currentTrack.timestamp;
+              executeSeekToSecondsAgo(seekSecondsAgo);
           }
       } else {
-          console.log("[SmartPrev] Could not determine current track index.");
+          // Fallback: Jump to last track if logic fails
+           executeSeekToSecondsAgo(0); 
       }
   };
 
   const handleSmartNext = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
-          console.warn("[SmartNext] No playlist data available.");
+      if (!canUseSmartFeatures || smartPlaylist.length === 0) {
           return;
       }
 
-      const virtualNow = getVirtualPlaybackTime();
-      console.log(`[SmartNext] Virtual Time: ${virtualNow}`);
+      const lastTrack = smartPlaylist[smartPlaylist.length - 1];
+      const liveAnchorTime = lastTrack.timestamp;
+      
+      const audio = audioRef.current;
+      if (!audio) return;
+      
+      const liveEdgePos = getSeekableEnd();
+      const currentPos = audio.currentTime;
+      const secondsBehindLive = liveEdgePos - currentPos;
+      const virtualNow = liveAnchorTime - secondsBehindLive;
 
-      const sortedPlaylist = [...smartPlaylist].sort((a, b) => a.timestamp - b.timestamp);
       let currentIndex = -1;
-
-      for (let i = 0; i < sortedPlaylist.length; i++) {
-          const track = sortedPlaylist[i];
-          const nextTrack = sortedPlaylist[i+1];
+      for (let i = 0; i < smartPlaylist.length; i++) {
+          const track = smartPlaylist[i];
+          const nextTrack = smartPlaylist[i+1];
           if (track.timestamp <= virtualNow + 5 && (!nextTrack || nextTrack.timestamp > virtualNow + 5)) {
               currentIndex = i;
               break;
           }
       }
 
-      if (currentIndex !== -1 && currentIndex < sortedPlaylist.length - 1) {
-          const nextTrack = sortedPlaylist[currentIndex + 1];
-          console.log(`[SmartNext] Jumping to next track: ${nextTrack.name}`);
-          calculateSeekTime(nextTrack.timestamp);
+      if (currentIndex !== -1 && currentIndex < smartPlaylist.length - 1) {
+          const nextTrack = smartPlaylist[currentIndex + 1];
+          // Seek Amount = (Last Track Time) - (Next Track Time)
+          const seekSecondsAgo = liveAnchorTime - nextTrack.timestamp;
+          executeSeekToSecondsAgo(seekSecondsAgo);
       } else {
-          // We are at the last song (Live). Jump to Live Edge.
-          const audio = audioRef.current;
-          if (audio) {
-              const edge = audio.seekable.length > 0 ? audio.seekable.end(0) : audio.currentTime;
-              console.log(`[SmartNext] Already at latest. Jumping to Live Edge.`);
-              audio.currentTime = edge;
-          }
+          // Jump to Live
+          console.log(`[SmartNext] Jumping to Live Edge.`);
+          if (audio) audio.currentTime = getSeekableEnd();
       }
   };
 
@@ -632,7 +683,7 @@ const Player: React.FC<PlayerProps> = ({
                   </MarqueeText>
                 ) : status === 'LOADING' ? (
                     <span className="text-text-secondary animate-pulse">טוען...</span>
-                ) : isSmartPlayerActive ? (
+                ) : canUseSmartFeatures ? (
                     <span className="text-accent text-xs font-semibold animate-pulse">נגן חכם 100FM פעיל</span>
                 ) : null}
               </div>
@@ -659,10 +710,10 @@ const Player: React.FC<PlayerProps> = ({
                 <SkipNextIcon className="w-6 h-6" />
             </button>
 
-            {/* Song Prev (Right in RTL) - User requested FastForwardIcon here */}
-            {isSmartPlayerActive && (
+            {/* Song Prev (Right in RTL) - Rewind Icon for Previous Song */}
+            {canUseSmartFeatures && (
                 <button onClick={handleSmartPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="שיר קודם">
-                    <FastForwardIcon className="w-5 h-5" /> 
+                    <RewindIcon className="w-5 h-5" /> 
                 </button>
             )}
 
@@ -674,10 +725,10 @@ const Player: React.FC<PlayerProps> = ({
               {isActuallyPlaying || isLoading ? <PauseIcon className="w-7 h-7" /> : <PlayIcon className="w-7 h-7" />}
             </button>
 
-            {/* Song Next (Left in RTL) - User requested RewindIcon here */}
-            {isSmartPlayerActive && (
+            {/* Song Next (Left in RTL) - FastForward Icon for Next Song */}
+            {canUseSmartFeatures && (
                 <button onClick={handleSmartNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="שיר הבא">
-                    <RewindIcon className="w-5 h-5" />
+                    <FastForwardIcon className="w-5 h-5" />
                 </button>
             )}
 

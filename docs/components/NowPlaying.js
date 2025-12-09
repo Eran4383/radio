@@ -13,11 +13,23 @@ const NowPlaying = ({
   isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled, marqueeSpeed,
   onOpenActionMenu,
   isVisualizerFullscreen, setIsVisualizerFullscreen,
-  isSmartPlayerActive, onSmartNext, onSmartPrev
+  isSmartPlayerActive, onSmartNext, onSmartPrev,
+  liveStreamDate
 }) => {
     const dragRef = useRef(null);
     const scrollRef = useRef(null);
     const [startAnimation, setStartAnimation] = useState(false);
+    const [isHlsSupported, setIsHlsSupported] = useState(false);
+    
+    useEffect(() => {
+        const audio = document.createElement('audio');
+        const canPlayM3u8 = audio.canPlayType('application/vnd.apple.mpegurl') || 
+                            audio.canPlayType('audio/mpegurl');
+        const hlsJsSupported = window.Hls && window.Hls.isSupported();
+        setIsHlsSupported(!!canPlayM3u8 || !!hlsJsSupported);
+    }, []);
+
+    const canUseSmartFeatures = isSmartPlayerActive && isHlsSupported;
     
     const stationNameRef = useRef(null);
     const programNameRef = useRef(null);
@@ -276,9 +288,9 @@ const NowPlaying = ({
                 React.createElement(SkipNextIcon, { className: "w-8 h-8 sm:w-12 sm:h-12" })
               ),
               
-              isSmartPlayerActive && (
+              canUseSmartFeatures && (
                   React.createElement("button", { onClick: onSmartPrev, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "שיר קודם" },
-                    React.createElement(FastForwardIcon, { className: "w-6 h-6 sm:w-8 sm:h-8" })
+                    React.createElement(RewindIcon, { className: "w-6 h-6 sm:w-8 sm:h-8" })
                   )
               ),
 
@@ -290,9 +302,9 @@ const NowPlaying = ({
                 isPlaying ? React.createElement(PauseIcon, { className: "w-10 h-10 sm:w-14 sm:h-14" }) : React.createElement(PlayIcon, { className: "w-10 h-10 sm:w-14 sm:h-14" })
               ),
 
-              isSmartPlayerActive && (
+              canUseSmartFeatures && (
                   React.createElement("button", { onClick: onSmartNext, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "שיר הבא" },
-                    React.createElement(RewindIcon, { className: "w-6 h-6 sm:w-8 sm:h-8" })
+                    React.createElement(FastForwardIcon, { className: "w-6 h-6 sm:w-8 sm:h-8" })
                   )
               ),
 

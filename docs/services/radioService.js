@@ -232,16 +232,16 @@ export const fetch100fmPlaylist = async (stationIdOrSlug) => {
         const text = await response.text();
         const playlist = [];
 
-        const trackBlockRegex = /<track>(.*?)<\/track>/gs;
+        const trackBlockRegex = /<track\b[^>]*>(.*?)<\/track>/gs;
         let trackMatch;
 
         while ((trackMatch = trackBlockRegex.exec(text)) !== null) {
             const blockContent = trackMatch[1];
             
-            const artistMatch = blockContent.match(/<artist>(.*?)<\/artist>/);
-            const nameMatch = blockContent.match(/<name>(.*?)<\/name>/);
-            const timestampMatch = blockContent.match(/<timestamp>(.*?)<\/timestamp>/);
-            const beforeMatch = blockContent.match(/<before>(.*?)<\/before>/);
+            const artistMatch = blockContent.match(/<artist>(.*?)<\/artist>/s);
+            const nameMatch = blockContent.match(/<name>(.*?)<\/name>/s);
+            const timestampMatch = blockContent.match(/<timestamp>(.*?)<\/timestamp>/s);
+            const beforeMatch = blockContent.match(/<before>(.*?)<\/before>/s);
 
             const artist = artistMatch ? artistMatch[1].trim() : '';
             const name = nameMatch ? nameMatch[1].trim() : '';
@@ -258,5 +258,41 @@ export const fetch100fmPlaylist = async (stationIdOrSlug) => {
     } catch (error) {
         console.error(`Error processing 100fm playlist for ${slug}:`, error);
         return [];
+    }
+};
+
+export const fetchHlsProgramDateTime = async (masterPlaylistUrl) => {
+    try {
+        const proxyUrl = `${CORS_PROXY_URL}${masterPlaylistUrl}`;
+        const masterRes = await fetch(proxyUrl);
+        if (!masterRes.ok) return null;
+        const masterText = await masterRes.text();
+
+        const lines = masterText.split('\n');
+        let mediaUrl = lines.find(l => l.trim() && !l.startsWith('#'));
+        
+        if (!mediaUrl) return null;
+
+        if (!mediaUrl.startsWith('http')) {
+            const baseUrl = masterPlaylistUrl.substring(0, masterPlaylistUrl.lastIndexOf('/') + 1);
+            mediaUrl = baseUrl + mediaUrl;
+        }
+
+        const mediaRes = await fetch(`${CORS_PROXY_URL}${mediaUrl}`);
+        if (!mediaRes.ok) return null;
+        const mediaText = await mediaRes.text();
+
+        const dateTimeMatch = mediaText.match(/#EXT-X-PROGRAM-DATE-TIME:(.*)/);
+        if (dateTimeMatch && dateTimeMatch[1]) {
+            const dateStr = dateTimeMatch[1].trim();
+            const timestamp = Math.floor(new Date(dateStr).getTime() / 1000);
+            console.log(`[HLS Sync] Found server time: ${dateStr} -> ${timestamp}`);
+            return timestamp;
+        }
+        
+        return null;
+    } catch (e) {
+        console.error("Error fetching HLS date time:", e);
+        return null;
     }
 };

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
-import { fetchStations, fetchLiveTrackInfo, fetch100fmPlaylist } from './services/radioService';
+import { fetchStations, fetchLiveTrackInfo, fetch100fmPlaylist, fetchHlsProgramDateTime } from './services/radioService';
 import { 
     signInWithGoogle, 
     signOutUser, 
@@ -171,12 +171,10 @@ const saveSettingsToLocalStorage = (settings: AllSettings) => {
 };
 
 const settingsHaveConflict = (local: AllSettings, cloud: AllSettings) => {
-    // A simple JSON diff is good enough for this data structure.
     return JSON.stringify(local) !== JSON.stringify(cloud);
 };
 
 const normalizeSettings = (settings: Partial<AllSettings> | null): AllSettings => {
-    // Start with a deep copy of defaults to avoid mutation
     const defaultsCopy = JSON.parse(JSON.stringify(defaultSettings));
     
     if (!settings) {
@@ -185,8 +183,8 @@ const normalizeSettings = (settings: Partial<AllSettings> | null): AllSettings =
     
     return {
         ...defaultsCopy,
-        ...settings, // Overwrite with provided settings
-        customEqSettings: { // Deep merge for the nested object
+        ...settings,
+        customEqSettings: {
             ...defaultsCopy.customEqSettings,
             ...(settings.customEqSettings || {}),
         },
@@ -219,7 +217,6 @@ export default function App() {
 
   const [allSettings, setAllSettings] = useState<AllSettings>(() => loadSettingsFromLocalStorage());
   
-  // Use a ref to track the latest settings, to be used inside the auth listener closure
   const settingsRef = useRef(allSettings);
   useEffect(() => {
     settingsRef.current = allSettings;
@@ -238,32 +235,26 @@ export default function App() {
 
   // Smart Playlist State
   const [smartPlaylist, setSmartPlaylist] = useState<SmartPlaylistItem[]>([]);
-  // Smart Player Command (for cross-component communication)
   const [smartPlayerCommand, setSmartPlayerCommand] = useState<{type: 'NEXT' | 'PREV', id: number} | null>(null);
+  const [liveStreamDate, setLiveStreamDate] = useState<number | null>(null);
 
   const isFavorite = useCallback((stationUuid: string) => allSettings.favorites.includes(stationUuid), [allSettings.favorites]);
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
   const waitingWorkerRef = useRef<ServiceWorker | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
   
-  // Mute volume memory
   const [preMuteVolume, setPreMuteVolume] = useState<number>(0.5);
-  // Rebinding state to pause global shortcuts
   const [isRebinding, setIsRebinding] = useState(false);
   
-  // State for removal confirmation modal
   const [pendingRemoval, setPendingRemoval] = useState<{uuid: string, name: string} | null>(null);
 
-  // Determine if we should use proxy (if ANY visualizer is enabled)
   const shouldUseProxy = allSettings.isNowPlayingVisualizerEnabled || allSettings.isPlayerBarVisualizerEnabled;
 
-  // Derived state for Smart Player activation
   const isSmartPlayerActive = useMemo(() => {
       return allSettings.is100fmSmartPlayerEnabled && 
              (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
   }, [allSettings.is100fmSmartPlayerEnabled, playerState.station]);
 
-  // Auth state listener - runs only once on mount
   useEffect(() => {
     const unsubscribe = onAuthStateChangedListener(async (user) => {
       if (user) {
@@ -288,12 +279,7 @@ export default function App() {
         } else {
           const localSettings = settingsRef.current;
           
-          console.log("--- השוואת הגדרות סנכרון ---");
-          console.log("הגדרות מקומיות (מהמכשיר):", localSettings);
-          console.log("הגדרות מהענן (לאחר נורמליזציה):", cloudSettings);
-          
           if (settingsHaveConflict(localSettings, cloudSettings)) {
-            console.log("זוהה קונפליקט. פותח חלון מיזוג.");
             setMergeModal({
               isOpen: true,
               onMerge: () => {
@@ -313,7 +299,6 @@ export default function App() {
               },
             });
           } else {
-            console.log("לא זוהו קונפליקטים. משתמש בהגדרות מהענן.");
             setAllSettings(cloudSettings);
             localStorage.setItem('radio-has-synced-with-account', 'true');
             setIsCloudSyncing(false);
@@ -321,7 +306,6 @@ export default function App() {
           }
         }
       } else {
-        console.log("המשתמש התנתק. משחזר הגדרות מקומיות.");
         localStorage.removeItem('radio-has-synced-with-account');
         setUser(null);
         setIsAdmin(false);
@@ -332,7 +316,6 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  // Settings persistence effect
   useEffect(() => {
     if (!user) {
       saveSettingsToLocalStorage(allSettings);
@@ -349,10 +332,8 @@ export default function App() {
     }
   }, [isAuthReady, stationsStatus]);
 
-  // Initial load logic: Cache First Strategy
   useEffect(() => {
     const loadStations = async () => {
-      // 1. Try to load from cache immediately
       const cachedStationsStr = localStorage.getItem('radio-stations-cache');
       let hasCachedData = false;
 
@@ -363,29 +344,23 @@ export default function App() {
             setStations(cachedStations);
             setStationsStatus('loaded');
             hasCachedData = true;
-            console.log("Loaded stations from local cache.");
           }
         } catch (e) {
           console.error("Failed to parse cached stations", e);
         }
       }
 
-      // If no cache, set loading status (which shows skeletons/loader)
       if (!hasCachedData) {
         setStationsStatus('loading');
       }
 
-      // 2. Fetch fresh data from network in background (Firestore preferred)
       try {
         const fetchedStations = await fetchStations();
         if (fetchedStations.length > 0) {
           setStations(fetchedStations);
           setStationsStatus('loaded');
-          // Update cache with fresh data
           localStorage.setItem('radio-stations-cache', JSON.stringify(fetchedStations));
-          console.log("Stations updated from network/cloud and cached.");
         } else if (!hasCachedData) {
-           // Only show error if we have absolutely no data (no cache, no network)
            setError('לא הצלחנו למצוא תחנות. נסה לרענן את העמוד.');
            setStationsStatus('error');
         }
@@ -401,7 +376,6 @@ export default function App() {
     loadStations();
   }, []);
 
-  // Service Worker Update Handling
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./service-worker.js').then(registration => {
@@ -488,23 +462,30 @@ export default function App() {
       let intervalId: number; 
       const fetchAndSetInfo = async () => { 
           if (!playerState.station) return; 
-          const { name, stationuuid } = playerState.station; 
+          const { name, stationuuid, url_resolved } = playerState.station; 
           
           let finalInfo: StationTrackInfo | null = null; 
           
-          // Use the computed isSmartPlayerActive state for consistency
           if (isSmartPlayerActive) {
               const playlist = await fetch100fmPlaylist(stationuuid);
               setSmartPlaylist(playlist);
               
               if (playlist.length > 0) {
                   const now = Math.floor(Date.now() / 1000);
-                  // Current item is the one that started most recently but before 'now'
-                  const currentItem = [...playlist].reverse().find(i => i.timestamp <= now + 5); 
-                  const nextItem = playlist.find(i => i.timestamp > now + 5);
+                  // Try to find current item based on time (allowing 2 min future skew)
+                  let currentItem = [...playlist].reverse().find(i => i.timestamp <= now + 120); 
+                  
+                  // Fallback: If no item matches (e.g. server timestamps are way in the future), use the last item (Live)
+                  if (!currentItem) {
+                      console.log('[SmartPlayer] Server time mismatch detected. Defaulting to last track.');
+                      currentItem = playlist[playlist.length - 1];
+                  }
+
+                  const nextItemIndex = playlist.findIndex(i => i === currentItem) + 1;
+                  const nextItem = nextItemIndex < playlist.length ? playlist[nextItemIndex] : null;
                   
                   finalInfo = {
-                      program: name, // Default program name to station name for 100FM
+                      program: name, 
                       current: currentItem ? `${currentItem.name} - ${currentItem.artist}` : null,
                       next: nextItem ? `${nextItem.name} - ${nextItem.artist}` : null
                   };
@@ -512,9 +493,9 @@ export default function App() {
                   finalInfo = { program: name, current: null, next: null };
               }
           } 
-          // --- Standard Stations Logic ---
           else {
-              setSmartPlaylist([]); // Clear playlist for standard stations
+              setSmartPlaylist([]); 
+              setLiveStreamDate(null);
               
               if (hasSpecificHandler(name)) { 
                   const specificInfo = await fetchStationSpecificTrackInfo(name); 
@@ -536,10 +517,11 @@ export default function App() {
       } else { 
           setTrackInfo(null); 
           setSmartPlaylist([]);
+          setLiveStreamDate(null);
       } 
       
       return () => clearInterval(intervalId); 
-  }, [playerState.station, isSmartPlayerActive]); // Use derived smart active state
+  }, [playerState.station, isSmartPlayerActive]);
 
   const handleReorder = (reorderedDisplayedUuids: string[]) => { 
       const allStationUuids = stations.map(s => s.stationuuid); 
@@ -553,7 +535,11 @@ export default function App() {
       }
   };
   
-  const handleSelectStation = useCallback((station: Station) => dispatch({ type: 'SELECT_STATION', payload: station }), []);
+  const handleSelectStation = useCallback((station: Station) => {
+      setLiveStreamDate(null); // Reset live stream date on station change
+      dispatch({ type: 'SELECT_STATION', payload: station });
+  }, []);
+
   const handlePlayPause = useCallback(() => { if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' }); else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] }); }, [playerState.station, displayedStations]);
   const handlePlay = useCallback(async () => { if (playerState.status === 'PLAYING') return; if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' }); else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] }); }, [playerState.status, playerState.station, displayedStations]);
   const handlePause = useCallback(async () => { if (playerState.status === 'PLAYING') dispatch({ type: 'TOGGLE_PAUSE' }); }, [playerState.status]);
@@ -567,11 +553,9 @@ export default function App() {
   const closeActionMenu = useCallback(() => setActionMenuState({ isOpen: false, songTitle: null }), []);
   const handleCycleVisualizerStyle = useCallback(() => setAllSettings(s => ({...s, visualizerStyle: VISUALIZER_STYLES[(VISUALIZER_STYLES.indexOf(s.visualizerStyle) + 1) % VISUALIZER_STYLES.length]})), []);
 
-  // Smart Player Handlers
   const triggerSmartNext = useCallback(() => setSmartPlayerCommand({ type: 'NEXT', id: Date.now() }), []);
   const triggerSmartPrev = useCallback(() => setSmartPlayerCommand({ type: 'PREV', id: Date.now() }), []);
 
-  // Handle favorite toggle with confirmation
   const toggleFavorite = (uuid: string) => {
       const isCurrentlyFavorite = allSettings.favorites.includes(uuid);
       if (isCurrentlyFavorite) {
@@ -605,20 +589,16 @@ export default function App() {
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === currentSortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
-  // --- Keyboard Event Listener ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        // If user is rebinding a key in SettingsPanel, do NOT trigger global shortcuts
         if (isRebinding) return;
 
-        // Ignore if typing in input/textarea or contentEditable
         const target = e.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
 
         const { key } = e;
         let action: KeyAction | undefined;
         
-        // Find which action corresponds to the pressed key
         for (const [act, keys] of Object.entries(allSettings.keyMap) as [string, string[]][]) {
             if (keys.includes(key)) {
                 action = act as KeyAction;
@@ -627,7 +607,7 @@ export default function App() {
         }
 
         if (action) {
-            e.preventDefault(); // Prevent default browser scrolling/actions for these keys
+            e.preventDefault();
             switch (action) {
                 case 'playPause': 
                     handlePlayPause(); 
@@ -785,11 +765,10 @@ export default function App() {
         onOpenActionMenu={openActionMenu} 
         isVisualizerFullscreen={isVisualizerFullscreen} 
         setIsVisualizerFullscreen={setIsVisualizerFullscreen} 
-        
-        // Smart Player Props
         isSmartPlayerActive={isSmartPlayerActive}
         onSmartNext={triggerSmartNext}
         onSmartPrev={triggerSmartPrev}
+        liveStreamDate={liveStreamDate}
       />}
       <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
       <Player 
@@ -819,9 +798,8 @@ export default function App() {
         onOpenActionMenu={openActionMenu} 
         is100fmSmartPlayerEnabled={allSettings.is100fmSmartPlayerEnabled}
         smartPlaylist={smartPlaylist}
-        
-        // Pass command object from App to Player
         command={smartPlayerCommand}
+        liveStreamDate={liveStreamDate}
       />
       {isUpdateAvailable && ( <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up"><p className="text-sm font-semibold">עדכון חדש זמין</p><button onClick={handleUpdateClick} className="py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold">עדכן גירסה</button></div> )}
     </div>
