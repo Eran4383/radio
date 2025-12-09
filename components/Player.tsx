@@ -137,9 +137,8 @@ const Player: React.FC<PlayerProps> = ({
   const [marqueeConfig, setMarqueeConfig] = useState<{ duration: number; isOverflowing: boolean[] }>({ duration: 0, isOverflowing: [false, false, false] });
 
   // --- Smart Player State ---
-  const [smartPlaylist, setSmartPlaylist] = useState<SmartPlaylistItem[]>([]);
+  // Note: We still keep isSmartPlayerActive for the label, but we disable the button hijack
   const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
-  const playlistIntervalRef = useRef<number | null>(null);
 
   const { status, station, error } = playerState;
   const isPlaying = status === 'PLAYING';
@@ -228,31 +227,6 @@ const Player: React.FC<PlayerProps> = ({
     }
   }, []);
   
-  // Smart Playlist Fetching Effect
-  useEffect(() => {
-      if (isSmartPlayerActive && station) {
-          const fetchList = async () => {
-              const list = await fetch100fmPlaylist(station.stationuuid);
-              if (list && list.length > 0) {
-                  setSmartPlaylist(list);
-              }
-          };
-          fetchList(); // Initial fetch
-          playlistIntervalRef.current = window.setInterval(fetchList, 20000); // Poll every 20s
-      } else {
-          setSmartPlaylist([]);
-          if (playlistIntervalRef.current) {
-              clearInterval(playlistIntervalRef.current);
-              playlistIntervalRef.current = null;
-          }
-      }
-      return () => {
-          if (playlistIntervalRef.current) {
-              clearInterval(playlistIntervalRef.current);
-          }
-      };
-  }, [isSmartPlayerActive, station]);
-
   // Audio Element State Machine Driver
   useEffect(() => {
     const audio = audioRef.current;
@@ -268,21 +242,6 @@ const Player: React.FC<PlayerProps> = ({
         }
         
         let streamUrl = station.url_resolved;
-
-        // --- Smart Player URL Overwrite ---
-        if (isSmartPlayerActive) {
-            // Check if it's a standard stream URL and convert to DVR
-            if (streamUrl.includes('streamgates.net') && !streamUrl.includes('dvr_timeshift')) {
-                // Heuristic replacement to point to the DVR manifest
-                // Typically ends in 'playlist.m3u8' or 'master.m3u8' or just the folder.
-                // We'll try to append/replace with the known DVR filename from user logs.
-                const lastSlashIndex = streamUrl.lastIndexOf('/');
-                if (lastSlashIndex !== -1) {
-                    const baseUrl = streamUrl.substring(0, lastSlashIndex);
-                    streamUrl = `${baseUrl}/playlist_dvr_timeshift-36000.m3u8`;
-                }
-            }
-        }
 
         // Apply Proxy if needed
         if (shouldUseProxy) {
@@ -380,8 +339,8 @@ const Player: React.FC<PlayerProps> = ({
 
         navigator.mediaSession.setActionHandler('play', onPlay);
         navigator.mediaSession.setActionHandler('pause', onPause);
-        navigator.mediaSession.setActionHandler('nexttrack', () => handleSmartNext());
-        navigator.mediaSession.setActionHandler('previoustrack', () => handleSmartPrev());
+        navigator.mediaSession.setActionHandler('nexttrack', onNext);
+        navigator.mediaSession.setActionHandler('previoustrack', onPrev);
         
         if (status === 'PLAYING') {
             navigator.mediaSession.playbackState = 'playing';
@@ -389,7 +348,7 @@ const Player: React.FC<PlayerProps> = ({
             navigator.mediaSession.playbackState = 'paused';
         }
     }
-  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev, isSmartPlayerActive, smartPlaylist]); // Added deps
+  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev]);
 
   // Automatic stream recovery logic
   const attemptRecovery = useCallback(() => {
@@ -446,87 +405,6 @@ const Player: React.FC<PlayerProps> = ({
 
       return clearWatchdog;
   }, [status, attemptRecovery]);
-
-  // --- Smart Seeking Logic ---
-  const getCurrentUnixTime = () => Math.floor(Date.now() / 1000);
-
-  const calculateSeekTime = (targetUnixTimestamp: number) => {
-      const audio = audioRef.current;
-      if (!audio || !audio.seekable.length) return;
-
-      // In HLS DVR: seekable.end(0) is approximately "now" (Live edge).
-      // We calculate how many seconds ago the song started.
-      const now = getCurrentUnixTime();
-      const secondsAgo = now - targetUnixTimestamp;
-      
-      const livePosition = audio.seekable.end(0);
-      const targetPosition = Math.max(0, livePosition - secondsAgo);
-      
-      console.log(`[SmartSeek] Song Time: ${targetUnixTimestamp}, Now: ${now}, Seconds Ago: ${secondsAgo}`);
-      console.log(`[SmartSeek] Live Pos: ${livePosition}, Target Pos: ${targetPosition}`);
-
-      if (isFinite(targetPosition)) {
-          audio.currentTime = targetPosition;
-      }
-  };
-
-  const handleSmartPrev = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
-          onPrev();
-          return;
-      }
-      
-      const now = getCurrentUnixTime();
-      // Find the currently playing song (timestamp <= now)
-      // Since the list is sorted by timestamp (ascending), we want the last one that started before now.
-      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5); // +5 buffer
-      // reverse index map back to original
-      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
-
-      if (originalIndex !== -1) {
-          const currentTrack = smartPlaylist[originalIndex];
-          const timeSinceStart = now - currentTrack.timestamp;
-          
-          // If we are more than 10 seconds into the song, restart it.
-          if (timeSinceStart > 10) {
-              calculateSeekTime(currentTrack.timestamp);
-          } else if (originalIndex > 0) {
-              // Go to previous song
-              calculateSeekTime(smartPlaylist[originalIndex - 1].timestamp);
-          } else {
-              // At start of history, just restart first song
-              calculateSeekTime(currentTrack.timestamp);
-          }
-      } else {
-          // Fallback
-          onPrev();
-      }
-  };
-
-  const handleSmartNext = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
-          onNext();
-          return;
-      }
-
-      const now = getCurrentUnixTime();
-      // Find current song
-      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5);
-      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
-
-      if (originalIndex !== -1 && originalIndex < smartPlaylist.length - 1) {
-          // Jump to next song start
-          calculateSeekTime(smartPlaylist[originalIndex + 1].timestamp);
-      } else {
-          // If at the end (live), just jump to live edge
-          const audio = audioRef.current;
-          if (audio && audio.seekable.length) {
-              audio.currentTime = audio.seekable.end(0);
-          } else {
-              onNext(); // Fallback to station switch if not really playing or no seekable
-          }
-      }
-  };
 
 
   if (!station) {
@@ -601,7 +479,7 @@ const Player: React.FC<PlayerProps> = ({
           </div>
           
           <div className="flex items-center gap-1 sm:gap-2">
-             <button onClick={handleSmartPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הקודם">
+             <button onClick={onPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הקודם">
                 <SkipNextIcon className="w-6 h-6" />
             </button>
             <button 
@@ -611,7 +489,7 @@ const Player: React.FC<PlayerProps> = ({
             >
               {isActuallyPlaying || isLoading ? <PauseIcon className="w-7 h-7" /> : <PlayIcon className="w-7 h-7" />}
             </button>
-            <button onClick={handleSmartNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הבא">
+            <button onClick={onNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הבא">
                 <SkipPreviousIcon className="w-6 h-6" />
             </button>
           </div>
