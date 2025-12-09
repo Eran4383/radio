@@ -117,6 +117,13 @@ export const KEY_ACTION_LABELS: Record<KeyAction, string> = {
     eqCustom: 'EQ: מותאם (5)',
 };
 
+export interface SettingsSections {
+    theme: boolean;
+    eq: boolean;
+    interface: boolean;
+    shortcuts: boolean;
+}
+
 export type AllSettings = {
     favorites: string[];
     customOrder: string[];
@@ -141,4 +148,5 @@ export type AllSettings = {
     sortOrderFavorites: SortOrder;
     keyMap: KeyMap;
     is100fmSmartPlayerEnabled: boolean;
+    settingsSections: SettingsSections;
 };

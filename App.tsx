@@ -9,7 +9,7 @@ import {
     getUserSettings,
     checkAdminRole
 } from './services/firebase';
-import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES, User, AllSettings, StationFilter, KeyMap, KeyAction, SmartPlaylistItem } from './types';
+import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES, User, AllSettings, StationFilter, KeyMap, KeyAction, SmartPlaylistItem, SettingsSections } from './types';
 import Player from './components/Player';
 import StationList from './components/StationList';
 import SettingsPanel from './components/SettingsPanel';
@@ -111,7 +111,13 @@ const defaultSettings: AllSettings = {
         eqMovie: ['4'],
         eqCustom: ['5']
     },
-    is100fmSmartPlayerEnabled: true
+    is100fmSmartPlayerEnabled: true,
+    settingsSections: {
+        theme: true,
+        eq: true,
+        interface: true,
+        shortcuts: false
+    }
 };
 
 const loadSettingsFromLocalStorage = (): AllSettings => {
@@ -141,6 +147,7 @@ const loadSettingsFromLocalStorage = (): AllSettings => {
         sortOrderFavorites: safeJsonParse(localStorage.getItem('radio-sort-order-favorites'), defaultSettings.sortOrderFavorites),
         keyMap: safeJsonParse(localStorage.getItem('radio-key-map'), defaultSettings.keyMap),
         is100fmSmartPlayerEnabled: safeJsonParse(localStorage.getItem('radio-100fm-smart-player-enabled'), defaultSettings.is100fmSmartPlayerEnabled),
+        settingsSections: safeJsonParse(localStorage.getItem('radio-settings-sections'), defaultSettings.settingsSections),
     };
 };
 
@@ -168,6 +175,7 @@ const saveSettingsToLocalStorage = (settings: AllSettings) => {
     localStorage.setItem('radio-sort-order-favorites', JSON.stringify(settings.sortOrderFavorites));
     localStorage.setItem('radio-key-map', JSON.stringify(settings.keyMap));
     localStorage.setItem('radio-100fm-smart-player-enabled', JSON.stringify(settings.is100fmSmartPlayerEnabled));
+    localStorage.setItem('radio-settings-sections', JSON.stringify(settings.settingsSections));
 };
 
 const settingsHaveConflict = (local: AllSettings, cloud: AllSettings) => {
@@ -193,6 +201,10 @@ const normalizeSettings = (settings: Partial<AllSettings> | null): AllSettings =
         keyMap: {
             ...defaultsCopy.keyMap,
             ...(settings.keyMap || {}),
+        },
+        settingsSections: {
+            ...defaultsCopy.settingsSections,
+            ...(settings.settingsSections || {}),
         }
     };
 };
@@ -661,6 +673,16 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [allSettings.keyMap, allSettings.volume, handlePlayPause, handleNext, handlePrev, preMuteVolume, isRebinding]);
 
+  // Handler for toggling sections
+  const handleToggleSettingsSection = (section: keyof SettingsSections) => {
+      setAllSettings(prev => ({
+          ...prev,
+          settingsSections: {
+              ...prev.settingsSections,
+              [section]: !prev.settingsSections[section]
+          }
+      }));
+  };
 
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col">
@@ -747,6 +769,8 @@ export default function App() {
         setIsRebinding={setIsRebinding} 
         is100fmSmartPlayerEnabled={allSettings.is100fmSmartPlayerEnabled}
         on100fmSmartPlayerEnabledChange={(enabled) => setAllSettings(s => ({...s, is100fmSmartPlayerEnabled: enabled}))}
+        openSections={allSettings.settingsSections}
+        onToggleSection={handleToggleSettingsSection}
       />
       {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} frequencyData={frequencyData} visualizerStyle={allSettings.visualizerStyle} isVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={allSettings.isVolumeControlVisible} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
       <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />

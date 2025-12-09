@@ -96,7 +96,13 @@ const defaultSettings = {
         eqMovie: ['4'],
         eqCustom: ['5']
     },
-    is100fmSmartPlayerEnabled: true
+    is100fmSmartPlayerEnabled: true,
+    settingsSections: {
+        theme: true,
+        eq: true,
+        interface: true,
+        shortcuts: false
+    }
 };
 
 const loadSettingsFromLocalStorage = () => {
@@ -126,6 +132,7 @@ const loadSettingsFromLocalStorage = () => {
         sortOrderFavorites: safeJsonParse(localStorage.getItem('radio-sort-order-favorites'), defaultSettings.sortOrderFavorites),
         keyMap: safeJsonParse(localStorage.getItem('radio-key-map'), defaultSettings.keyMap),
         is100fmSmartPlayerEnabled: safeJsonParse(localStorage.getItem('radio-100fm-smart-player-enabled'), defaultSettings.is100fmSmartPlayerEnabled),
+        settingsSections: safeJsonParse(localStorage.getItem('radio-settings-sections'), defaultSettings.settingsSections),
     };
 };
 
@@ -153,6 +160,7 @@ const saveSettingsToLocalStorage = (settings) => {
     localStorage.setItem('radio-sort-order-favorites', JSON.stringify(settings.sortOrderFavorites));
     localStorage.setItem('radio-key-map', JSON.stringify(settings.keyMap));
     localStorage.setItem('radio-100fm-smart-player-enabled', JSON.stringify(settings.is100fmSmartPlayerEnabled));
+    localStorage.setItem('radio-settings-sections', JSON.stringify(settings.settingsSections));
 };
 
 const settingsHaveConflict = (local, cloud) => {
@@ -178,6 +186,10 @@ const normalizeSettings = (settings) => {
         keyMap: {
             ...defaultsCopy.keyMap,
             ...(settings.keyMap || {}),
+        },
+        settingsSections: {
+            ...defaultsCopy.settingsSections,
+            ...(settings.settingsSections || {}),
         }
     };
 };
@@ -639,6 +651,17 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [allSettings.keyMap, allSettings.volume, handlePlayPause, handleNext, handlePrev, preMuteVolume, isRebinding]);
 
+  // Handler for toggling sections
+  const handleToggleSettingsSection = (section) => {
+      setAllSettings(prev => ({
+          ...prev,
+          settingsSections: {
+              ...prev.settingsSections,
+              [section]: !prev.settingsSections[section]
+          }
+      }));
+  };
+
   return (
     React.createElement("div", { className: "min-h-screen bg-bg-primary text-text-primary flex flex-col" },
       React.createElement(MergeDataModal, { ...mergeModal }),
@@ -681,7 +704,7 @@ export default function App() {
       React.createElement("main", { className: "flex-grow pb-48", onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd },
         stationsStatus === 'loading' ? React.createElement(StationListSkeleton, null) : stationsStatus === 'error' ? React.createElement("p", { className: "text-center text-red-400 p-4" }, error) : displayedStations.length > 0 ? React.createElement(StationList, { stations: displayedStations, currentStation: playerState.station, onSelectStation: handleSelectStation, isFavorite: isFavorite, toggleFavorite: toggleFavorite, onReorder: handleReorder, isStreamActive: playerState.status === 'PLAYING', isStatusIndicatorEnabled: allSettings.isStatusIndicatorEnabled, gridSize: allSettings.gridSize, sortOrder: currentSortOrder }) : React.createElement("div", { className: "text-center p-8 text-text-secondary" }, React.createElement("h2", { className: "text-xl font-semibold" }, allSettings.filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'), React.createElement("p", null, allSettings.filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'))
       ),
-      React.createElement(SettingsPanel, { isOpen: isSettingsOpen, onClose: () => setIsSettingsOpen(false), user: user, isAdmin: isAdmin, onOpenAdminPanel: () => setIsAdminPanelOpen(true), onLogin: signInWithGoogle, onLogout: signOutUser, currentTheme: allSettings.theme, onThemeChange: (v) => setAllSettings(s=>({...s, theme: v})), currentEqPreset: allSettings.eqPreset, onEqPresetChange: (v) => setAllSettings(s=>({...s, eqPreset: v})), isNowPlayingVisualizerEnabled: allSettings.isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange: (v) => setAllSettings(s=>({...s, isNowPlayingVisualizerEnabled: v})), isPlayerBarVisualizerEnabled: allSettings.isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange: (v) => setAllSettings(s=>({...s, isPlayerBarVisualizerEnabled: v})), isStatusIndicatorEnabled: allSettings.isStatusIndicatorEnabled, onStatusIndicatorEnabledChange: (v) => setAllSettings(s=>({...s, isStatusIndicatorEnabled: v})), isVolumeControlVisible: allSettings.isVolumeControlVisible, onVolumeControlVisibleChange: (v) => setAllSettings(s=>({...s, isVolumeControlVisible: v})), showNextSong: allSettings.showNextSong, onShowNextSongChange: (v) => setAllSettings(s=>({...s, showNextSong: v})), customEqSettings: allSettings.customEqSettings, onCustomEqChange: (v) => setAllSettings(s=>({...s, customEqSettings: v})), gridSize: allSettings.gridSize, onGridSizeChange: (v) => setAllSettings(s=>({...s, gridSize: v})), isMarqueeProgramEnabled: allSettings.isMarqueeProgramEnabled, onMarqueeProgramEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeProgramEnabled: v})), isMarqueeCurrentTrackEnabled: allSettings.isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeCurrentTrackEnabled: v})), isMarqueeNextTrackEnabled: allSettings.isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeNextTrackEnabled: v})), marqueeSpeed: allSettings.marqueeSpeed, onMarqueeSpeedChange: (v) => setAllSettings(s=>({...s, marqueeSpeed: v})), marqueeDelay: allSettings.marqueeDelay, onMarqueeDelayChange: (v) => setAllSettings(s=>({...s, marqueeDelay: v})), updateStatus: updateStatus, onManualUpdateCheck: handleManualUpdateCheck, keyMap: allSettings.keyMap, onKeyMapChange: (newMap) => setAllSettings(s => ({...s, keyMap: newMap})), setIsRebinding: setIsRebinding, is100fmSmartPlayerEnabled: allSettings.is100fmSmartPlayerEnabled, on100fmSmartPlayerEnabledChange: (enabled) => setAllSettings(s => ({...s, is100fmSmartPlayerEnabled: enabled})) }),
+      React.createElement(SettingsPanel, { isOpen: isSettingsOpen, onClose: () => setIsSettingsOpen(false), user: user, isAdmin: isAdmin, onOpenAdminPanel: () => setIsAdminPanelOpen(true), onLogin: signInWithGoogle, onLogout: signOutUser, currentTheme: allSettings.theme, onThemeChange: (v) => setAllSettings(s=>({...s, theme: v})), currentEqPreset: allSettings.eqPreset, onEqPresetChange: (v) => setAllSettings(s=>({...s, eqPreset: v})), isNowPlayingVisualizerEnabled: allSettings.isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange: (v) => setAllSettings(s=>({...s, isNowPlayingVisualizerEnabled: v})), isPlayerBarVisualizerEnabled: allSettings.isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange: (v) => setAllSettings(s=>({...s, isPlayerBarVisualizerEnabled: v})), isStatusIndicatorEnabled: allSettings.isStatusIndicatorEnabled, onStatusIndicatorEnabledChange: (v) => setAllSettings(s=>({...s, isStatusIndicatorEnabled: v})), isVolumeControlVisible: allSettings.isVolumeControlVisible, onVolumeControlVisibleChange: (v) => setAllSettings(s=>({...s, isVolumeControlVisible: v})), showNextSong: allSettings.showNextSong, onShowNextSongChange: (v) => setAllSettings(s=>({...s, showNextSong: v})), customEqSettings: allSettings.customEqSettings, onCustomEqChange: (v) => setAllSettings(s=>({...s, customEqSettings: v})), gridSize: allSettings.gridSize, onGridSizeChange: (v) => setAllSettings(s=>({...s, gridSize: v})), isMarqueeProgramEnabled: allSettings.isMarqueeProgramEnabled, onMarqueeProgramEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeProgramEnabled: v})), isMarqueeCurrentTrackEnabled: allSettings.isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeCurrentTrackEnabled: v})), isMarqueeNextTrackEnabled: allSettings.isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeNextTrackEnabled: v})), marqueeSpeed: allSettings.marqueeSpeed, onMarqueeSpeedChange: (v) => setAllSettings(s=>({...s, marqueeSpeed: v})), marqueeDelay: allSettings.marqueeDelay, onMarqueeDelayChange: (v) => setAllSettings(s=>({...s, marqueeDelay: v})), updateStatus: updateStatus, onManualUpdateCheck: handleManualUpdateCheck, keyMap: allSettings.keyMap, onKeyMapChange: (newMap) => setAllSettings(s => ({...s, keyMap: newMap})), setIsRebinding: setIsRebinding, is100fmSmartPlayerEnabled: allSettings.is100fmSmartPlayerEnabled, on100fmSmartPlayerEnabledChange: (enabled) => setAllSettings(s => ({...s, is100fmSmartPlayerEnabled: enabled})), openSections: allSettings.settingsSections, onToggleSection: handleToggleSettingsSection }),
       playerState.station && React.createElement(NowPlaying, { isOpen: isNowPlayingOpen, onClose: () => !isVisualizerFullscreen && setIsNowPlayingOpen(false), station: playerState.station, isPlaying: playerState.status === 'PLAYING', onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, volume: allSettings.volume, onVolumeChange: (v) => setAllSettings(s=>({...s, volume: v})), trackInfo: trackInfo, showNextSong: allSettings.showNextSong, frequencyData: frequencyData, visualizerStyle: allSettings.visualizerStyle, isVisualizerEnabled: allSettings.isNowPlayingVisualizerEnabled, onCycleVisualizerStyle: handleCycleVisualizerStyle, isVolumeControlVisible: allSettings.isVolumeControlVisible, marqueeDelay: allSettings.marqueeDelay, isMarqueeProgramEnabled: allSettings.isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: allSettings.isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: allSettings.isMarqueeNextTrackEnabled, marqueeSpeed: allSettings.marqueeSpeed, onOpenActionMenu: openActionMenu, isVisualizerFullscreen: isVisualizerFullscreen, setIsVisualizerFullscreen: setIsVisualizerFullscreen }),
       React.createElement(ActionMenu, { isOpen: actionMenuState.isOpen, onClose: closeActionMenu, songTitle: actionMenuState.songTitle }),
       React.createElement(Player, { 

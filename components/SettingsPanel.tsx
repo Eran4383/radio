@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize, User, KeyMap, KeyAction, KEY_ACTION_LABELS } from '../types';
+import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize, User, KeyMap, KeyAction, KEY_ACTION_LABELS, SettingsSections } from '../types';
 import Auth from './Auth';
 import { ChevronDownIcon } from './Icons';
 import { BUILD_INFO } from '../buildInfo';
@@ -50,6 +50,8 @@ interface SettingsPanelProps {
   setIsRebinding: (isRebinding: boolean) => void;
   is100fmSmartPlayerEnabled: boolean;
   on100fmSmartPlayerEnabledChange: (enabled: boolean) => void;
+  openSections: SettingsSections;
+  onToggleSection: (section: keyof SettingsSections) => void;
 }
 
 const releaseNotes = [
@@ -199,23 +201,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     updateStatus, onManualUpdateCheck,
     keyMap, onKeyMapChange,
     setIsRebinding,
-    is100fmSmartPlayerEnabled, on100fmSmartPlayerEnabledChange
+    is100fmSmartPlayerEnabled, on100fmSmartPlayerEnabledChange,
+    openSections, onToggleSection
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
   const [listeningFor, setListeningFor] = useState<KeyAction | null>(null);
   
-  // Controlled state for sections
-  const [openSections, setOpenSections] = useState({
-      theme: true,
-      eq: true,
-      interface: true,
-      shortcuts: false
-  });
-
-  const toggleSection = (key: keyof typeof openSections) => {
-      setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
   useEffect(() => {
     if (!listeningFor) return;
 
@@ -305,7 +296,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </div>
             )}
 
-            <SettingsSection title="ערכת נושא" isOpen={openSections.theme} onToggle={() => toggleSection('theme')}>
+            <SettingsSection title="ערכת נושא" isOpen={openSections.theme} onToggle={() => onToggleSection('theme')}>
                 <div className="grid grid-cols-4 gap-2">
                     {THEMES.map(theme => (
                          <SettingsButton 
@@ -318,7 +309,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </div>
             </SettingsSection>
 
-            <SettingsSection title="אקולייזר (EQ)" isOpen={openSections.eq} onToggle={() => toggleSection('eq')}>
+            <SettingsSection title="אקולייזר (EQ)" isOpen={openSections.eq} onToggle={() => onToggleSection('eq')}>
                 <div className="grid grid-cols-3 gap-2 mb-3">
                     {EQ_PRESET_KEYS.map(preset => (
                         <SettingsButton 
@@ -350,7 +341,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 )}
             </SettingsSection>
 
-            <SettingsSection title="ממשק" isOpen={openSections.interface} onToggle={() => toggleSection('interface')}>
+            <SettingsSection title="ממשק" isOpen={openSections.interface} onToggle={() => onToggleSection('interface')}>
                 <div className="space-y-2">
                     <div className="p-3 rounded-lg bg-bg-primary space-y-3">
                        <div className="flex flex-col gap-1">
@@ -459,7 +450,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </div>
             </SettingsSection>
 
-            <SettingsSection title="קיצורי מקלדת" isOpen={openSections.shortcuts} onToggle={() => toggleSection('shortcuts')}>
+            <SettingsSection title="קיצורי מקלדת" isOpen={openSections.shortcuts} onToggle={() => onToggleSection('shortcuts')}>
                 <div className="space-y-2">
                     {/* General Shortcuts */}
                     <h4 className="text-xs font-semibold text-text-secondary pt-1 px-1">כללי</h4>
