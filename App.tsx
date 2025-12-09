@@ -238,6 +238,8 @@ export default function App() {
 
   // Smart Playlist State
   const [smartPlaylist, setSmartPlaylist] = useState<SmartPlaylistItem[]>([]);
+  // Smart Player Command (for cross-component communication)
+  const [smartPlayerCommand, setSmartPlayerCommand] = useState<{type: 'NEXT' | 'PREV', id: number} | null>(null);
 
   const isFavorite = useCallback((stationUuid: string) => allSettings.favorites.includes(stationUuid), [allSettings.favorites]);
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
@@ -254,6 +256,12 @@ export default function App() {
 
   // Determine if we should use proxy (if ANY visualizer is enabled)
   const shouldUseProxy = allSettings.isNowPlayingVisualizerEnabled || allSettings.isPlayerBarVisualizerEnabled;
+
+  // Derived state for Smart Player activation
+  const isSmartPlayerActive = useMemo(() => {
+      return allSettings.is100fmSmartPlayerEnabled && 
+             (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
+  }, [allSettings.is100fmSmartPlayerEnabled, playerState.station]);
 
   // Auth state listener - runs only once on mount
   useEffect(() => {
@@ -480,12 +488,12 @@ export default function App() {
       let intervalId: number; 
       const fetchAndSetInfo = async () => { 
           if (!playerState.station) return; 
-          const { name, stationuuid, url_resolved } = playerState.station; 
+          const { name, stationuuid } = playerState.station; 
           
           let finalInfo: StationTrackInfo | null = null; 
           
-          // --- 100FM Smart Player Logic ---
-          if (allSettings.is100fmSmartPlayerEnabled && (stationuuid.startsWith('100fm-') || url_resolved.includes('streamgates.net'))) {
+          // Use the computed isSmartPlayerActive state for consistency
+          if (isSmartPlayerActive) {
               const playlist = await fetch100fmPlaylist(stationuuid);
               setSmartPlaylist(playlist);
               
@@ -531,7 +539,7 @@ export default function App() {
       } 
       
       return () => clearInterval(intervalId); 
-  }, [playerState.station, allSettings.is100fmSmartPlayerEnabled]);
+  }, [playerState.station, isSmartPlayerActive]); // Use derived smart active state
 
   const handleReorder = (reorderedDisplayedUuids: string[]) => { 
       const allStationUuids = stations.map(s => s.stationuuid); 
@@ -558,6 +566,10 @@ export default function App() {
   const openActionMenu = useCallback((songTitle: string) => setActionMenuState({ isOpen: true, songTitle }), []);
   const closeActionMenu = useCallback(() => setActionMenuState({ isOpen: false, songTitle: null }), []);
   const handleCycleVisualizerStyle = useCallback(() => setAllSettings(s => ({...s, visualizerStyle: VISUALIZER_STYLES[(VISUALIZER_STYLES.indexOf(s.visualizerStyle) + 1) % VISUALIZER_STYLES.length]})), []);
+
+  // Smart Player Handlers
+  const triggerSmartNext = useCallback(() => setSmartPlayerCommand({ type: 'NEXT', id: Date.now() }), []);
+  const triggerSmartPrev = useCallback(() => setSmartPlayerCommand({ type: 'PREV', id: Date.now() }), []);
 
   // Handle favorite toggle with confirmation
   const toggleFavorite = (uuid: string) => {
@@ -748,7 +760,37 @@ export default function App() {
         is100fmSmartPlayerEnabled={allSettings.is100fmSmartPlayerEnabled}
         on100fmSmartPlayerEnabledChange={(enabled) => setAllSettings(s => ({...s, is100fmSmartPlayerEnabled: enabled}))}
       />
-      {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} frequencyData={frequencyData} visualizerStyle={allSettings.visualizerStyle} isVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={allSettings.isVolumeControlVisible} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
+      {playerState.station && <NowPlaying 
+        isOpen={isNowPlayingOpen} 
+        onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} 
+        station={playerState.station} 
+        isPlaying={playerState.status === 'PLAYING'} 
+        onPlayPause={handlePlayPause} 
+        onNext={handleNext} 
+        onPrev={handlePrev} 
+        volume={allSettings.volume} 
+        onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} 
+        trackInfo={trackInfo} 
+        showNextSong={allSettings.showNextSong} 
+        frequencyData={frequencyData} 
+        visualizerStyle={allSettings.visualizerStyle} 
+        isVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} 
+        onCycleVisualizerStyle={handleCycleVisualizerStyle} 
+        isVolumeControlVisible={allSettings.isVolumeControlVisible} 
+        marqueeDelay={allSettings.marqueeDelay} 
+        isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} 
+        isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} 
+        isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} 
+        marqueeSpeed={allSettings.marqueeSpeed} 
+        onOpenActionMenu={openActionMenu} 
+        isVisualizerFullscreen={isVisualizerFullscreen} 
+        setIsVisualizerFullscreen={setIsVisualizerFullscreen} 
+        
+        // Smart Player Props
+        isSmartPlayerActive={isSmartPlayerActive}
+        onSmartNext={triggerSmartNext}
+        onSmartPrev={triggerSmartPrev}
+      />}
       <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
       <Player 
         playerState={playerState} 
@@ -776,7 +818,10 @@ export default function App() {
         marqueeSpeed={allSettings.marqueeSpeed} 
         onOpenActionMenu={openActionMenu} 
         is100fmSmartPlayerEnabled={allSettings.is100fmSmartPlayerEnabled}
-        smartPlaylist={smartPlaylist} // NEW PROP
+        smartPlaylist={smartPlaylist}
+        
+        // Pass command object from App to Player
+        command={smartPlayerCommand}
       />
       {isUpdateAvailable && ( <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up"><p className="text-sm font-semibold">עדכון חדש זמין</p><button onClick={handleUpdateClick} className="py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold">עדכן גירסה</button></div> )}
     </div>

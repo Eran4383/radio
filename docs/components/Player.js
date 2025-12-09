@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { EQ_PRESETS } from '../types.js';
-import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons.js';
+import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, FastForwardIcon, RewindIcon } from './Icons.js';
 import { CORS_PROXY_URL } from '../constants.js';
 import InteractiveText from './InteractiveText.js';
 import MarqueeText from './MarqueeText.js';
@@ -68,7 +68,8 @@ const Player = ({
   marqueeSpeed,
   onOpenActionMenu,
   is100fmSmartPlayerEnabled,
-  smartPlaylist
+  smartPlaylist,
+  command
 }) => {
   const audioRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -357,66 +358,125 @@ const Player = ({
 
   const calculateSeekTime = (targetUnixTimestamp) => {
       const audio = audioRef.current;
-      if (!audio || !audio.seekable.length) return;
+      if (!audio) return;
+      
+      let livePosition = 0;
+      if (audio.seekable.length > 0) {
+          livePosition = audio.seekable.end(0);
+      } else {
+          console.log("[SmartSeek] Stream not seekable yet, ignoring command.");
+          return;
+      }
 
       const now = getCurrentUnixTime();
+      // Logic: target position is relative to live edge.
+      // If song started 60s ago in real time: lag is 60s.
+      // Target Buffer Pos = Live Buffer End - 60s.
       const secondsAgo = now - targetUnixTimestamp;
-      
-      const livePosition = audio.seekable.end(0);
       const targetPosition = Math.max(0, livePosition - secondsAgo);
       
+      console.log(`[SmartSeek] Song Start: ${targetUnixTimestamp}, Now: ${now}, Seconds Ago: ${secondsAgo}`);
+      console.log(`[SmartSeek] Live Buffer End: ${livePosition}, Target Buffer Pos: ${targetPosition}`);
+
       if (isFinite(targetPosition)) {
           audio.currentTime = targetPosition;
       }
   };
 
-  const handleSmartPrev = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
-          onPrev();
-          return;
-      }
-      
-      const now = getCurrentUnixTime();
-      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5); 
-      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
+  const getVirtualPlaybackTime = () => {
+      const audio = audioRef.current;
+      if (!audio || audio.seekable.length === 0) return getCurrentUnixTime();
 
-      if (originalIndex !== -1) {
-          const currentTrack = smartPlaylist[originalIndex];
-          const timeSinceStart = now - currentTrack.timestamp;
+      const liveEdge = audio.seekable.end(0);
+      const currentPos = audio.currentTime;
+      const lag = liveEdge - currentPos;
+      
+      // If lag is very small, we are live.
+      // Virtual Time = Real Time - Lag.
+      return getCurrentUnixTime() - lag;
+  };
+
+  const handleSmartPrev = () => {
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
+      
+      // Calculate where we are "virtually" in history
+      const virtualNow = getVirtualPlaybackTime();
+      console.log(`[SmartPrev] Virtual Time: ${virtualNow}`);
+
+      // Find the track that is playing at this virtual time
+      // Track matches if timestamp <= virtualNow and (nextTrack.timestamp > virtualNow OR isLast)
+      const sortedPlaylist = [...smartPlaylist].sort((a, b) => a.timestamp - b.timestamp);
+      let currentIndex = -1;
+
+      for (let i = 0; i < sortedPlaylist.length; i++) {
+          const track = sortedPlaylist[i];
+          const nextTrack = sortedPlaylist[i+1];
+          // Adding 5 seconds buffer to 'virtualNow' to handle edge cases where song just ended
+          if (track.timestamp <= virtualNow + 5 && (!nextTrack || nextTrack.timestamp > virtualNow + 5)) {
+              currentIndex = i;
+              break;
+          }
+      }
+
+      if (currentIndex !== -1) {
+          const currentTrack = sortedPlaylist[currentIndex];
+          const timeSinceStart = virtualNow - currentTrack.timestamp;
           
+          console.log(`[SmartPrev] Found Index: ${currentIndex}, Track: ${currentTrack.name}, Time Since Start: ${timeSinceStart}`);
+
           if (timeSinceStart > 10) {
+              // Restart current song
               calculateSeekTime(currentTrack.timestamp);
-          } else if (originalIndex > 0) {
-              calculateSeekTime(smartPlaylist[originalIndex - 1].timestamp);
+          } else if (currentIndex > 0) {
+              // Go to previous song
+              calculateSeekTime(sortedPlaylist[currentIndex - 1].timestamp);
           } else {
+              // Start of playlist
               calculateSeekTime(currentTrack.timestamp);
           }
       } else {
-          onPrev();
+          console.log("[SmartPrev] Could not determine current track index.");
       }
   };
 
   const handleSmartNext = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
-          onNext();
-          return;
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
+
+      const virtualNow = getVirtualPlaybackTime();
+      console.log(`[SmartNext] Virtual Time: ${virtualNow}`);
+
+      const sortedPlaylist = [...smartPlaylist].sort((a, b) => a.timestamp - b.timestamp);
+      let currentIndex = -1;
+
+      for (let i = 0; i < sortedPlaylist.length; i++) {
+          const track = sortedPlaylist[i];
+          const nextTrack = sortedPlaylist[i+1];
+          if (track.timestamp <= virtualNow + 5 && (!nextTrack || nextTrack.timestamp > virtualNow + 5)) {
+              currentIndex = i;
+              break;
+          }
       }
 
-      const now = getCurrentUnixTime();
-      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5);
-      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
-
-      if (originalIndex !== -1 && originalIndex < smartPlaylist.length - 1) {
-          calculateSeekTime(smartPlaylist[originalIndex + 1].timestamp);
+      if (currentIndex !== -1 && currentIndex < sortedPlaylist.length - 1) {
+          const nextTrack = sortedPlaylist[currentIndex + 1];
+          console.log(`[SmartNext] Jumping to next track: ${nextTrack.name}`);
+          calculateSeekTime(nextTrack.timestamp);
       } else {
+          // We are at the last song (Live). Jump to Live Edge.
           const audio = audioRef.current;
           if (audio && audio.seekable.length) {
+              console.log(`[SmartNext] Already at latest. Jumping to Live Edge.`);
               audio.currentTime = audio.seekable.end(0);
-          } else {
-              onNext(); 
           }
       }
   };
+
+  useEffect(() => {
+      if (command) {
+          if (command.type === 'NEXT') handleSmartNext();
+          if (command.type === 'PREV') handleSmartPrev();
+      }
+  }, [command]);
 
   if (!station) {
     return null;
@@ -489,9 +549,16 @@ const Player = ({
           ),
           
           React.createElement("div", { className: "flex items-center gap-1 sm:gap-2" },
-             React.createElement("button", { onClick: handleSmartPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הקודם" },
+             React.createElement("button", { onClick: onPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "תחנה קודמת" },
                 React.createElement(SkipNextIcon, { className: "w-6 h-6" })
             ),
+            
+            isSmartPlayerActive && (
+                React.createElement("button", { onClick: handleSmartPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "שיר קודם" },
+                    React.createElement(RewindIcon, { className: "w-5 h-5" })
+                )
+            ),
+
             React.createElement("button", { 
               onClick: onPlayPause, 
               className: "p-3 bg-accent text-white rounded-full shadow-md",
@@ -499,7 +566,14 @@ const Player = ({
             },
               isActuallyPlaying || isLoading ? React.createElement(PauseIcon, { className: "w-7 h-7" }) : React.createElement(PlayIcon, { className: "w-7 h-7" })
             ),
-            React.createElement("button", { onClick: handleSmartNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הבא" },
+
+            isSmartPlayerActive && (
+                React.createElement("button", { onClick: handleSmartNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "שיר הבא" },
+                    React.createElement(FastForwardIcon, { className: "w-5 h-5" })
+                )
+            ),
+
+            React.createElement("button", { onClick: onNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "תחנה הבאה" },
                 React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
             )
           )
