@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect } from 'react';
 import { Station } from '../types';
 import { fetchDefaultIsraeliStations } from '../services/radioService';
@@ -13,10 +11,7 @@ interface AdminPanelProps {
   currentStations: Station[];
   onStationsUpdate: (stations: Station[]) => void;
   currentUserEmail: string | null;
-  favorites: string[];
 }
-
-type AdminSortType = 'default' | 'name_asc' | 'name_desc' | 'favorites';
 
 const EditStationModal: React.FC<{
     station: Station;
@@ -71,7 +66,7 @@ const EditStationModal: React.FC<{
     );
 };
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStations, onStationsUpdate, currentUserEmail, favorites }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStations, onStationsUpdate, currentUserEmail }) => {
     const [stations, setStations] = useState<Station[]>(currentStations);
     const [editingStation, setEditingStation] = useState<Station | null>(null);
     const [activeTab, setActiveTab] = useState<'stations' | 'admins'>('stations');
@@ -79,7 +74,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
     const [newAdminEmail, setNewAdminEmail] = useState('');
     const [statusMsg, setStatusMsg] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [sortType, setSortType] = useState<AdminSortType>('default');
 
     // Sync local state with prop when opening
     useEffect(() => {
@@ -145,13 +139,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
         };
         setStations([newStation, ...stations]);
         setEditingStation(newStation);
-        setSortType('default'); // Reset sort so the new station is visible at top
     };
     
-    const moveStation = (uuid: string, direction: -1 | 1) => {
-        const index = stations.findIndex(s => s.stationuuid === uuid);
-        if (index === -1) return;
-
+    const moveStation = (index: number, direction: -1 | 1) => {
         const newStations = [...stations];
         const targetIndex = index + direction;
         if (targetIndex < 0 || targetIndex >= newStations.length) return;
@@ -180,27 +170,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
             alert('שגיאה בהסרת מנהל');
         }
     };
-
-    // Sorting Logic for Display
-    const getSortedStations = () => {
-        const list = [...stations];
-        switch (sortType) {
-            case 'name_asc':
-                return list.sort((a, b) => a.name.localeCompare(b.name, 'he'));
-            case 'name_desc':
-                return list.sort((a, b) => b.name.localeCompare(a.name, 'he'));
-            case 'favorites':
-                return list.sort((a, b) => {
-                    const isAFav = favorites.includes(a.stationuuid) ? 1 : 0;
-                    const isBFav = favorites.includes(b.stationuuid) ? 1 : 0;
-                    return isBFav - isAFav; // Favorites first
-                });
-            default:
-                return list;
-        }
-    };
-
-    const displayStations = getSortedStations();
 
     if (!isOpen) return null;
 
@@ -240,47 +209,33 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
             <div className="flex-grow overflow-y-auto p-4">
                 {activeTab === 'stations' ? (
                     <>
-                        <div className="flex flex-wrap gap-2 mb-4 sticky top-0 bg-bg-primary py-2 z-10 border-b border-gray-800 items-center">
-                             <button onClick={handleSaveToCloud} disabled={isLoading} className="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded font-bold shadow-lg text-sm flex-grow sm:flex-grow-0">
-                                {isLoading ? 'שומר...' : 'שמור לענן'}
+                        <div className="flex flex-wrap gap-2 mb-4 sticky top-0 bg-bg-primary py-2 z-10 border-b border-gray-800">
+                             <button onClick={handleSaveToCloud} disabled={isLoading} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold shadow-lg">
+                                {isLoading ? 'שומר...' : 'שמור שינויים לענן'}
                             </button>
-                            <button onClick={handleAddStation} className="bg-accent hover:bg-accent-hover text-white px-3 py-2 rounded shadow-lg text-sm flex-grow sm:flex-grow-0">
-                                + הוסף
+                            <button onClick={handleAddStation} className="bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded shadow-lg">
+                                + הוסף תחנה
                             </button>
-                            
-                            <select 
-                                value={sortType} 
-                                onChange={(e) => setSortType(e.target.value as AdminSortType)}
-                                className="bg-gray-700 text-white text-xs p-2 rounded border border-gray-600 outline-none flex-grow sm:flex-grow-0"
-                            >
-                                <option value="default">סדר שמור (ברירת מחדל)</option>
-                                <option value="name_asc">שם (א-ת)</option>
-                                <option value="name_desc">שם (ת-א)</option>
-                                <option value="favorites">המועדפים שלי תחילה</option>
-                            </select>
-
-                            <button onClick={handleResetToDefaults} disabled={isLoading} className="bg-red-600/80 hover:bg-red-600 text-white px-2 py-1 rounded text-[10px] ml-auto">
-                                איפוס
+                            <button onClick={handleResetToDefaults} disabled={isLoading} className="bg-red-600/80 hover:bg-red-600 text-white px-4 py-2 rounded text-xs ml-auto">
+                                שחזר לברירת מחדל
                             </button>
                         </div>
                         {statusMsg && <div className="p-2 mb-2 bg-blue-600 text-white text-center rounded animate-pulse">{statusMsg}</div>}
                         
                         <div className="space-y-2">
-                            {displayStations.map((s, idx) => (
+                            {stations.map((s, idx) => (
                                 <div key={s.stationuuid} className="flex items-center gap-3 bg-bg-secondary p-2 rounded border border-gray-800 hover:border-accent/50 transition-colors">
-                                    {sortType === 'default' && (
-                                        <div className="flex flex-col gap-1">
-                                            <button onClick={() => moveStation(s.stationuuid, -1)} disabled={stations.indexOf(s) === 0} className="text-gray-500 hover:text-white disabled:opacity-20 text-xs">▲</button>
-                                            <button onClick={() => moveStation(s.stationuuid, 1)} disabled={stations.indexOf(s) === stations.length - 1} className="text-gray-500 hover:text-white disabled:opacity-20 text-xs">▼</button>
-                                        </div>
-                                    )}
+                                    <div className="flex flex-col gap-1">
+                                        <button onClick={() => moveStation(idx, -1)} disabled={idx === 0} className="text-gray-500 hover:text-white disabled:opacity-20">▲</button>
+                                        <button onClick={() => moveStation(idx, 1)} disabled={idx === stations.length - 1} className="text-gray-500 hover:text-white disabled:opacity-20">▼</button>
+                                    </div>
                                     <img src={s.favicon} className="w-10 h-10 bg-black object-contain rounded" onError={e => (e.target as HTMLImageElement).src=''} />
                                     <div className="flex-grow min-w-0">
-                                        <div className="font-bold truncate text-sm">{s.name}</div>
-                                        <div className="text-[10px] text-text-secondary truncate text-left" dir="ltr">{s.url_resolved}</div>
+                                        <div className="font-bold truncate">{s.name}</div>
+                                        <div className="text-xs text-text-secondary truncate text-left" dir="ltr">{s.url_resolved}</div>
                                     </div>
-                                    <button onClick={() => setEditingStation(s)} className="p-2 text-blue-400 hover:bg-blue-400/20 rounded text-xs">ערוך</button>
-                                    <button onClick={() => handleDelete(s.stationuuid)} className="p-2 text-red-400 hover:bg-red-400/20 rounded text-xs">מחק</button>
+                                    <button onClick={() => setEditingStation(s)} className="p-2 text-blue-400 hover:bg-blue-400/20 rounded">ערוך</button>
+                                    <button onClick={() => handleDelete(s.stationuuid)} className="p-2 text-red-400 hover:bg-red-400/20 rounded">מחק</button>
                                 </div>
                             ))}
                         </div>

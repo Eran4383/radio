@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
 import { fetchStations, fetchLiveTrackInfo } from './services/radioService.js';
 import { 
@@ -592,8 +590,7 @@ export default function App() {
         onClose: () => setIsAdminPanelOpen(false),
         currentStations: stations,
         onStationsUpdate: handleAdminUpdate,
-        currentUserEmail: user?.email || null,
-        favorites: allSettings.favorites
+        currentUserEmail: user?.email || null
       }),
       
       React.createElement("header", { className: "p-4 bg-bg-secondary/50 backdrop-blur-sm sticky top-0 z-20 shadow-md" },
