@@ -1,7 +1,6 @@
 
 import { PRIORITY_STATIONS } from '../constants.js';
 import { CORS_PROXY_URL } from '../constants.js';
-import { fetchCustomStations } from './firebase.js';
 
 // Function to shuffle an array for load distribution
 const shuffleArray = (array) => {
@@ -12,6 +11,7 @@ const shuffleArray = (array) => {
     return array;
 };
 
+// A larger, hardcoded list of reliable API servers.
 const API_SERVERS = [
     'https://de1.api.radio-browser.info/json',
     'https://nl1.api.radio-browser.info/json',
@@ -27,7 +27,7 @@ const fetchRadioBrowserStations = async () => {
   for (const serverUrl of servers) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8-second timeout
 
       const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/bycountrycodeexact/IL?limit=300&hidebroken=true`;
       const response = await fetch(proxiedUrl, {
@@ -37,17 +37,27 @@ const fetchRadioBrowserStations = async () => {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        continue; 
+        console.warn(`Failed to fetch from Radio-Browser server ${serverUrl} (status: ${response.status}), trying next.`);
+        continue; // Try next server
       }
       const data = await response.json();
       if (data && data.length > 0) {
         console.log(`Successfully fetched ${data.length} raw stations from ${serverUrl}`);
         return data;
       }
+      
+      console.warn(`Radio-Browser server ${serverUrl} returned empty or invalid station data, trying next.`);
+
     } catch (error) {
-      // silent fail try next
+      if (error.name === 'AbortError') {
+        console.warn(`Request to Radio-Browser server ${serverUrl} timed out, trying next.`);
+      } else {
+        console.warn(`Error connecting to Radio-Browser server ${serverUrl}:`, error);
+      }
     }
   }
+
+  console.error('Error fetching stations from Radio-Browser: All API servers failed.');
   return [];
 };
 
@@ -63,10 +73,12 @@ const fetch100fmStations = async () => {
     clearTimeout(timeoutId);
     
     if (!response.ok) {
+      console.warn(`Failed to fetch from 100fm API (status: ${response.status})`);
       return [];
     }
     const data = await response.json();
     if (!data || !Array.isArray(data.stations)) {
+      console.warn('100fm API returned invalid data format');
       return [];
     }
 
@@ -77,19 +89,21 @@ const fetch100fmStations = async () => {
       favicon: s.cover || s.logo,
       tags: s.description?.split('\n')[0] || s.name,
       countrycode: 'IL',
-      codec: 'AAC',
-      bitrate: 128, 
+      codec: 'AAC', // Assume AAC for HLS streams
+      bitrate: 128, // Default bitrate
     }));
 
-    return newStations.filter(s => s.url_resolved); 
+    console.log(`Successfully fetched ${newStations.length} stations from 100fm API`);
+    return newStations.filter(s => s.url_resolved); // Ensure stations have a stream URL
 
   } catch (error) {
+    console.error('Error fetching stations from 100fm API:', error);
     return [];
   }
 };
 
 
-export const fetchDefaultIsraeliStations = async () => {
+export const fetchIsraeliStations = async () => {
   const [radioBrowserResult, fm100Result] = await Promise.allSettled([
     fetchRadioBrowserStations(),
     fetch100fmStations(),
@@ -99,10 +113,14 @@ export const fetchDefaultIsraeliStations = async () => {
 
   if (radioBrowserResult.status === 'fulfilled') {
     allStations = allStations.concat(radioBrowserResult.value);
+  } else {
+    console.error('Radio-Browser fetch failed:', radioBrowserResult.reason);
   }
 
   if (fm100Result.status === 'fulfilled') {
     allStations = allStations.concat(fm100Result.value);
+  } else {
+    console.error('100fm fetch failed:', fm100Result.reason);
   }
 
   if (allStations.length === 0) {
@@ -110,6 +128,7 @@ export const fetchDefaultIsraeliStations = async () => {
     return [];
   }
 
+  // Clean up station names for specific providers like "JOINT RADIO"
   allStations.forEach(station => {
     if (station.name.toUpperCase().includes('JOINT RADIO')) {
         station.name = station.name
@@ -119,6 +138,7 @@ export const fetchDefaultIsraeliStations = async () => {
     }
   });
 
+  // --- Enhanced De-duplication Logic ---
   const uniqueStations = new Map();
 
   const getCanonicalName = (name) => {
@@ -143,9 +163,11 @@ export const fetchDefaultIsraeliStations = async () => {
           if (!existingStation) {
               shouldReplace = true;
           } else {
+              // Prefer higher bitrate
               if (station.bitrate > existingStation.bitrate) {
                   shouldReplace = true;
               } 
+              // If bitrates are equal, prefer 100fm source over radio-browser as it's curated
               else if (station.bitrate === existingStation.bitrate && station.stationuuid.startsWith('100fm-') && !existingStation.stationuuid.startsWith('100fm-')) {
                   shouldReplace = true;
               }
@@ -160,26 +182,11 @@ export const fetchDefaultIsraeliStations = async () => {
       }
   });
   
-  return Array.from(uniqueStations.values());
+  const finalStations = Array.from(uniqueStations.values());
+  console.log(`Successfully combined and de-duplicated ${finalStations.length} stations from all sources.`);
+  return finalStations;
 };
 
-// Main function to get stations - prioritizes Cloud Firestore
-export const fetchStations = async () => {
-    // 1. Try to fetch from Firestore (Custom Admin List)
-    try {
-        const customStations = await fetchCustomStations();
-        if (customStations && Array.isArray(customStations)) {
-            console.log(`Loaded ${customStations.length} stations from Cloud Storage.`);
-            return customStations;
-        }
-    } catch (e) {
-        console.warn("Failed to load custom stations, falling back to default API.", e);
-    }
-
-    // 2. Fallback to default API logic
-    console.log("Loading default stations from external APIs...");
-    return fetchDefaultIsraeliStations();
-};
 
 export const fetchLiveTrackInfo = async (stationuuid) => {
     if (!stationuuid) return null;
@@ -189,8 +196,9 @@ export const fetchLiveTrackInfo = async (stationuuid) => {
     for (const serverUrl of servers) {
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000); 
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second timeout
 
+            // FIX: Added &t=${Date.now()} to bust proxy cache
             const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/check?uuids=${stationuuid}&t=${Date.now()}`;
             const response = await fetch(proxiedUrl, {
                 signal: controller.signal,
@@ -212,51 +220,10 @@ export const fetchLiveTrackInfo = async (stationuuid) => {
                 }
             }
         } catch (error) {
-            // Silent on errors
+            // Silent on errors, just try the next server
         }
     }
+
+    console.warn(`Could not fetch live track info for ${stationuuid} from any server.`);
     return null;
-};
-
-// --- New Function for 100fm Smart Player ---
-export const fetch100fmPlaylist = async (stationIdOrSlug) => {
-    const slug = stationIdOrSlug.replace('100fm-', '');
-    const url = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
-    const proxiedUrl = `${CORS_PROXY_URL}${url}`;
-
-    try {
-        const response = await fetch(proxiedUrl, { 
-            cache: 'no-cache',
-            headers: { 'Accept': 'application/xml, text/xml, */*' }
-        });
-        
-        if (!response.ok) {
-            return [];
-        }
-
-        const text = await response.text();
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(text, "text/xml");
-        
-        const trackElements = xmlDoc.getElementsByTagName('track');
-        const playlist = [];
-
-        for (let i = 0; i < trackElements.length; i++) {
-            const track = trackElements[i];
-            const artist = track.getElementsByTagName('artist')[0]?.textContent || '';
-            const name = track.getElementsByTagName('name')[0]?.textContent || '';
-            const timestamp = parseInt(track.getElementsByTagName('timestamp')[0]?.textContent || '0', 10);
-            const before = parseInt(track.getElementsByTagName('before')[0]?.textContent || '0', 10);
-
-            if (timestamp > 0) {
-                playlist.push({ artist, name, timestamp, before });
-            }
-        }
-
-        return playlist.sort((a, b) => a.timestamp - b.timestamp);
-
-    } catch (error) {
-        console.error(`Error parsing 100fm playlist for ${slug}:`, error);
-        return [];
-    }
 };

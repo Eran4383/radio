@@ -1,7 +1,9 @@
 
+
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { EQ_PRESETS } from '../types.js';
-import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, FastForwardIcon, RewindIcon } from './Icons.js';
+import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons.js';
 import { CORS_PROXY_URL } from '../constants.js';
 import InteractiveText from './InteractiveText.js';
 import MarqueeText from './MarqueeText.js';
@@ -61,15 +63,13 @@ const Player = ({
   frequencyData,
   isVisualizerEnabled,
   shouldUseProxy,
+  isVisualizerSimulationEnabled,
   marqueeDelay,
   isMarqueeProgramEnabled,
   isMarqueeCurrentTrackEnabled,
   isMarqueeNextTrackEnabled,
   marqueeSpeed,
-  onOpenActionMenu,
-  is100fmSmartPlayerEnabled,
-  smartPlaylist,
-  command
+  onOpenActionMenu
 }) => {
   const audioRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -90,9 +90,6 @@ const Player = ({
   const currentTrackRef = useRef(null);
   const nextTrackRef = useRef(null);
   const [marqueeConfig, setMarqueeConfig] = useState({ duration: 0, isOverflowing: [false, false, false] });
-
-  // Smart Player
-  const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
 
   const { status, station, error } = playerState;
   const isPlaying = status === 'PLAYING';
@@ -190,21 +187,9 @@ const Player = ({
             }
         }
         
-        let streamUrl = station.url_resolved;
-
-        if (isSmartPlayerActive) {
-            if (streamUrl.includes('streamgates.net') && !streamUrl.includes('dvr_timeshift')) {
-                const lastSlashIndex = streamUrl.lastIndexOf('/');
-                if (lastSlashIndex !== -1) {
-                    const baseUrl = streamUrl.substring(0, lastSlashIndex);
-                    streamUrl = `${baseUrl}/playlist_dvr_timeshift-36000.m3u8`;
-                }
-            }
-        }
-
-        if (shouldUseProxy) {
-            streamUrl = `${CORS_PROXY_URL}${streamUrl}`;
-        }
+        const streamUrl = shouldUseProxy 
+            ? `${CORS_PROXY_URL}${station.url_resolved}` 
+            : station.url_resolved;
 
         if (audio.src !== streamUrl) {
             audio.src = streamUrl;
@@ -234,7 +219,7 @@ const Player = ({
     } else if (status === 'PAUSED' || status === 'IDLE' || status === 'ERROR') {
       audio.pause();
     }
-  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy, isSmartPlayerActive]);
+  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -262,6 +247,18 @@ const Player = ({
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
         setFrequencyData(dataArray);
+      } else if (!shouldUseProxy && isPlaying && isVisualizerSimulationEnabled) {
+          // Fallback: Simulation mode
+          const dataArray = new Uint8Array(64);
+          const time = Date.now() / 1000;
+          for (let i = 0; i < 64; i++) {
+              // Create pseudo-random wave patterns based on time and index
+              const v = Math.abs(Math.sin(time * 2 + i * 0.1) * Math.cos(time * 0.5 + i * 0.2)) * 255;
+              // Add some bass bias (lower indices generally have higher values in music)
+              const bias = Math.max(0, 1 - i / 40); 
+              dataArray[i] = Math.min(255, (v * 0.5 + 100) * (bias + 0.5)); 
+          }
+          setFrequencyData(dataArray);
       } else if (!shouldUseProxy && isPlaying) {
           setFrequencyData(new Uint8Array(64));
       }
@@ -277,7 +274,7 @@ const Player = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPlaying, setFrequencyData, shouldUseProxy]);
+  }, [isPlaying, setFrequencyData, shouldUseProxy, isVisualizerSimulationEnabled]);
 
   useEffect(() => {
     if ('mediaSession' in navigator && station) {
@@ -289,8 +286,8 @@ const Player = ({
 
         navigator.mediaSession.setActionHandler('play', onPlay);
         navigator.mediaSession.setActionHandler('pause', onPause);
-        navigator.mediaSession.setActionHandler('nexttrack', () => handleSmartNext());
-        navigator.mediaSession.setActionHandler('previoustrack', () => handleSmartPrev());
+        navigator.mediaSession.setActionHandler('nexttrack', onNext);
+        navigator.mediaSession.setActionHandler('previoustrack', onPrev);
         
         if (status === 'PLAYING') {
             navigator.mediaSession.playbackState = 'playing';
@@ -298,7 +295,7 @@ const Player = ({
             navigator.mediaSession.playbackState = 'paused';
         }
     }
-  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev, isSmartPlayerActive, smartPlaylist]);
+  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev]);
   
   const attemptRecovery = useCallback(() => {
       if (!audioRef.current || !station || recoveryAttemptRef.current >= 3) {
@@ -354,75 +351,6 @@ const Player = ({
       return clearWatchdog;
   }, [status, attemptRecovery]);
 
-  const getCurrentUnixTime = () => Math.floor(Date.now() / 1000);
-
-  const calculateSeekTime = (targetUnixTimestamp) => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      
-      let livePosition = 0;
-      if (audio.seekable.length > 0) {
-          livePosition = audio.seekable.end(0);
-      } else {
-          console.log("Stream not seekable yet, ignoring command.");
-          return;
-      }
-
-      const now = getCurrentUnixTime();
-      const secondsAgo = now - targetUnixTimestamp;
-      
-      const targetPosition = Math.max(0, livePosition - secondsAgo);
-      
-      if (isFinite(targetPosition)) {
-          audio.currentTime = targetPosition;
-      }
-  };
-
-  const handleSmartPrev = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
-      
-      const now = getCurrentUnixTime();
-      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5); 
-      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
-
-      if (originalIndex !== -1) {
-          const currentTrack = smartPlaylist[originalIndex];
-          const timeSinceStart = now - currentTrack.timestamp;
-          
-          if (timeSinceStart > 10) {
-              calculateSeekTime(currentTrack.timestamp);
-          } else if (originalIndex > 0) {
-              calculateSeekTime(smartPlaylist[originalIndex - 1].timestamp);
-          } else {
-              calculateSeekTime(currentTrack.timestamp);
-          }
-      }
-  };
-
-  const handleSmartNext = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
-
-      const now = getCurrentUnixTime();
-      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5);
-      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
-
-      if (originalIndex !== -1 && originalIndex < smartPlaylist.length - 1) {
-          calculateSeekTime(smartPlaylist[originalIndex + 1].timestamp);
-      } else {
-          const audio = audioRef.current;
-          if (audio && audio.seekable.length) {
-              audio.currentTime = audio.seekable.end(0);
-          }
-      }
-  };
-
-  useEffect(() => {
-      if (command) {
-          if (command.type === 'NEXT') handleSmartNext();
-          if (command.type === 'PREV') handleSmartPrev();
-      }
-  }, [command]);
-
   if (!station) {
     return null;
   }
@@ -445,14 +373,15 @@ const Player = ({
               onClick: onOpenNowPlaying,
               onError: (e) => { (e.target).src = 'https://picsum.photos/48'; }
             }),
-            React.createElement("div", { className: "min-w-0 cursor-pointer", key: station.stationuuid, onClick: onOpenNowPlaying },
+            React.createElement("div", { className: "min-w-0", key: station.stationuuid },
                React.createElement(MarqueeText, {
                   loopDelay: marqueeDelay,
                   duration: marqueeConfig.duration,
                   startAnimation: startAnimation,
                   isOverflowing: marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled,
                   contentRef: stationNameRef,
-                  className: "font-bold text-text-primary"
+                  className: "font-bold text-text-primary cursor-pointer",
+                  onClick: onOpenNowPlaying
               },
                   React.createElement("span", null, `${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`)
               ),
@@ -472,12 +401,10 @@ const Player = ({
                   )
                 ) : status === 'LOADING' ? (
                     React.createElement("span", { className: "text-text-secondary animate-pulse" }, "טוען...")
-                ) : isSmartPlayerActive ? (
-                    React.createElement("span", { className: "text-accent text-xs font-semibold animate-pulse" }, "נגן חכם 100FM פעיל")
                 ) : null
               ),
                status !== 'ERROR' && showNextSong && trackInfo?.next && (
-                  React.createElement("div", { className: "text-xs opacity-80 h-[1.125rem] flex items-center" },
+                  React.createElement("div", { className: "text-xs opacity-80 h-[1.125rem] flex items-center cursor-pointer", onClick: onOpenNowPlaying },
                     React.createElement("span", { className: "font-semibold flex-shrink-0" }, "הבא:\u00A0"),
                     React.createElement(MarqueeText, { 
                         loopDelay: marqueeDelay, 
@@ -494,16 +421,9 @@ const Player = ({
           ),
           
           React.createElement("div", { className: "flex items-center gap-1 sm:gap-2" },
-             React.createElement("button", { onClick: onPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "תחנה קודמת" },
+             React.createElement("button", { onClick: onPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הקודם" },
                 React.createElement(SkipNextIcon, { className: "w-6 h-6" })
             ),
-            
-            isSmartPlayerActive && (
-                React.createElement("button", { onClick: handleSmartPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "שיר קודם" },
-                    React.createElement(RewindIcon, { className: "w-5 h-5" })
-                )
-            ),
-
             React.createElement("button", { 
               onClick: onPlayPause, 
               className: "p-3 bg-accent text-white rounded-full shadow-md",
@@ -511,14 +431,7 @@ const Player = ({
             },
               isActuallyPlaying || isLoading ? React.createElement(PauseIcon, { className: "w-7 h-7" }) : React.createElement(PlayIcon, { className: "w-7 h-7" })
             ),
-
-            isSmartPlayerActive && (
-                React.createElement("button", { onClick: handleSmartNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "שיר הבא" },
-                    React.createElement(FastForwardIcon, { className: "w-5 h-5" })
-                )
-            ),
-
-            React.createElement("button", { onClick: onNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "תחנה הבאה" },
+            React.createElement("button", { onClick: onNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הבא" },
                 React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
             )
           )

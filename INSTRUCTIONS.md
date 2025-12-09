@@ -1,4 +1,3 @@
-
 # PROTECTED FILES: DO NOT MODIFY OR DELETE
 - `icon-192-v2.png`
 - `icon-512-v2.png`
@@ -8,15 +7,8 @@
 
 1.  **SOURCE CODE**: The primary source code is in the root directory and uses TypeScript (`.tsx`, `.ts` files).
 2.  **BUILD DESTINATION**: The compiled, browser-ready code MUST be placed in the `/docs` directory. This is for GitHub Pages deployment.
-3.  **BUILD PROCESS**:
-    *   **MANDATORY**: After ANY modification to a source file (e.g., `App.tsx`, `services/firebase.ts`), you MUST regenerate the corresponding JavaScript file in the `/docs` directory (e.g., `docs/App.js`, `docs/services/firebase.js`).
-    *   **TRANSPILE**: The code must be transpiled from TSX/JSX to plain JavaScript. Use `React.createElement` instead of JSX syntax.
-    *   **IMPORTS**: Ensure imports in the `docs/` JS files allow for browser execution (ES Modules).
-4.  **VERSIONING**:
-    *   **MANDATORY**: On EVERY response that includes code changes, you MUST update `buildInfo.ts` (and `docs/buildInfo.js`).
-    *   Update `buildDate` to the current date (DD.MM.YYYY). Do NOT include the time.
-    *   Increment `version` if significant features are added (optional).
-5.  **SINGLE SOURCE OF TRUTH**: This file, `INSTRUCTIONS.md`, contains the definitive workflow. Adhere to it strictly. Failure to update the `docs/` folder results in a broken app.
+3.  **BUILD PROCESS**: After ANY modification to a source file (e.g., `App.tsx`, `components/Player.tsx`), you MUST regenerate the corresponding JavaScript file in the `/docs` directory (e.g., `docs/App.js`, `docs/components/Player.js`). The code should be transpiled from TSX/JSX to plain JavaScript `React.createElement` calls. Maintain the existing file structure within `/docs`.
+4.  **SINGLE SOURCE OF TRUTH**: This file, `INSTRUCTIONS.md`, contains the definitive workflow. Adhere to it strictly.
 
 ---
 

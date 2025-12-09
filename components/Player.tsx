@@ -1,7 +1,8 @@
 
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Station, EqPreset, EQ_PRESETS, CustomEqSettings, StationTrackInfo, SmartPlaylistItem } from '../types';
-import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, FastForwardIcon, RewindIcon } from './Icons';
+import { Station, EqPreset, EQ_PRESETS, CustomEqSettings, StationTrackInfo } from '../types';
+import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons';
 import { CORS_PROXY_URL } from '../constants';
 import InteractiveText from './InteractiveText';
 import MarqueeText from './MarqueeText';
@@ -39,15 +40,13 @@ interface PlayerProps {
   frequencyData: Uint8Array;
   isVisualizerEnabled: boolean;
   shouldUseProxy: boolean; // New prop to control direct/proxy mode
+  isVisualizerSimulationEnabled: boolean; // New prop to control simulated visualizer
   marqueeDelay: number;
   isMarqueeProgramEnabled: boolean;
   isMarqueeCurrentTrackEnabled: boolean;
   isMarqueeNextTrackEnabled: boolean;
   marqueeSpeed: number;
   onOpenActionMenu: (songTitle: string) => void;
-  is100fmSmartPlayerEnabled: boolean; // New prop for feature toggle
-  smartPlaylist: SmartPlaylistItem[]; // NEW PROP
-  command?: { type: 'NEXT' | 'PREV', id: number } | null;
 }
 
 const PlayerVisualizer: React.FC<{ frequencyData: Uint8Array }> = ({ frequencyData }) => {
@@ -107,15 +106,13 @@ const Player: React.FC<PlayerProps> = ({
   frequencyData,
   isVisualizerEnabled,
   shouldUseProxy, // Destructure new prop
+  isVisualizerSimulationEnabled,
   marqueeDelay,
   isMarqueeProgramEnabled,
   isMarqueeCurrentTrackEnabled,
   isMarqueeNextTrackEnabled,
   marqueeSpeed,
-  onOpenActionMenu,
-  is100fmSmartPlayerEnabled,
-  smartPlaylist,
-  command
+  onOpenActionMenu
 }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -138,9 +135,6 @@ const Player: React.FC<PlayerProps> = ({
   const currentTrackRef = useRef<HTMLSpanElement>(null);
   const nextTrackRef = useRef<HTMLSpanElement>(null);
   const [marqueeConfig, setMarqueeConfig] = useState<{ duration: number; isOverflowing: boolean[] }>({ duration: 0, isOverflowing: [false, false, false] });
-
-  // --- Smart Player State ---
-  const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
 
   const { status, station, error } = playerState;
   const isPlaying = status === 'PLAYING';
@@ -243,25 +237,10 @@ const Player: React.FC<PlayerProps> = ({
             }
         }
         
-        let streamUrl = station.url_resolved;
-
-        // --- Smart Player URL Overwrite ---
-        if (isSmartPlayerActive) {
-            // Force DVR URL if we detect a 100FM stream on streamgates that isn't already DVR
-            if (streamUrl.includes('streamgates.net') && !streamUrl.includes('dvr_timeshift')) {
-                // Heuristic replacement to point to the DVR manifest
-                const lastSlashIndex = streamUrl.lastIndexOf('/');
-                if (lastSlashIndex !== -1) {
-                    const baseUrl = streamUrl.substring(0, lastSlashIndex);
-                    streamUrl = `${baseUrl}/playlist_dvr_timeshift-36000.m3u8`;
-                }
-            }
-        }
-
-        // Apply Proxy if needed
-        if (shouldUseProxy) {
-            streamUrl = `${CORS_PROXY_URL}${streamUrl}`;
-        }
+        // Hybrid Logic: Use Proxy URL if visualizers enabled, otherwise Direct URL
+        const streamUrl = shouldUseProxy 
+            ? `${CORS_PROXY_URL}${station.url_resolved}` 
+            : station.url_resolved;
 
         if (audio.src !== streamUrl) {
             audio.src = streamUrl;
@@ -292,7 +271,7 @@ const Player: React.FC<PlayerProps> = ({
     } else if (status === 'PAUSED' || status === 'IDLE' || status === 'ERROR') {
       audio.pause();
     }
-  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy, isSmartPlayerActive]);
+  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy]);
 
 
   // Handle volume changes
@@ -325,8 +304,20 @@ const Player: React.FC<PlayerProps> = ({
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
         setFrequencyData(dataArray);
+      } else if (!shouldUseProxy && isPlaying && isVisualizerSimulationEnabled) {
+          // Fallback: Simulation mode
+          const dataArray = new Uint8Array(64);
+          const time = Date.now() / 1000;
+          for (let i = 0; i < 64; i++) {
+              // Create pseudo-random wave patterns based on time and index
+              const v = Math.abs(Math.sin(time * 2 + i * 0.1) * Math.cos(time * 0.5 + i * 0.2)) * 255;
+              // Add some bass bias (lower indices generally have higher values in music)
+              const bias = Math.max(0, 1 - i / 40); 
+              dataArray[i] = Math.min(255, (v * 0.5 + 100) * (bias + 0.5)); 
+          }
+          setFrequencyData(dataArray);
       } else if (!shouldUseProxy && isPlaying) {
-          // Fallback: if visualizer is off/direct mode, send zero data so visualizers flatten
+          // Fallback: if visualizer is off/direct mode AND simulation off, send zero data
           setFrequencyData(new Uint8Array(64));
       }
       animationFrameRef.current = requestAnimationFrame(loop);
@@ -341,7 +332,7 @@ const Player: React.FC<PlayerProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPlaying, setFrequencyData, shouldUseProxy]);
+  }, [isPlaying, setFrequencyData, shouldUseProxy, isVisualizerSimulationEnabled]);
 
   // Update Media Session API
   useEffect(() => {
@@ -354,8 +345,8 @@ const Player: React.FC<PlayerProps> = ({
 
         navigator.mediaSession.setActionHandler('play', onPlay);
         navigator.mediaSession.setActionHandler('pause', onPause);
-        navigator.mediaSession.setActionHandler('nexttrack', () => handleSmartNext());
-        navigator.mediaSession.setActionHandler('previoustrack', () => handleSmartPrev());
+        navigator.mediaSession.setActionHandler('nexttrack', onNext);
+        navigator.mediaSession.setActionHandler('previoustrack', onPrev);
         
         if (status === 'PLAYING') {
             navigator.mediaSession.playbackState = 'playing';
@@ -363,7 +354,7 @@ const Player: React.FC<PlayerProps> = ({
             navigator.mediaSession.playbackState = 'paused';
         }
     }
-  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev, isSmartPlayerActive, smartPlaylist]); 
+  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev]);
 
   // Automatic stream recovery logic
   const attemptRecovery = useCallback(() => {
@@ -421,85 +412,6 @@ const Player: React.FC<PlayerProps> = ({
       return clearWatchdog;
   }, [status, attemptRecovery]);
 
-  // --- Smart Seeking Logic ---
-  const getCurrentUnixTime = () => Math.floor(Date.now() / 1000);
-
-  const calculateSeekTime = (targetUnixTimestamp: number) => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      
-      // Safety check for seekable ranges
-      let livePosition = 0;
-      if (audio.seekable.length > 0) {
-          livePosition = audio.seekable.end(0);
-      } else {
-          // If seekable is empty, it might be a live stream without buffer window or loading
-          console.log("Stream not seekable yet, ignoring command.");
-          return;
-      }
-
-      // In HLS DVR: seekable.end(0) is approximately "now" (Live edge).
-      // We calculate how many seconds ago the song started.
-      const now = getCurrentUnixTime();
-      const secondsAgo = now - targetUnixTimestamp;
-      
-      const targetPosition = Math.max(0, livePosition - secondsAgo);
-      
-      console.log(`[SmartSeek] Song Time: ${targetUnixTimestamp}, Now: ${now}, Seconds Ago: ${secondsAgo}`);
-      console.log(`[SmartSeek] Live Pos: ${livePosition}, Target Pos: ${targetPosition}`);
-
-      if (isFinite(targetPosition)) {
-          audio.currentTime = targetPosition;
-      }
-  };
-
-  const handleSmartPrev = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
-      
-      const now = getCurrentUnixTime();
-      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5); 
-      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
-
-      if (originalIndex !== -1) {
-          const currentTrack = smartPlaylist[originalIndex];
-          const timeSinceStart = now - currentTrack.timestamp;
-          
-          if (timeSinceStart > 10) {
-              calculateSeekTime(currentTrack.timestamp);
-          } else if (originalIndex > 0) {
-              calculateSeekTime(smartPlaylist[originalIndex - 1].timestamp);
-          } else {
-              calculateSeekTime(currentTrack.timestamp);
-          }
-      }
-  };
-
-  const handleSmartNext = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
-
-      const now = getCurrentUnixTime();
-      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5);
-      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
-
-      if (originalIndex !== -1 && originalIndex < smartPlaylist.length - 1) {
-          calculateSeekTime(smartPlaylist[originalIndex + 1].timestamp);
-      } else {
-          const audio = audioRef.current;
-          if (audio && audio.seekable.length) {
-              audio.currentTime = audio.seekable.end(0);
-          }
-      }
-  };
-
-  // Listen for remote commands from NowPlaying (via App)
-  useEffect(() => {
-      if (command) {
-          if (command.type === 'NEXT') handleSmartNext();
-          if (command.type === 'PREV') handleSmartPrev();
-      }
-  }, [command]);
-
-
   if (!station) {
     return null; // Don't render the player if no station is selected
   }
@@ -522,14 +434,15 @@ const Player: React.FC<PlayerProps> = ({
               onClick={onOpenNowPlaying}
               onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/48'; }}
             />
-            <div className="min-w-0 cursor-pointer" key={station.stationuuid} onClick={onOpenNowPlaying}>
+            <div className="min-w-0" key={station.stationuuid}>
                <MarqueeText
                   loopDelay={marqueeDelay}
                   duration={marqueeConfig.duration}
                   startAnimation={startAnimation}
                   isOverflowing={marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled}
                   contentRef={stationNameRef}
-                  className="font-bold text-text-primary"
+                  className="font-bold text-text-primary cursor-pointer"
+                  onClick={onOpenNowPlaying}
               >
                   <span>{`${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`}</span>
               </MarqueeText>
@@ -549,12 +462,10 @@ const Player: React.FC<PlayerProps> = ({
                   </MarqueeText>
                 ) : status === 'LOADING' ? (
                     <span className="text-text-secondary animate-pulse">טוען...</span>
-                ) : isSmartPlayerActive ? (
-                    <span className="text-accent text-xs font-semibold animate-pulse">נגן חכם 100FM פעיל</span>
                 ) : null}
               </div>
                {status !== 'ERROR' && showNextSong && trackInfo?.next && (
-                  <div className="text-xs opacity-80 h-[1.125rem] flex items-center">
+                  <div className="text-xs opacity-80 h-[1.125rem] flex items-center cursor-pointer" onClick={onOpenNowPlaying}>
                     <span className="font-semibold flex-shrink-0">הבא:&nbsp;</span>
                     <MarqueeText 
                         loopDelay={marqueeDelay} 
@@ -571,18 +482,9 @@ const Player: React.FC<PlayerProps> = ({
           </div>
           
           <div className="flex items-center gap-1 sm:gap-2">
-             {/* Station Prev (Right in RTL) */}
-             <button onClick={onPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="תחנה קודמת">
+             <button onClick={onPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הקודם">
                 <SkipNextIcon className="w-6 h-6" />
             </button>
-
-            {/* Song Prev (Right in RTL) - REWIND */}
-            {isSmartPlayerActive && (
-                <button onClick={handleSmartPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="שיר קודם">
-                    <RewindIcon className="w-5 h-5" /> 
-                </button>
-            )}
-
             <button 
               onClick={onPlayPause} 
               className="p-3 bg-accent text-white rounded-full shadow-md"
@@ -590,16 +492,7 @@ const Player: React.FC<PlayerProps> = ({
             >
               {isActuallyPlaying || isLoading ? <PauseIcon className="w-7 h-7" /> : <PlayIcon className="w-7 h-7" />}
             </button>
-
-            {/* Song Next (Left in RTL) - FAST FORWARD */}
-            {isSmartPlayerActive && (
-                <button onClick={handleSmartNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="שיר הבא">
-                    <FastForwardIcon className="w-5 h-5" />
-                </button>
-            )}
-
-            {/* Station Next (Left in RTL) */}
-            <button onClick={onNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="תחנה הבאה">
+            <button onClick={onNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הבא">
                 <SkipPreviousIcon className="w-6 h-6" />
             </button>
           </div>

@@ -1,6 +1,7 @@
 
 
 
+
 const CACHE_NAME = 'radio-premium-cache-1.0-06.12.2025-v7'; // Simplified update process
 const urlsToCache = [
   './index.html',

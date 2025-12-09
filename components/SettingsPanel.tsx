@@ -1,9 +1,11 @@
 
+
+
+
 import React, { useState, useEffect } from 'react';
 import { Theme, EqPreset, THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, CustomEqSettings, GridSize, User, KeyMap, KeyAction, KEY_ACTION_LABELS } from '../types';
 import Auth from './Auth';
 import { ChevronDownIcon } from './Icons';
-import { BUILD_INFO } from '../buildInfo';
 
 type UpdateStatus = 'idle' | 'checking' | 'downloading' | 'found' | 'not-found' | 'error';
 
@@ -11,8 +13,6 @@ interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
   user: User | null;
-  isAdmin: boolean;
-  onOpenAdminPanel: () => void;
   onLogin: () => void;
   onLogout: () => void;
   currentTheme: Theme;
@@ -48,28 +48,13 @@ interface SettingsPanelProps {
   keyMap: KeyMap;
   onKeyMapChange: (keyMap: KeyMap) => void;
   setIsRebinding: (isRebinding: boolean) => void;
-  is100fmSmartPlayerEnabled: boolean;
-  on100fmSmartPlayerEnabledChange: (enabled: boolean) => void;
+  useProxyForVisualizer: boolean;
+  onUseProxyForVisualizerChange: (enabled: boolean) => void;
+  isVisualizerSimulationEnabled: boolean;
+  onVisualizerSimulationEnabledChange: (enabled: boolean) => void;
 }
 
 const releaseNotes = [
-  {
-    version: '1.2',
-    date: '08.12.2025',
-    features: [
-        "חדש: נגן חכם לתחנות 100FM המאפשר חזרה בזמן ומעבר בין שירים.",
-        "שיפורים ביציבות זיהוי שירים.",
-    ],
-  },
-  {
-    version: '1.1',
-    date: '08.12.2025',
-    features: [
-        "הוספת פאנל ניהול מתקדם.",
-        "מנגנון עדכון גרסה אוטומטי.",
-        "אפשרויות מיון חדשות בתפריט הניהול.",
-    ],
-  },
   {
     version: '1.0',
     date: '06.12.2025',
@@ -81,6 +66,8 @@ const releaseNotes = [
     ],
   },
 ];
+
+const currentVersionInfo = releaseNotes[0];
 
 const DEFAULT_KEY_MAP: KeyMap = {
     playPause: [' ', 'Spacebar'],
@@ -106,7 +93,7 @@ const SettingsButton: React.FC<{
 }> = ({ label, isActive, onClick }) => (
     <button
         onClick={onClick}
-        className={`px-2 py-2 text-xs font-medium rounded-md transition-colors w-full min-h-[2.5rem] flex items-center justify-center text-center whitespace-normal leading-tight ${
+        className={`px-4 py-2 text-xs font-medium rounded-md transition-colors w-full capitalize ${
             isActive ? 'bg-accent text-white' : 'bg-bg-primary hover:bg-accent/20'
         }`}
     >
@@ -121,8 +108,8 @@ const ToggleSwitch: React.FC<{
     disabled?: boolean;
 }> = ({ label, enabled, onChange, disabled = false }) => (
      <label className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors duration-200 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-accent/10'} bg-bg-primary`}>
-        <span className="font-medium text-text-primary text-sm whitespace-normal leading-tight max-w-[70%]">{label}</span>
-        <div className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+        <span className="font-medium text-text-primary">{label}</span>
+        <div className="relative inline-flex items-center cursor-pointer">
             <input 
                 type="checkbox" 
                 checked={enabled} 
@@ -184,7 +171,7 @@ const SettingsSection: React.FC<{
 
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
-    isOpen, onClose, user, isAdmin, onOpenAdminPanel, onLogin, onLogout, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
+    isOpen, onClose, user, onLogin, onLogout, currentTheme, onThemeChange, currentEqPreset, onEqPresetChange,
     isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange,
     isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange,
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
@@ -199,7 +186,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     updateStatus, onManualUpdateCheck,
     keyMap, onKeyMapChange,
     setIsRebinding,
-    is100fmSmartPlayerEnabled, on100fmSmartPlayerEnabledChange
+    useProxyForVisualizer, onUseProxyForVisualizerChange,
+    isVisualizerSimulationEnabled, onVisualizerSimulationEnabledChange
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
   const [listeningFor, setListeningFor] = useState<KeyAction | null>(null);
@@ -293,17 +281,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <h2 className="text-xl font-bold text-text-primary">הגדרות</h2>
                 <Auth user={user} onLogin={onLogin} onLogout={onLogout} />
             </div>
-
-            {isAdmin && (
-                <div className="mb-6 animate-fade-in-up">
-                    <button 
-                        onClick={() => { onClose(); onOpenAdminPanel(); }}
-                        className="w-full bg-accent/20 hover:bg-accent/40 text-accent border border-accent/50 font-bold py-3 px-4 rounded-lg transition-all"
-                    >
-                        🛠️ פאנל ניהול
-                    </button>
-                </div>
-            )}
 
             <SettingsSection title="ערכת נושא" isOpen={openSections.theme} onToggle={() => toggleSection('theme')}>
                 <div className="grid grid-cols-4 gap-2">
@@ -427,11 +404,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
                     <h4 className="text-xs font-semibold text-text-secondary pt-2 px-3">כללי</h4>
                     <ToggleSwitch 
-                        label="נגן חכם (100FM)"
-                        enabled={is100fmSmartPlayerEnabled}
-                        onChange={on100fmSmartPlayerEnabledChange}
-                    />
-                    <ToggleSwitch 
                         label="תצוגה גרפית (מסך מלא)" 
                         enabled={isNowPlayingVisualizerEnabled} 
                         onChange={onNowPlayingVisualizerEnabledChange} 
@@ -441,6 +413,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         enabled={isPlayerBarVisualizerEnabled} 
                         onChange={onPlayerBarVisualizerEnabledChange} 
                     />
+                    <ToggleSwitch 
+                        label="סימולציה ויזואלית" 
+                        enabled={isVisualizerSimulationEnabled} 
+                        onChange={onVisualizerSimulationEnabledChange} 
+                        disabled={useProxyForVisualizer} // Disable simulation toggle if proxy is forced on, or just let them coexist? Better logic: simulation is fallback.
+                    />
+                    <ToggleSwitch 
+                        label="השתמש בנתוני אמת (לא יציב)" 
+                        enabled={useProxyForVisualizer} 
+                        onChange={onUseProxyForVisualizerChange} 
+                    />
+                    
                     <ToggleSwitch 
                         label="הצג חיווי מצב"
                         enabled={isStatusIndicatorEnabled}
@@ -554,7 +538,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         tabIndex={updateStatus === 'idle' ? 0 : -1}
                         aria-live="polite"
                     >
-                        <p>רדיו פרימיום v{BUILD_INFO.version} ({BUILD_INFO.buildDate})</p>
+                        <p>רדיו פרימיום v{currentVersionInfo.version} ({currentVersionInfo.date})</p>
                         <div className="h-4 mt-1 flex items-center justify-center">
                             {getUpdateStatusContent()}
                         </div>

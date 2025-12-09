@@ -1,4 +1,5 @@
 
+
 import type { User as FirebaseUser } from 'firebase/auth';
 
 export type User = FirebaseUser;
@@ -18,13 +19,6 @@ export interface StationTrackInfo {
     program: string | null;
     current: string | null;
     next: string | null;
-}
-
-export interface SmartPlaylistItem {
-    artist: string;
-    name: string;
-    timestamp: number; // Unix timestamp in seconds
-    before: number;
 }
 
 export const THEMES = ['dark', 'light', 'blue', 'sunset', 'forest', 'ocean', 'rose', 'matrix'] as const;
@@ -140,5 +134,7 @@ export type AllSettings = {
     sortOrderAll: SortOrder;
     sortOrderFavorites: SortOrder;
     keyMap: KeyMap;
-    is100fmSmartPlayerEnabled: boolean;
+    // New Visualizer Settings
+    useProxyForVisualizer: boolean;
+    isVisualizerSimulationEnabled: boolean;
 };
