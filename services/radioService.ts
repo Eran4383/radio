@@ -248,7 +248,7 @@ export const fetchLiveTrackInfo = async (stationuuid: string): Promise<string | 
     return null;
 };
 
-// --- New Function for 100fm Smart Player with Robust Parsing ---
+// --- New Function for 100fm Smart Player ---
 export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<SmartPlaylistItem[]> => {
     // Extract slug from ID if present (e.g., '100fm-retro' -> 'retro')
     const slug = stationIdOrSlug.replace('100fm-', '');
@@ -269,30 +269,24 @@ export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<Smart
         }
 
         const text = await response.text();
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(text, "text/xml");
+        
+        // Parse <track> elements. Note: The API might return a root element containing tracks or just a list of tracks.
+        // XML parser handles the root structure automatically.
+        const trackElements = xmlDoc.getElementsByTagName('track');
         const playlist: SmartPlaylistItem[] = [];
 
-        // Robust Regex Parsing (ignoring malformed XML roots)
-        // Match content inside <track>...</track> tags
-        const trackMatches = text.match(/<track>[\s\S]*?<\/track>/g);
+        for (let i = 0; i < trackElements.length; i++) {
+            const track = trackElements[i];
+            const artist = track.getElementsByTagName('artist')[0]?.textContent || '';
+            const name = track.getElementsByTagName('name')[0]?.textContent || '';
+            const timestamp = parseInt(track.getElementsByTagName('timestamp')[0]?.textContent || '0', 10);
+            const before = parseInt(track.getElementsByTagName('before')[0]?.textContent || '0', 10);
 
-        if (trackMatches) {
-            trackMatches.forEach(trackStr => {
-                // Extract fields using Regex
-                const artistMatch = trackStr.match(/<artist>(.*?)<\/artist>/);
-                const nameMatch = trackStr.match(/<name>(.*?)<\/name>/);
-                const timestampMatch = trackStr.match(/<timestamp>(.*?)<\/timestamp>/);
-                const beforeMatch = trackStr.match(/<before>(.*?)<\/before>/);
-
-                const artist = artistMatch ? artistMatch[1].trim() : '';
-                const name = nameMatch ? nameMatch[1].trim() : '';
-                const timestamp = timestampMatch ? parseInt(timestampMatch[1], 10) : 0;
-                const before = beforeMatch ? parseInt(beforeMatch[1], 10) : 0;
-
-                // Validate (must have at least a name and timestamp)
-                if (name && name.length > 1 && timestamp > 0) {
-                    playlist.push({ artist, name, timestamp, before });
-                }
-            });
+            if (timestamp > 0) {
+                playlist.push({ artist, name, timestamp, before });
+            }
         }
 
         return playlist.sort((a, b) => a.timestamp - b.timestamp); // Sort by time (oldest first)

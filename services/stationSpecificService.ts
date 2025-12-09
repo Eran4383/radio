@@ -3,7 +3,6 @@
 
 import { CORS_PROXY_URL } from '../constants';
 import { StationTrackInfo } from '../types';
-import { fetch100fmPlaylist } from './radioService'; // Import the playlist fetcher
 
 // This maps the station names we use to the specific IDs Kan's API uses.
 const KAN_STATION_IDS: { [key: string]: string } = {
@@ -24,17 +23,10 @@ const GLZ_SLUGS: { [key: string]: string } = {
 /**
  * Checks if a station has a dedicated, high-accuracy API handler.
  * @param stationName The name of the station.
- * @param stationUuid The UUID of the station (optional).
  * @returns True if a specific handler exists, false otherwise.
  */
-export const hasSpecificHandler = (stationName: string, stationUuid?: string): boolean => {
+export const hasSpecificHandler = (stationName: string): boolean => {
     const lowerCaseName = stationName.toLowerCase();
-    
-    // Check for 100FM stations via UUID
-    if (stationUuid && stationUuid.startsWith('100fm-')) {
-        return true;
-    }
-
     if (Object.keys(GLZ_SLUGS).some(glzName => stationName.includes(glzName))) {
         return true;
     }
@@ -110,16 +102,7 @@ const fetchGaleiTzahalScheduleInfo = async (): Promise<{ program: string | null;
         const response = await fetch(url, { cache: 'no-cache' });
         if (!response.ok) return { program: null, presenters: null };
         
-        // Strict JSON parsing
-        const text = await response.text();
-        let data;
-        try {
-            data = JSON.parse(text);
-        } catch (e) {
-            // Not valid JSON (likely HTML error from proxy)
-            return { program: null, presenters: null };
-        }
-
+        const data = await response.json();
         // The API returns schedule for multiple days. Find today.
         const todaySchedule = data?.timeTable?.glzTimeTable?.find((day: any) => day.isToday);
         
@@ -144,7 +127,7 @@ const fetchGaleiTzahalScheduleInfo = async (): Promise<{ program: string | null;
         return { program: null, presenters: null };
 
     } catch (error) {
-        console.warn(`Error fetching GLZ Schedule for rootId ${GLZ_SCHEDULE_ROOT_ID}:`, error);
+        console.warn(`Error fetching or parsing GLZ Schedule for rootId ${GLZ_SCHEDULE_ROOT_ID}:`, error);
         return { program: null, presenters: null };
     }
 };
@@ -180,12 +163,6 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
             const response = await fetch(xmlUrl, { cache: 'no-cache' });
             if (!response.ok) return { current: null, next: null };
             const xmlText = await response.text();
-            
-            // Basic validation to prevent parsing HTML errors as XML
-            if (xmlText.trim().startsWith('<!DOCTYPE html') || xmlText.trim().startsWith('<html')) {
-                return { current: null, next: null };
-            }
-
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
@@ -251,17 +228,10 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
         try {
             const response = await fetch(jsonUrl, { cache: 'no-cache' });
             if (!response.ok) return null;
-            
-            const text = await response.text();
-            try {
-                const data = JSON.parse(text);
-                return data?.program?.trim() || null;
-            } catch (e) {
-                // Ignore HTML/Error responses
-                return null;
-            }
+            const data = await response.json();
+            return data?.program?.trim() || null;
         } catch (error) {
-            console.warn(`Error fetching GLZ JSON for ${slug}:`, error);
+            console.warn(`Error fetching or parsing GLZ JSON for ${slug}:`, error);
             return null;
         }
     };
@@ -376,25 +346,11 @@ const fetchEco99fmTrackInfo = async (): Promise<StationTrackInfo | null> => {
  * It will try to find a specific handler and route the request accordingly.
  * 
  * @param stationName The name of the station.
- * @param stationUuid The UUID of the station (optional).
  * @returns A structured object with the current track/program name, or null if no specific handler is available.
  */
-export const fetchStationSpecificTrackInfo = async (stationName: string, stationUuid?: string): Promise<StationTrackInfo | null> => {
+export const fetchStationSpecificTrackInfo = async (stationName: string): Promise<StationTrackInfo | null> => {
     const lowerCaseName = stationName.toLowerCase();
     
-    // Check for 100FM stations (new handler)
-    if (stationUuid && stationUuid.startsWith('100fm-')) {
-        const playlist = await fetch100fmPlaylist(stationUuid);
-        if (playlist && playlist.length > 0) {
-            const lastTrack = playlist[playlist.length - 1];
-            return {
-                program: '100FM', // Generic program name, as 100FM streams are usually non-stop music
-                current: `${lastTrack.name} - ${lastTrack.artist}`,
-                next: null
-            };
-        }
-    }
-
     // Check for Galei Tzahal stations (גלגלצ, גלי צה"ל)
     if (Object.keys(GLZ_SLUGS).some(glzName => stationName.includes(glzName))) {
         return fetchGaleiTzahalCombinedInfo(stationName);

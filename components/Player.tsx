@@ -1,11 +1,10 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Station, EqPreset, EQ_PRESETS, CustomEqSettings, StationTrackInfo, SmartPlaylistItem } from '../types';
-import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons';
+import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, FastForwardIcon, RewindIcon } from './Icons';
 import { CORS_PROXY_URL } from '../constants';
 import InteractiveText from './InteractiveText';
 import MarqueeText from './MarqueeText';
-import { fetch100fmPlaylist } from '../services/radioService';
 
 // Types from App.tsx's state machine
 type PlayerStatus = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'ERROR';
@@ -47,6 +46,8 @@ interface PlayerProps {
   marqueeSpeed: number;
   onOpenActionMenu: (songTitle: string) => void;
   is100fmSmartPlayerEnabled: boolean; // New prop for feature toggle
+  smartPlaylist: SmartPlaylistItem[]; // NEW PROP
+  command?: { type: 'NEXT' | 'PREV', id: number } | null;
 }
 
 const PlayerVisualizer: React.FC<{ frequencyData: Uint8Array }> = ({ frequencyData }) => {
@@ -112,7 +113,9 @@ const Player: React.FC<PlayerProps> = ({
   isMarqueeNextTrackEnabled,
   marqueeSpeed,
   onOpenActionMenu,
-  is100fmSmartPlayerEnabled
+  is100fmSmartPlayerEnabled,
+  smartPlaylist,
+  command
 }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -127,8 +130,6 @@ const Player: React.FC<PlayerProps> = ({
   const lastTimeUpdateRef = useRef<number>(Date.now());
   const recoveryAttemptRef = useRef<number>(0);
   const watchdogIntervalRef = useRef<number | null>(null);
-  const playPromiseRef = useRef<Promise<void> | null>(null);
-  const [isDirectFallback, setIsDirectFallback] = useState(false);
 
   const [startAnimation, setStartAnimation] = useState(false);
   
@@ -155,12 +156,6 @@ const Player: React.FC<PlayerProps> = ({
     return () => clearTimeout(timer);
   }, [station?.stationuuid]);
   
-  // Reset fallback state when station changes
-  useEffect(() => {
-      setIsDirectFallback(false);
-      recoveryAttemptRef.current = 0;
-  }, [station?.stationuuid]);
-
   // Effect for marquee synchronization
   useEffect(() => {
       const calculateMarquee = () => {
@@ -240,10 +235,8 @@ const Player: React.FC<PlayerProps> = ({
     if (!audio || !station) return;
 
     const playAudio = async () => {
-        // If falling back to direct stream, bypass proxy and context setup
-        const effectivelyUsingProxy = shouldUseProxy && !isDirectFallback;
-
-        if (effectivelyUsingProxy) {
+        // Only set up audio context (EQ/Visualizer) if proxy is enabled (CORS)
+        if (shouldUseProxy) {
             setupAudioContext();
             if (audioContextRef.current?.state === 'suspended') {
                 await audioContextRef.current.resume();
@@ -252,42 +245,44 @@ const Player: React.FC<PlayerProps> = ({
         
         let streamUrl = station.url_resolved;
 
+        // --- Smart Player URL Overwrite ---
+        if (isSmartPlayerActive) {
+            // Force DVR URL if we detect a 100FM stream on streamgates that isn't already DVR
+            if (streamUrl.includes('streamgates.net') && !streamUrl.includes('dvr_timeshift')) {
+                // Heuristic replacement to point to the DVR manifest
+                const lastSlashIndex = streamUrl.lastIndexOf('/');
+                if (lastSlashIndex !== -1) {
+                    const baseUrl = streamUrl.substring(0, lastSlashIndex);
+                    streamUrl = `${baseUrl}/playlist_dvr_timeshift-36000.m3u8`;
+                }
+            }
+        }
+
         // Apply Proxy if needed
-        if (effectivelyUsingProxy) {
+        if (shouldUseProxy) {
             streamUrl = `${CORS_PROXY_URL}${streamUrl}`;
         }
 
         if (audio.src !== streamUrl) {
             audio.src = streamUrl;
-            if (effectivelyUsingProxy) {
+            // Only request CORS if using proxy, otherwise direct connection might fail
+            if (shouldUseProxy) {
                 audio.crossOrigin = 'anonymous';
             } else {
                 audio.removeAttribute('crossOrigin');
             }
-            audio.load();
         }
-
         try {
-            playPromiseRef.current = audio.play();
-            await playPromiseRef.current;
-            playPromiseRef.current = null;
+            await audio.play();
         } catch (e: any) {
-            playPromiseRef.current = null;
             if (e.name === 'AbortError') {
-                console.debug('Audio play request was interrupted (normal behavior).');
+                console.debug('Audio play request was interrupted by a new load request (normal behavior).');
             } else if (e.name === 'NotAllowedError') {
-                console.warn("Autoplay blocked by browser policy.");
+                console.warn("Autoplay blocked by browser policy. User interaction required.");
                 onPlayerEvent({ type: 'AUTOPLAY_BLOCKED' });
             } else {
                 console.error("Error playing audio:", e);
-                // If we failed with proxy, try fallback
-                if (shouldUseProxy && !isDirectFallback) {
-                    console.warn("Proxy failed, switching to direct stream...");
-                    setIsDirectFallback(true);
-                    // The effect will re-run because isDirectFallback changed state
-                } else {
-                    onPlayerEvent({ type: 'STREAM_ERROR', payload: "לא ניתן לנגן את התחנה." });
-                }
+                onPlayerEvent({ type: 'STREAM_ERROR', payload: "לא ניתן לנגן את התחנה." });
             }
         }
     };
@@ -295,16 +290,9 @@ const Player: React.FC<PlayerProps> = ({
     if (status === 'LOADING') {
       playAudio();
     } else if (status === 'PAUSED' || status === 'IDLE' || status === 'ERROR') {
-      // Safe pause
-      if (playPromiseRef.current) {
-          playPromiseRef.current.then(() => {
-              audio.pause();
-          }).catch(() => {});
-      } else {
-          audio.pause();
-      }
+      audio.pause();
     }
-  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy, isSmartPlayerActive, isDirectFallback]);
+  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy, isSmartPlayerActive]);
 
 
   // Handle volume changes
@@ -332,13 +320,13 @@ const Player: React.FC<PlayerProps> = ({
   // Visualizer data loop
   useEffect(() => {
     const loop = () => {
-      // Only get data if using proxy (AudioContext is valid) AND not in fallback mode
-      if (analyserRef.current && isPlaying && shouldUseProxy && !isDirectFallback) {
+      // Only get data if using proxy (AudioContext is valid)
+      if (analyserRef.current && isPlaying && shouldUseProxy) {
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
         setFrequencyData(dataArray);
-      } else if (isPlaying) {
-          // Fallback: send zero data so visualizers flatten
+      } else if (!shouldUseProxy && isPlaying) {
+          // Fallback: if visualizer is off/direct mode, send zero data so visualizers flatten
           setFrequencyData(new Uint8Array(64));
       }
       animationFrameRef.current = requestAnimationFrame(loop);
@@ -353,7 +341,7 @@ const Player: React.FC<PlayerProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPlaying, setFrequencyData, shouldUseProxy, isDirectFallback]);
+  }, [isPlaying, setFrequencyData, shouldUseProxy]);
 
   // Update Media Session API
   useEffect(() => {
@@ -366,8 +354,8 @@ const Player: React.FC<PlayerProps> = ({
 
         navigator.mediaSession.setActionHandler('play', onPlay);
         navigator.mediaSession.setActionHandler('pause', onPause);
-        navigator.mediaSession.setActionHandler('nexttrack', onNext);
-        navigator.mediaSession.setActionHandler('previoustrack', onPrev);
+        navigator.mediaSession.setActionHandler('nexttrack', () => handleSmartNext());
+        navigator.mediaSession.setActionHandler('previoustrack', () => handleSmartPrev());
         
         if (status === 'PLAYING') {
             navigator.mediaSession.playbackState = 'playing';
@@ -375,25 +363,15 @@ const Player: React.FC<PlayerProps> = ({
             navigator.mediaSession.playbackState = 'paused';
         }
     }
-  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev]);
+  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev, isSmartPlayerActive, smartPlaylist]); 
 
   // Automatic stream recovery logic
   const attemptRecovery = useCallback(() => {
-      if (!audioRef.current || !station) return;
-      
-      // Debounce recovery: if we just tried, wait.
-      if (Date.now() - lastTimeUpdateRef.current < 2000) return;
-
-      if (recoveryAttemptRef.current >= 3) {
-          // If proxy failed 3 times, switch to direct
-          if (shouldUseProxy && !isDirectFallback) {
-              console.warn("Max recovery attempts with proxy. Switching to direct.");
-              setIsDirectFallback(true);
-              recoveryAttemptRef.current = 0;
-              return;
+      if (!audioRef.current || !station || recoveryAttemptRef.current >= 3) {
+          if (recoveryAttemptRef.current >= 3) {
+              console.error("Recovery failed after 3 attempts.");
+              onPlayerEvent({ type: 'STREAM_ERROR', payload: "החיבור נכשל סופית" });
           }
-          console.error("Recovery failed after 3 attempts.");
-          onPlayerEvent({ type: 'STREAM_ERROR', payload: "החיבור נכשל סופית" });
           return;
       }
 
@@ -402,28 +380,19 @@ const Player: React.FC<PlayerProps> = ({
       lastTimeUpdateRef.current = Date.now();
 
       const audio = audioRef.current;
-      const effectivelyUsingProxy = shouldUseProxy && !isDirectFallback;
-      
-      const streamUrl = effectivelyUsingProxy 
+      const streamUrl = shouldUseProxy 
           ? `${CORS_PROXY_URL}${station.url_resolved}` 
           : station.url_resolved;
           
-      // Safe reload
-      const reload = async () => {
-          try {
-              if (playPromiseRef.current) await playPromiseRef.current;
-              audio.src = `${streamUrl}?retry=${Date.now()}`;
-              audio.load();
-              playPromiseRef.current = audio.play();
-              await playPromiseRef.current;
-              playPromiseRef.current = null;
-          } catch(e) {
-              console.error("Recovery failed", e);
-          }
-      };
-      reload();
-
-  }, [station, onPlayerEvent, shouldUseProxy, isDirectFallback]);
+      audio.src = '';
+      audio.load();
+      audio.src = `${streamUrl}?retry=${Date.now()}`; // Append retry to bust cache if needed
+      audio.load();
+      audio.play().catch(e => {
+          console.error('Recovery play() failed:', e);
+          onPlayerEvent({ type: 'STREAM_ERROR', payload: 'שגיאה בהתאוששות' });
+      });
+  }, [station, onPlayerEvent, shouldUseProxy]);
 
   // Watchdog effect to detect stalled stream
   useEffect(() => {
@@ -440,10 +409,10 @@ const Player: React.FC<PlayerProps> = ({
           recoveryAttemptRef.current = 0;
 
           watchdogIntervalRef.current = window.setInterval(() => {
-              if (Date.now() - lastTimeUpdateRef.current > 8000) { // Relaxed to 8s
+              if (Date.now() - lastTimeUpdateRef.current > 7000) { // 7-second stall threshold
                   attemptRecovery();
               }
-          }, 4000); 
+          }, 3000); // Check every 3 seconds
       } else {
           clearWatchdog();
           recoveryAttemptRef.current = 0;
@@ -451,6 +420,84 @@ const Player: React.FC<PlayerProps> = ({
 
       return clearWatchdog;
   }, [status, attemptRecovery]);
+
+  // --- Smart Seeking Logic ---
+  const getCurrentUnixTime = () => Math.floor(Date.now() / 1000);
+
+  const calculateSeekTime = (targetUnixTimestamp: number) => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      
+      // Safety check for seekable ranges
+      let livePosition = 0;
+      if (audio.seekable.length > 0) {
+          livePosition = audio.seekable.end(0);
+      } else {
+          // If seekable is empty, it might be a live stream without buffer window or loading
+          console.log("Stream not seekable yet, ignoring command.");
+          return;
+      }
+
+      // In HLS DVR: seekable.end(0) is approximately "now" (Live edge).
+      // We calculate how many seconds ago the song started.
+      const now = getCurrentUnixTime();
+      const secondsAgo = now - targetUnixTimestamp;
+      
+      const targetPosition = Math.max(0, livePosition - secondsAgo);
+      
+      console.log(`[SmartSeek] Song Time: ${targetUnixTimestamp}, Now: ${now}, Seconds Ago: ${secondsAgo}`);
+      console.log(`[SmartSeek] Live Pos: ${livePosition}, Target Pos: ${targetPosition}`);
+
+      if (isFinite(targetPosition)) {
+          audio.currentTime = targetPosition;
+      }
+  };
+
+  const handleSmartPrev = () => {
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
+      
+      const now = getCurrentUnixTime();
+      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5); 
+      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
+
+      if (originalIndex !== -1) {
+          const currentTrack = smartPlaylist[originalIndex];
+          const timeSinceStart = now - currentTrack.timestamp;
+          
+          if (timeSinceStart > 10) {
+              calculateSeekTime(currentTrack.timestamp);
+          } else if (originalIndex > 0) {
+              calculateSeekTime(smartPlaylist[originalIndex - 1].timestamp);
+          } else {
+              calculateSeekTime(currentTrack.timestamp);
+          }
+      }
+  };
+
+  const handleSmartNext = () => {
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
+
+      const now = getCurrentUnixTime();
+      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5);
+      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
+
+      if (originalIndex !== -1 && originalIndex < smartPlaylist.length - 1) {
+          calculateSeekTime(smartPlaylist[originalIndex + 1].timestamp);
+      } else {
+          const audio = audioRef.current;
+          if (audio && audio.seekable.length) {
+              audio.currentTime = audio.seekable.end(0);
+          }
+      }
+  };
+
+  // Listen for remote commands from NowPlaying (via App)
+  useEffect(() => {
+      if (command) {
+          if (command.type === 'NEXT') handleSmartNext();
+          if (command.type === 'PREV') handleSmartPrev();
+      }
+  }, [command]);
 
 
   if (!station) {
@@ -462,7 +509,7 @@ const Player: React.FC<PlayerProps> = ({
   return (
     <div className="fixed bottom-0 left-0 right-0 z-30">
       <div className="relative bg-bg-secondary/80 backdrop-blur-lg shadow-t-lg">
-        {isVisualizerEnabled && isActuallyPlaying && !isDirectFallback && <PlayerVisualizer frequencyData={frequencyData} />}
+        {isVisualizerEnabled && isActuallyPlaying && <PlayerVisualizer frequencyData={frequencyData} />}
         <div className="max-w-7xl mx-auto p-4 flex items-center justify-between gap-4">
           
           <div 
@@ -475,15 +522,14 @@ const Player: React.FC<PlayerProps> = ({
               onClick={onOpenNowPlaying}
               onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/48'; }}
             />
-            <div className="min-w-0" key={station.stationuuid}>
+            <div className="min-w-0 cursor-pointer" key={station.stationuuid} onClick={onOpenNowPlaying}>
                <MarqueeText
                   loopDelay={marqueeDelay}
                   duration={marqueeConfig.duration}
                   startAnimation={startAnimation}
                   isOverflowing={marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled}
                   contentRef={stationNameRef}
-                  className="font-bold text-text-primary cursor-pointer"
-                  onClick={onOpenNowPlaying}
+                  className="font-bold text-text-primary"
               >
                   <span>{`${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`}</span>
               </MarqueeText>
@@ -503,10 +549,12 @@ const Player: React.FC<PlayerProps> = ({
                   </MarqueeText>
                 ) : status === 'LOADING' ? (
                     <span className="text-text-secondary animate-pulse">טוען...</span>
+                ) : isSmartPlayerActive ? (
+                    <span className="text-accent text-xs font-semibold animate-pulse">נגן חכם 100FM פעיל</span>
                 ) : null}
               </div>
                {status !== 'ERROR' && showNextSong && trackInfo?.next && (
-                  <div className="text-xs opacity-80 h-[1.125rem] flex items-center cursor-pointer" onClick={onOpenNowPlaying}>
+                  <div className="text-xs opacity-80 h-[1.125rem] flex items-center">
                     <span className="font-semibold flex-shrink-0">הבא:&nbsp;</span>
                     <MarqueeText 
                         loopDelay={marqueeDelay} 
@@ -523,9 +571,18 @@ const Player: React.FC<PlayerProps> = ({
           </div>
           
           <div className="flex items-center gap-1 sm:gap-2">
-             <button onClick={onPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הקודם">
+             {/* Station Prev (Right in RTL) */}
+             <button onClick={onPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="תחנה קודמת">
                 <SkipNextIcon className="w-6 h-6" />
             </button>
+
+            {/* Song Prev (Right in RTL) - REWIND */}
+            {isSmartPlayerActive && (
+                <button onClick={handleSmartPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="שיר קודם">
+                    <RewindIcon className="w-5 h-5" /> 
+                </button>
+            )}
+
             <button 
               onClick={onPlayPause} 
               className="p-3 bg-accent text-white rounded-full shadow-md"
@@ -533,7 +590,16 @@ const Player: React.FC<PlayerProps> = ({
             >
               {isActuallyPlaying || isLoading ? <PauseIcon className="w-7 h-7" /> : <PlayIcon className="w-7 h-7" />}
             </button>
-            <button onClick={onNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הבא">
+
+            {/* Song Next (Left in RTL) - FAST FORWARD */}
+            {isSmartPlayerActive && (
+                <button onClick={handleSmartNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="שיר הבא">
+                    <FastForwardIcon className="w-5 h-5" />
+                </button>
+            )}
+
+            {/* Station Next (Left in RTL) */}
+            <button onClick={onNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="תחנה הבאה">
                 <SkipPreviousIcon className="w-6 h-6" />
             </button>
           </div>
@@ -556,15 +622,7 @@ const Player: React.FC<PlayerProps> = ({
                 attemptRecovery();
             }}
             onWaiting={() => {}} // We use the LOADING state now
-            onError={() => {
-                // If error happens while using proxy, try direct fallback immediately
-                if (shouldUseProxy && !isDirectFallback) {
-                    console.warn("Audio error with proxy. Falling back to direct stream.");
-                    setIsDirectFallback(true);
-                } else {
-                    onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."});
-                }
-            }}
+            onError={() => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."})}
             // crossorigin removed here, handled dynamically
           />
       </div>
