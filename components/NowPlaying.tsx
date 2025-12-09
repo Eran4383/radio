@@ -1,7 +1,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Station, VisualizerStyle, StationTrackInfo } from '../types';
-import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon, FastForwardIcon, RewindIcon } from './Icons';
+import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon } from './Icons';
 import Visualizer from './Visualizer';
 import InteractiveText from './InteractiveText';
 import MarqueeText from './MarqueeText';
@@ -31,11 +31,6 @@ interface NowPlayingProps {
   onOpenActionMenu: (songTitle: string) => void;
   isVisualizerFullscreen: boolean;
   setIsVisualizerFullscreen: (isFull: boolean) => void;
-  // Smart Player Props
-  isSmartPlayerActive: boolean;
-  onSmartNext: () => void;
-  onSmartPrev: () => void;
-  liveStreamDate?: number | null;
 }
 
 const NowPlaying: React.FC<NowPlayingProps> = ({
@@ -45,25 +40,12 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
   isVolumeControlVisible, marqueeDelay,
   isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled, marqueeSpeed,
   onOpenActionMenu,
-  isVisualizerFullscreen, setIsVisualizerFullscreen,
-  isSmartPlayerActive, onSmartNext, onSmartPrev
+  isVisualizerFullscreen, setIsVisualizerFullscreen
 }) => {
     const dragRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const [startAnimation, setStartAnimation] = useState(false);
-    // HLS support check also needed here to sync UI with Player bar
-    const [isHlsSupported, setIsHlsSupported] = useState(false);
     
-    useEffect(() => {
-        const audio = document.createElement('audio');
-        const canPlayM3u8 = audio.canPlayType('application/vnd.apple.mpegurl') || 
-                            audio.canPlayType('audio/mpegurl');
-        const hlsJsSupported = (window as any).Hls && (window as any).Hls.isSupported();
-        setIsHlsSupported(!!canPlayM3u8 || !!hlsJsSupported);
-    }, []);
-
-    const canUseSmartFeatures = isSmartPlayerActive && isHlsSupported;
-
     const stationNameRef = useRef<HTMLSpanElement>(null);
     const programNameRef = useRef<HTMLSpanElement>(null);
     const currentTrackRef = useRef<HTMLSpanElement>(null);
@@ -320,38 +302,19 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
         </div>
         
         <div className={`flex-shrink-0 flex flex-col items-center gap-4 sm:gap-6 pb-4 sm:pb-8 px-4 ${isVisualizerFullscreen ? 'hidden' : ''}`}>
-            <div className="flex items-center justify-center gap-2 sm:gap-4">
-              {/* Previous Station */}
-              <button onClick={onPrev} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="תחנה קודמת">
-                <SkipNextIcon className="w-8 h-8 sm:w-12 sm:h-12" />
+            <div className="flex items-center justify-center gap-4">
+              <button onClick={onPrev} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="הקודם">
+                <SkipNextIcon className="w-12 h-12" />
               </button>
-
-              {/* Previous Song (Smart) - Rewind Icon */}
-              {canUseSmartFeatures && (
-                  <button onClick={onSmartPrev} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="שיר קודם">
-                    <RewindIcon className="w-6 h-6 sm:w-8 sm:h-8" />
-                  </button>
-              )}
-
-              {/* Play/Pause */}
               <button 
                 onClick={onPlayPause} 
                 className="p-5 bg-accent text-white rounded-full shadow-lg hover:bg-accent-hover transition-transform transform hover:scale-105"
                 aria-label={isPlaying ? "השהה" : "נגן"}
               >
-                {isPlaying ? <PauseIcon className="w-10 h-10 sm:w-14 sm:h-14" /> : <PlayIcon className="w-10 h-10 sm:w-14 sm:h-14" />}
+                {isPlaying ? <PauseIcon className="w-14 h-14" /> : <PlayIcon className="w-14 h-14" />}
               </button>
-
-              {/* Next Song (Smart) - FastForward Icon */}
-              {canUseSmartFeatures && (
-                  <button onClick={onSmartNext} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="שיר הבא">
-                    <FastForwardIcon className="w-6 h-6 sm:w-8 sm:h-8" />
-                  </button>
-              )}
-
-              {/* Next Station */}
-              <button onClick={onNext} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="תחנה הבאה">
-                <SkipPreviousIcon className="w-8 h-8 sm:w-12 sm:h-12" />
+              <button onClick={onNext} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="הבא">
+                <SkipPreviousIcon className="w-12 h-12" />
               </button>
             </div>
 

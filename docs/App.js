@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
-import { fetchStations, fetchLiveTrackInfo, fetch100fmPlaylist, fetchHlsProgramDateTime } from './services/radioService.js';
+import { fetchStations, fetchLiveTrackInfo, fetch100fmPlaylist } from './services/radioService.js';
 import { 
     signInWithGoogle, 
     signOutUser, 
@@ -220,8 +220,6 @@ export default function App() {
 
   // Smart Playlist State
   const [smartPlaylist, setSmartPlaylist] = useState([]);
-  const [smartPlayerCommand, setSmartPlayerCommand] = useState(null);
-  const [liveStreamDate, setLiveStreamDate] = useState(null);
 
   const isFavorite = useCallback((stationUuid) => allSettings.favorites.includes(stationUuid), [allSettings.favorites]);
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
@@ -238,12 +236,6 @@ export default function App() {
 
   // Determine if we should use proxy (if ANY visualizer is enabled)
   const shouldUseProxy = allSettings.isNowPlayingVisualizerEnabled || allSettings.isPlayerBarVisualizerEnabled;
-
-  // Derived state for Smart Player activation
-  const isSmartPlayerActive = useMemo(() => {
-      return allSettings.is100fmSmartPlayerEnabled && 
-             (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
-  }, [allSettings.is100fmSmartPlayerEnabled, playerState.station]);
   
   // Auth state listener - runs only once on mount
   useEffect(() => {
@@ -377,6 +369,7 @@ export default function App() {
            setError('אירעה שגיאה בטעינת התחנות.');
            setStationsStatus('error');
         }
+        // If hasCachedData is true, we simply fail silently and keep showing cached data.
       }
     };
 
@@ -476,31 +469,17 @@ export default function App() {
           
           // --- 100FM Smart Player Logic ---
           if (allSettings.is100fmSmartPlayerEnabled && (stationuuid.startsWith('100fm-') || url_resolved.includes('streamgates.net'))) {
-              // Fetch Songs
-              const playlistPromise = fetch100fmPlaylist(stationuuid);
-              // Fetch Server Time (once per station select or periodically)
-              const timePromise = liveStreamDate === null ? fetchHlsProgramDateTime(url_resolved) : Promise.resolve(liveStreamDate);
-
-              const [playlist, serverTime] = await Promise.all([playlistPromise, timePromise]);
+              const playlist = await fetch100fmPlaylist(stationuuid);
               setSmartPlaylist(playlist);
               
-              if (serverTime !== null) {
-                  setLiveStreamDate(serverTime);
-              }
-
               if (playlist.length > 0) {
                   const now = Math.floor(Date.now() / 1000);
-                  const currentItem = [...playlist].reverse().find(i => i.timestamp <= now + 120); 
-                  
-                  // Fallback to last track if timestamp matching fails (e.g. server time drift)
-                  const trackToShow = currentItem || playlist[playlist.length - 1];
-
-                  const nextItemIndex = playlist.findIndex(i => i === trackToShow) + 1;
-                  const nextItem = nextItemIndex < playlist.length ? playlist[nextItemIndex] : null;
+                  const currentItem = [...playlist].reverse().find(i => i.timestamp <= now + 5); 
+                  const nextItem = playlist.find(i => i.timestamp > now + 5);
                   
                   finalInfo = {
                       program: name,
-                      current: trackToShow ? `${trackToShow.name} - ${trackToShow.artist}` : null,
+                      current: currentItem ? `${currentItem.name} - ${currentItem.artist}` : null,
                       next: nextItem ? `${nextItem.name} - ${nextItem.artist}` : null
                   };
               } else {
@@ -510,7 +489,6 @@ export default function App() {
           // --- Standard Stations Logic ---
           else {
               setSmartPlaylist([]); 
-              setLiveStreamDate(null);
               
               if (hasSpecificHandler(name)) { 
                   const specificInfo = await fetchStationSpecificTrackInfo(name); 
@@ -532,7 +510,6 @@ export default function App() {
       } else { 
           setTrackInfo(null); 
           setSmartPlaylist([]);
-          setLiveStreamDate(null);
       } 
       
       return () => clearInterval(intervalId); 
@@ -550,11 +527,7 @@ export default function App() {
       }
   };
   
-  const handleSelectStation = useCallback((station) => {
-      setLiveStreamDate(null);
-      dispatch({ type: 'SELECT_STATION', payload: station });
-  }, []);
-
+  const handleSelectStation = useCallback((station) => dispatch({ type: 'SELECT_STATION', payload: station }), []);
   const handlePlayPause = useCallback(() => { if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' }); else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] }); }, [playerState.station, displayedStations]);
   const handlePlay = useCallback(async () => { if (playerState.status === 'PLAYING') return; if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' }); else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] }); }, [playerState.status, playerState.station, displayedStations]);
   const handlePause = useCallback(async () => { if (playerState.status === 'PLAYING') dispatch({ type: 'TOGGLE_PAUSE' }); }, [playerState.status]);
@@ -568,9 +541,7 @@ export default function App() {
   const closeActionMenu = useCallback(() => setActionMenuState({ isOpen: false, songTitle: null }), []);
   const handleCycleVisualizerStyle = useCallback(() => setAllSettings(s => ({...s, visualizerStyle: VISUALIZER_STYLES[(VISUALIZER_STYLES.indexOf(s.visualizerStyle) + 1) % VISUALIZER_STYLES.length]})), []);
 
-  const triggerSmartNext = useCallback(() => setSmartPlayerCommand({ type: 'NEXT', id: Date.now() }), []);
-  const triggerSmartPrev = useCallback(() => setSmartPlayerCommand({ type: 'PREV', id: Date.now() }), []);
-
+  // Handle favorite toggle with confirmation
   const toggleFavorite = (uuid) => {
       const isCurrentlyFavorite = allSettings.favorites.includes(uuid);
       if (isCurrentlyFavorite) {
@@ -711,36 +682,7 @@ export default function App() {
         stationsStatus === 'loading' ? React.createElement(StationListSkeleton, null) : stationsStatus === 'error' ? React.createElement("p", { className: "text-center text-red-400 p-4" }, error) : displayedStations.length > 0 ? React.createElement(StationList, { stations: displayedStations, currentStation: playerState.station, onSelectStation: handleSelectStation, isFavorite: isFavorite, toggleFavorite: toggleFavorite, onReorder: handleReorder, isStreamActive: playerState.status === 'PLAYING', isStatusIndicatorEnabled: allSettings.isStatusIndicatorEnabled, gridSize: allSettings.gridSize, sortOrder: currentSortOrder }) : React.createElement("div", { className: "text-center p-8 text-text-secondary" }, React.createElement("h2", { className: "text-xl font-semibold" }, allSettings.filter === StationFilter.Favorites ? 'אין תחנות במועדפים' : 'לא נמצאו תחנות'), React.createElement("p", null, allSettings.filter === StationFilter.Favorites ? 'אפשר להוסיף תחנות על ידי לחיצה על כפתור הכוכב.' : 'נסה לרענן את העמוד.'))
       ),
       React.createElement(SettingsPanel, { isOpen: isSettingsOpen, onClose: () => setIsSettingsOpen(false), user: user, isAdmin: isAdmin, onOpenAdminPanel: () => setIsAdminPanelOpen(true), onLogin: signInWithGoogle, onLogout: signOutUser, currentTheme: allSettings.theme, onThemeChange: (v) => setAllSettings(s=>({...s, theme: v})), currentEqPreset: allSettings.eqPreset, onEqPresetChange: (v) => setAllSettings(s=>({...s, eqPreset: v})), isNowPlayingVisualizerEnabled: allSettings.isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange: (v) => setAllSettings(s=>({...s, isNowPlayingVisualizerEnabled: v})), isPlayerBarVisualizerEnabled: allSettings.isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange: (v) => setAllSettings(s=>({...s, isPlayerBarVisualizerEnabled: v})), isStatusIndicatorEnabled: allSettings.isStatusIndicatorEnabled, onStatusIndicatorEnabledChange: (v) => setAllSettings(s=>({...s, isStatusIndicatorEnabled: v})), isVolumeControlVisible: allSettings.isVolumeControlVisible, onVolumeControlVisibleChange: (v) => setAllSettings(s=>({...s, isVolumeControlVisible: v})), showNextSong: allSettings.showNextSong, onShowNextSongChange: (v) => setAllSettings(s=>({...s, showNextSong: v})), customEqSettings: allSettings.customEqSettings, onCustomEqChange: (v) => setAllSettings(s=>({...s, customEqSettings: v})), gridSize: allSettings.gridSize, onGridSizeChange: (v) => setAllSettings(s=>({...s, gridSize: v})), isMarqueeProgramEnabled: allSettings.isMarqueeProgramEnabled, onMarqueeProgramEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeProgramEnabled: v})), isMarqueeCurrentTrackEnabled: allSettings.isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeCurrentTrackEnabled: v})), isMarqueeNextTrackEnabled: allSettings.isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeNextTrackEnabled: v})), marqueeSpeed: allSettings.marqueeSpeed, onMarqueeSpeedChange: (v) => setAllSettings(s=>({...s, marqueeSpeed: v})), marqueeDelay: allSettings.marqueeDelay, onMarqueeDelayChange: (v) => setAllSettings(s=>({...s, marqueeDelay: v})), updateStatus: updateStatus, onManualUpdateCheck: handleManualUpdateCheck, keyMap: allSettings.keyMap, onKeyMapChange: (newMap) => setAllSettings(s => ({...s, keyMap: newMap})), setIsRebinding: setIsRebinding, is100fmSmartPlayerEnabled: allSettings.is100fmSmartPlayerEnabled, on100fmSmartPlayerEnabledChange: (enabled) => setAllSettings(s => ({...s, is100fmSmartPlayerEnabled: enabled})) }),
-      playerState.station && React.createElement(NowPlaying, { 
-        isOpen: isNowPlayingOpen, 
-        onClose: () => !isVisualizerFullscreen && setIsNowPlayingOpen(false), 
-        station: playerState.station, 
-        isPlaying: playerState.status === 'PLAYING', 
-        onPlayPause: handlePlayPause, 
-        onNext: handleNext, 
-        onPrev: handlePrev, 
-        volume: allSettings.volume, 
-        onVolumeChange: (v) => setAllSettings(s=>({...s, volume: v})), 
-        trackInfo: trackInfo, 
-        showNextSong: allSettings.showNextSong, 
-        frequencyData: frequencyData, 
-        visualizerStyle: allSettings.visualizerStyle, 
-        isVisualizerEnabled: allSettings.isNowPlayingVisualizerEnabled, 
-        onCycleVisualizerStyle: handleCycleVisualizerStyle, 
-        isVolumeControlVisible: allSettings.isVolumeControlVisible, 
-        marqueeDelay: allSettings.marqueeDelay, 
-        isMarqueeProgramEnabled: allSettings.isMarqueeProgramEnabled, 
-        isMarqueeCurrentTrackEnabled: allSettings.isMarqueeCurrentTrackEnabled, 
-        isMarqueeNextTrackEnabled: allSettings.isMarqueeNextTrackEnabled, 
-        marqueeSpeed: allSettings.marqueeSpeed, 
-        onOpenActionMenu: openActionMenu, 
-        isVisualizerFullscreen: isVisualizerFullscreen, 
-        setIsVisualizerFullscreen: setIsVisualizerFullscreen,
-        isSmartPlayerActive: isSmartPlayerActive,
-        onSmartNext: triggerSmartNext,
-        onSmartPrev: triggerSmartPrev,
-        liveStreamDate: liveStreamDate
-      }),
+      playerState.station && React.createElement(NowPlaying, { isOpen: isNowPlayingOpen, onClose: () => !isVisualizerFullscreen && setIsNowPlayingOpen(false), station: playerState.station, isPlaying: playerState.status === 'PLAYING', onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, volume: allSettings.volume, onVolumeChange: (v) => setAllSettings(s=>({...s, volume: v})), trackInfo: trackInfo, showNextSong: allSettings.showNextSong, frequencyData: frequencyData, visualizerStyle: allSettings.visualizerStyle, isVisualizerEnabled: allSettings.isNowPlayingVisualizerEnabled, onCycleVisualizerStyle: handleCycleVisualizerStyle, isVolumeControlVisible: allSettings.isVolumeControlVisible, marqueeDelay: allSettings.marqueeDelay, isMarqueeProgramEnabled: allSettings.isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: allSettings.isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: allSettings.isMarqueeNextTrackEnabled, marqueeSpeed: allSettings.marqueeSpeed, onOpenActionMenu: openActionMenu, isVisualizerFullscreen: isVisualizerFullscreen, setIsVisualizerFullscreen: setIsVisualizerFullscreen }),
       React.createElement(ActionMenu, { isOpen: actionMenuState.isOpen, onClose: closeActionMenu, songTitle: actionMenuState.songTitle }),
       React.createElement(Player, { 
         playerState: playerState, 
@@ -768,9 +710,7 @@ export default function App() {
         marqueeSpeed: allSettings.marqueeSpeed, 
         onOpenActionMenu: openActionMenu, 
         is100fmSmartPlayerEnabled: allSettings.is100fmSmartPlayerEnabled,
-        smartPlaylist: smartPlaylist,
-        command: smartPlayerCommand,
-        liveStreamDate: liveStreamDate
+        smartPlaylist: smartPlaylist // NEW PROP
       }),
       isUpdateAvailable && React.createElement("div", { className: "fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up" }, React.createElement("p", { className: "text-sm font-semibold" }, "עדכון חדש זמין"), React.createElement("button", { onClick: handleUpdateClick, className: "py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold" }, "עדכן גירסה"))
     )

@@ -3,6 +3,7 @@ import { PRIORITY_STATIONS } from '../constants.js';
 import { CORS_PROXY_URL } from '../constants.js';
 import { fetchCustomStations } from './firebase.js';
 
+// Function to shuffle an array for load distribution
 const shuffleArray = (array) => {
     for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -162,7 +163,9 @@ export const fetchDefaultIsraeliStations = async () => {
   return Array.from(uniqueStations.values());
 };
 
+// Main function to get stations - prioritizes Cloud Firestore
 export const fetchStations = async () => {
+    // 1. Try to fetch from Firestore (Custom Admin List)
     try {
         const customStations = await fetchCustomStations();
         if (customStations && Array.isArray(customStations)) {
@@ -173,6 +176,7 @@ export const fetchStations = async () => {
         console.warn("Failed to load custom stations, falling back to default API.", e);
     }
 
+    // 2. Fallback to default API logic
     console.log("Loading default stations from external APIs...");
     return fetchDefaultIsraeliStations();
 };
@@ -214,6 +218,7 @@ export const fetchLiveTrackInfo = async (stationuuid) => {
     return null;
 };
 
+// --- New Function for 100fm Smart Player ---
 export const fetch100fmPlaylist = async (stationIdOrSlug) => {
     const slug = stationIdOrSlug.replace('100fm-', '');
     const url = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
@@ -230,25 +235,20 @@ export const fetch100fmPlaylist = async (stationIdOrSlug) => {
         }
 
         const text = await response.text();
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(text, "text/xml");
+        
+        const trackElements = xmlDoc.getElementsByTagName('track');
         const playlist = [];
 
-        const trackBlockRegex = /<track\b[^>]*>(.*?)<\/track>/gs;
-        let trackMatch;
+        for (let i = 0; i < trackElements.length; i++) {
+            const track = trackElements[i];
+            const artist = track.getElementsByTagName('artist')[0]?.textContent || '';
+            const name = track.getElementsByTagName('name')[0]?.textContent || '';
+            const timestamp = parseInt(track.getElementsByTagName('timestamp')[0]?.textContent || '0', 10);
+            const before = parseInt(track.getElementsByTagName('before')[0]?.textContent || '0', 10);
 
-        while ((trackMatch = trackBlockRegex.exec(text)) !== null) {
-            const blockContent = trackMatch[1];
-            
-            const artistMatch = blockContent.match(/<artist>(.*?)<\/artist>/s);
-            const nameMatch = blockContent.match(/<name>(.*?)<\/name>/s);
-            const timestampMatch = blockContent.match(/<timestamp>(.*?)<\/timestamp>/s);
-            const beforeMatch = blockContent.match(/<before>(.*?)<\/before>/s);
-
-            const artist = artistMatch ? artistMatch[1].trim() : '';
-            const name = nameMatch ? nameMatch[1].trim() : '';
-            const timestamp = timestampMatch ? parseInt(timestampMatch[1].trim(), 10) : 0;
-            const before = beforeMatch ? parseInt(beforeMatch[1].trim(), 10) : 0;
-
-            if (timestamp > 0 && name && name.length > 1 && name !== 'P') {
+            if (timestamp > 0) {
                 playlist.push({ artist, name, timestamp, before });
             }
         }
@@ -256,43 +256,7 @@ export const fetch100fmPlaylist = async (stationIdOrSlug) => {
         return playlist.sort((a, b) => a.timestamp - b.timestamp);
 
     } catch (error) {
-        console.error(`Error processing 100fm playlist for ${slug}:`, error);
+        console.error(`Error parsing 100fm playlist for ${slug}:`, error);
         return [];
-    }
-};
-
-export const fetchHlsProgramDateTime = async (masterPlaylistUrl) => {
-    try {
-        const proxyUrl = `${CORS_PROXY_URL}${masterPlaylistUrl}`;
-        const masterRes = await fetch(proxyUrl);
-        if (!masterRes.ok) return null;
-        const masterText = await masterRes.text();
-
-        const lines = masterText.split('\n');
-        let mediaUrl = lines.find(l => l.trim() && !l.startsWith('#'));
-        
-        if (!mediaUrl) return null;
-
-        if (!mediaUrl.startsWith('http')) {
-            const baseUrl = masterPlaylistUrl.substring(0, masterPlaylistUrl.lastIndexOf('/') + 1);
-            mediaUrl = baseUrl + mediaUrl;
-        }
-
-        const mediaRes = await fetch(`${CORS_PROXY_URL}${mediaUrl}`);
-        if (!mediaRes.ok) return null;
-        const mediaText = await mediaRes.text();
-
-        const dateTimeMatch = mediaText.match(/#EXT-X-PROGRAM-DATE-TIME:(.*)/);
-        if (dateTimeMatch && dateTimeMatch[1]) {
-            const dateStr = dateTimeMatch[1].trim();
-            const timestamp = Math.floor(new Date(dateStr).getTime() / 1000);
-            console.log(`[HLS Sync] Found server time: ${dateStr} -> ${timestamp}`);
-            return timestamp;
-        }
-        
-        return null;
-    } catch (e) {
-        console.error("Error fetching HLS date time:", e);
-        return null;
     }
 };

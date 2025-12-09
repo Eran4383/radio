@@ -1,6 +1,8 @@
 
+
+
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon, FastForwardIcon, RewindIcon } from './Icons.js';
+import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, VolumeUpIcon, ChevronDownIcon } from './Icons.js';
 import Visualizer from './Visualizer.js';
 import InteractiveText from './InteractiveText.js';
 import MarqueeText from './MarqueeText.js';
@@ -12,24 +14,11 @@ const NowPlaying = ({
   isVolumeControlVisible, marqueeDelay,
   isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled, marqueeSpeed,
   onOpenActionMenu,
-  isVisualizerFullscreen, setIsVisualizerFullscreen,
-  isSmartPlayerActive, onSmartNext, onSmartPrev,
-  liveStreamDate
+  isVisualizerFullscreen, setIsVisualizerFullscreen
 }) => {
     const dragRef = useRef(null);
     const scrollRef = useRef(null);
     const [startAnimation, setStartAnimation] = useState(false);
-    const [isHlsSupported, setIsHlsSupported] = useState(false);
-    
-    useEffect(() => {
-        const audio = document.createElement('audio');
-        const canPlayM3u8 = audio.canPlayType('application/vnd.apple.mpegurl') || 
-                            audio.canPlayType('audio/mpegurl');
-        const hlsJsSupported = window.Hls && window.Hls.isSupported();
-        setIsHlsSupported(!!canPlayM3u8 || !!hlsJsSupported);
-    }, []);
-
-    const canUseSmartFeatures = isSmartPlayerActive && isHlsSupported;
     
     const stationNameRef = useRef(null);
     const programNameRef = useRef(null);
@@ -168,7 +157,6 @@ const NowPlaying = ({
                 if (deltaX > 0) onPrev();
                 else onNext();
             } else if (isDraggingModal.current && deltaY > 120) {
-                // If dragged down significantly (more than 120px) AND we were dragging the modal, close it.
                 onClose();
             }
         }
@@ -283,33 +271,19 @@ const NowPlaying = ({
             )
         ),
         React.createElement("div", { className: `flex-shrink-0 flex flex-col items-center gap-4 sm:gap-6 pb-4 sm:pb-8 px-4 ${isVisualizerFullscreen ? 'hidden' : ''}` },
-            React.createElement("div", { className: "flex items-center justify-center gap-2 sm:gap-4" },
-              React.createElement("button", { onClick: onPrev, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "תחנה קודמת" },
-                React.createElement(SkipNextIcon, { className: "w-8 h-8 sm:w-12 sm:h-12" })
+            React.createElement("div", { className: "flex items-center justify-center gap-4" },
+              React.createElement("button", { onClick: onPrev, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "הקודם" },
+                React.createElement(SkipNextIcon, { className: "w-12 h-12" })
               ),
-              
-              canUseSmartFeatures && (
-                  React.createElement("button", { onClick: onSmartPrev, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "שיר קודם" },
-                    React.createElement(RewindIcon, { className: "w-6 h-6 sm:w-8 sm:h-8" })
-                  )
-              ),
-
               React.createElement("button", { 
                 onClick: onPlayPause, 
                 className: "p-5 bg-accent text-white rounded-full shadow-lg hover:bg-accent-hover transition-transform transform hover:scale-105",
                 "aria-label": isPlaying ? "השהה" : "נגן"
               },
-                isPlaying ? React.createElement(PauseIcon, { className: "w-10 h-10 sm:w-14 sm:h-14" }) : React.createElement(PlayIcon, { className: "w-10 h-10 sm:w-14 sm:h-14" })
+                isPlaying ? React.createElement(PauseIcon, { className: "w-14 h-14" }) : React.createElement(PlayIcon, { className: "w-14 h-14" })
               ),
-
-              canUseSmartFeatures && (
-                  React.createElement("button", { onClick: onSmartNext, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "שיר הבא" },
-                    React.createElement(FastForwardIcon, { className: "w-6 h-6 sm:w-8 sm:h-8" })
-                  )
-              ),
-
-              React.createElement("button", { onClick: onNext, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "תחנה הבאה" },
-                React.createElement(SkipPreviousIcon, { className: "w-8 h-8 sm:w-12 sm:h-12" })
+              React.createElement("button", { onClick: onNext, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "הבא" },
+                React.createElement(SkipPreviousIcon, { className: "w-12 h-12" })
               )
             ),
             isVolumeControlVisible && (

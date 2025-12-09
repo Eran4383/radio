@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { EQ_PRESETS } from '../types.js';
-import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon, FastForwardIcon, RewindIcon } from './Icons.js';
+import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons.js';
 import { CORS_PROXY_URL } from '../constants.js';
 import InteractiveText from './InteractiveText.js';
 import MarqueeText from './MarqueeText.js';
@@ -68,9 +68,7 @@ const Player = ({
   marqueeSpeed,
   onOpenActionMenu,
   is100fmSmartPlayerEnabled,
-  smartPlaylist,
-  command,
-  liveStreamDate
+  smartPlaylist
 }) => {
   const audioRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -86,9 +84,6 @@ const Player = ({
   const watchdogIntervalRef = useRef(null);
 
   const [startAnimation, setStartAnimation] = useState(false);
-  const [isHlsSupported, setIsHlsSupported] = useState(false);
-  
-  const hlsRef = useRef(null);
   
   const stationNameRef = useRef(null);
   const currentTrackRef = useRef(null);
@@ -97,20 +92,10 @@ const Player = ({
 
   // Smart Player
   const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
-  
-  const canUseSmartFeatures = isSmartPlayerActive && isHlsSupported;
 
   const { status, station, error } = playerState;
   const isPlaying = status === 'PLAYING';
   const isLoading = status === 'LOADING';
-
-  useEffect(() => {
-      const audio = document.createElement('audio');
-      const nativeHls = audio.canPlayType('application/vnd.apple.mpegurl') || 
-                          audio.canPlayType('audio/mpegurl');
-      const hlsJsSupported = window.Hls && window.Hls.isSupported();
-      setIsHlsSupported(!!nativeHls || !!hlsJsSupported);
-  }, []);
 
   useEffect(() => {
     setStartAnimation(false);
@@ -196,11 +181,6 @@ const Player = ({
     const audio = audioRef.current;
     if (!audio || !station) return;
 
-    if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-    }
-
     const playAudio = async () => {
         if (shouldUseProxy) {
             setupAudioContext();
@@ -210,9 +190,7 @@ const Player = ({
         }
         
         let streamUrl = station.url_resolved;
-        let useHlsJs = false;
 
-        // Switch to DVR URL 
         if (isSmartPlayerActive) {
             if (streamUrl.includes('streamgates.net') && !streamUrl.includes('dvr_timeshift')) {
                 const lastSlashIndex = streamUrl.lastIndexOf('/');
@@ -221,61 +199,20 @@ const Player = ({
                     streamUrl = `${baseUrl}/playlist_dvr_timeshift-36000.m3u8`;
                 }
             }
-            
-            const audioEl = document.createElement('audio');
-            const nativeHls = audioEl.canPlayType('application/vnd.apple.mpegurl') || 
-                              audioEl.canPlayType('audio/mpegurl');
-            if (!nativeHls && window.Hls && window.Hls.isSupported()) {
-                useHlsJs = true;
-            }
         }
 
-        if (shouldUseProxy && !useHlsJs) {
+        if (shouldUseProxy) {
             streamUrl = `${CORS_PROXY_URL}${streamUrl}`;
         }
 
-        if (useHlsJs) {
-             console.log('[Player] Initializing HLS.js for URL:', streamUrl);
-             const Hls = window.Hls;
-             const hls = new Hls({
-                 enableWorker: true,
-                 lowLatencyMode: true,
-             });
-             hls.loadSource(streamUrl);
-             hls.attachMedia(audio);
-             hlsRef.current = hls;
-             
-             hls.on(Hls.Events.ERROR, function (event, data) {
-                if (data.fatal) {
-                    console.error('[HLS.js] Fatal Error:', data.type, data.details);
-                    switch (data.type) {
-                    case Hls.ErrorTypes.NETWORK_ERROR:
-                        console.log('[HLS.js] Network error, attempting recovery...');
-                        hls.startLoad();
-                        break;
-                    case Hls.ErrorTypes.MEDIA_ERROR:
-                        console.log('[HLS.js] Media error, attempting recovery...');
-                        hls.recoverMediaError();
-                        break;
-                    default:
-                        console.log('[HLS.js] Unrecoverable error.');
-                        hls.destroy();
-                        break;
-                    }
-                }
-             });
-
-        } else {
-            if (audio.src !== streamUrl) {
-                audio.src = streamUrl;
-                if (shouldUseProxy) {
-                    audio.crossOrigin = 'anonymous';
-                } else {
-                    audio.removeAttribute('crossOrigin');
-                }
+        if (audio.src !== streamUrl) {
+            audio.src = streamUrl;
+            if (shouldUseProxy) {
+                audio.crossOrigin = 'anonymous';
+            } else {
+                audio.removeAttribute('crossOrigin');
             }
         }
-
         try {
             await audio.play();
         } catch (e) {
@@ -376,13 +313,6 @@ const Player = ({
       lastTimeUpdateRef.current = Date.now();
 
       const audio = audioRef.current;
-      
-      if (hlsRef.current) {
-          hlsRef.current.recoverMediaError();
-          audio.play();
-          return;
-      }
-
       const streamUrl = shouldUseProxy 
           ? `${CORS_PROXY_URL}${station.url_resolved}` 
           : station.url_resolved;
@@ -423,134 +353,70 @@ const Player = ({
       return clearWatchdog;
   }, [status, attemptRecovery]);
 
-  const getSeekableEnd = () => {
+  const getCurrentUnixTime = () => Math.floor(Date.now() / 1000);
+
+  const calculateSeekTime = (targetUnixTimestamp) => {
       const audio = audioRef.current;
-      if (!audio || audio.seekable.length === 0) return 0;
-      return audio.seekable.end(0);
-  }
+      if (!audio || !audio.seekable.length) return;
 
-  const executeSeekToSecondsAgo = (secondsAgo) => {
-      const audio = audioRef.current;
-      if (!audio) return;
-
-      const liveEdge = getSeekableEnd();
+      const now = getCurrentUnixTime();
+      const secondsAgo = now - targetUnixTimestamp;
       
-      if (liveEdge < 60) {
-          console.warn("[SmartSeek] Buffer too small for seeking. Live Edge: " + liveEdge);
-      }
-
-      const targetPos = Math.max(0, liveEdge - secondsAgo);
+      const livePosition = audio.seekable.end(0);
+      const targetPosition = Math.max(0, livePosition - secondsAgo);
       
-      console.log(`[SmartSeek] Live Edge: ${liveEdge}, Seconds Ago: ${secondsAgo}, Target: ${targetPos}`);
-      
-      if (isFinite(targetPos)) {
-          audio.currentTime = targetPos;
+      if (isFinite(targetPosition)) {
+          audio.currentTime = targetPosition;
       }
   };
 
   const handleSmartPrev = () => {
-      if (!canUseSmartFeatures || smartPlaylist.length === 0) {
-          console.warn("[SmartPrev] Smart features unavailable (No playlist or no HLS support).");
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
+          onPrev();
           return;
       }
       
-      // ANCHOR LOGIC: The last track in the playlist IS the live edge.
-      const lastTrack = smartPlaylist[smartPlaylist.length - 1];
-      const liveAnchorTime = lastTrack.timestamp; 
-      
-      // Calculate current virtual position based on audio buffer
-      const audio = audioRef.current;
-      if (!audio) return;
-      
-      const liveEdgePos = getSeekableEnd();
-      const currentPos = audio.currentTime;
-      const secondsBehindLive = liveEdgePos - currentPos;
-      
-      // Virtual Time = (Last Song Time) - (Seconds Behind Buffer End)
-      const virtualNow = liveAnchorTime - secondsBehindLive;
-      console.log(`[SmartPrev] Virtual Time: ${virtualNow}`);
+      const now = getCurrentUnixTime();
+      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5); 
+      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
 
-      let currentIndex = -1;
-      for (let i = 0; i < smartPlaylist.length; i++) {
-          const track = smartPlaylist[i];
-          const nextTrack = smartPlaylist[i+1];
-          // Use a small buffer
-          if (track.timestamp <= virtualNow + 5 && (!nextTrack || nextTrack.timestamp > virtualNow + 5)) {
-              currentIndex = i;
-              break;
-          }
-      }
-
-      if (currentIndex !== -1) {
-          const currentTrack = smartPlaylist[currentIndex];
-          const timeSinceStart = virtualNow - currentTrack.timestamp;
+      if (originalIndex !== -1) {
+          const currentTrack = smartPlaylist[originalIndex];
+          const timeSinceStart = now - currentTrack.timestamp;
           
           if (timeSinceStart > 10) {
-              // Restart current song
-              // Seek Amount = (Last Track Time) - (Current Track Time)
-              const seekSecondsAgo = liveAnchorTime - currentTrack.timestamp;
-              executeSeekToSecondsAgo(seekSecondsAgo);
-          } else if (currentIndex > 0) {
-              // Prev song
-              const prevTrack = smartPlaylist[currentIndex - 1];
-              const seekSecondsAgo = liveAnchorTime - prevTrack.timestamp;
-              executeSeekToSecondsAgo(seekSecondsAgo);
+              calculateSeekTime(currentTrack.timestamp);
+          } else if (originalIndex > 0) {
+              calculateSeekTime(smartPlaylist[originalIndex - 1].timestamp);
           } else {
-              // Start of playlist
-              const seekSecondsAgo = liveAnchorTime - currentTrack.timestamp;
-              executeSeekToSecondsAgo(seekSecondsAgo);
+              calculateSeekTime(currentTrack.timestamp);
           }
       } else {
-          // Fallback: Jump to last track if logic fails
-           executeSeekToSecondsAgo(0); 
+          onPrev();
       }
   };
 
   const handleSmartNext = () => {
-      if (!canUseSmartFeatures || smartPlaylist.length === 0) {
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
+          onNext();
           return;
       }
 
-      const lastTrack = smartPlaylist[smartPlaylist.length - 1];
-      const liveAnchorTime = lastTrack.timestamp;
-      
-      const audio = audioRef.current;
-      if (!audio) return;
-      
-      const liveEdgePos = getSeekableEnd();
-      const currentPos = audio.currentTime;
-      const secondsBehindLive = liveEdgePos - currentPos;
-      const virtualNow = liveAnchorTime - secondsBehindLive;
+      const now = getCurrentUnixTime();
+      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5);
+      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
 
-      let currentIndex = -1;
-      for (let i = 0; i < smartPlaylist.length; i++) {
-          const track = smartPlaylist[i];
-          const nextTrack = smartPlaylist[i+1];
-          if (track.timestamp <= virtualNow + 5 && (!nextTrack || nextTrack.timestamp > virtualNow + 5)) {
-              currentIndex = i;
-              break;
+      if (originalIndex !== -1 && originalIndex < smartPlaylist.length - 1) {
+          calculateSeekTime(smartPlaylist[originalIndex + 1].timestamp);
+      } else {
+          const audio = audioRef.current;
+          if (audio && audio.seekable.length) {
+              audio.currentTime = audio.seekable.end(0);
+          } else {
+              onNext(); 
           }
       }
-
-      if (currentIndex !== -1 && currentIndex < smartPlaylist.length - 1) {
-          const nextTrack = smartPlaylist[currentIndex + 1];
-          // Seek Amount = (Last Track Time) - (Next Track Time)
-          const seekSecondsAgo = liveAnchorTime - nextTrack.timestamp;
-          executeSeekToSecondsAgo(seekSecondsAgo);
-      } else {
-          // Jump to Live
-          console.log(`[SmartNext] Jumping to Live Edge.`);
-          if (audio) audio.currentTime = getSeekableEnd();
-      }
   };
-
-  useEffect(() => {
-      if (command) {
-          if (command.type === 'NEXT') handleSmartNext();
-          if (command.type === 'PREV') handleSmartPrev();
-      }
-  }, [command]);
-
 
   if (!station) {
     return null;
@@ -601,7 +467,7 @@ const Player = ({
                   )
                 ) : status === 'LOADING' ? (
                     React.createElement("span", { className: "text-text-secondary animate-pulse" }, "טוען...")
-                ) : canUseSmartFeatures ? (
+                ) : isSmartPlayerActive ? (
                     React.createElement("span", { className: "text-accent text-xs font-semibold animate-pulse" }, "נגן חכם 100FM פעיל")
                 ) : null
               ),
@@ -623,16 +489,9 @@ const Player = ({
           ),
           
           React.createElement("div", { className: "flex items-center gap-1 sm:gap-2" },
-             React.createElement("button", { onClick: onPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "תחנה קודמת" },
+             React.createElement("button", { onClick: handleSmartPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הקודם" },
                 React.createElement(SkipNextIcon, { className: "w-6 h-6" })
             ),
-            
-            canUseSmartFeatures && (
-                React.createElement("button", { onClick: handleSmartPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "שיר קודם" },
-                    React.createElement(RewindIcon, { className: "w-5 h-5" })
-                )
-            ),
-
             React.createElement("button", { 
               onClick: onPlayPause, 
               className: "p-3 bg-accent text-white rounded-full shadow-md",
@@ -640,14 +499,7 @@ const Player = ({
             },
               isActuallyPlaying || isLoading ? React.createElement(PauseIcon, { className: "w-7 h-7" }) : React.createElement(PlayIcon, { className: "w-7 h-7" })
             ),
-
-            canUseSmartFeatures && (
-                React.createElement("button", { onClick: handleSmartNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "שיר הבא" },
-                    React.createElement(FastForwardIcon, { className: "w-5 h-5" })
-                )
-            ),
-
-            React.createElement("button", { onClick: onNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "תחנה הבאה" },
+            React.createElement("button", { onClick: handleSmartNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הבא" },
                 React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
             )
           )
