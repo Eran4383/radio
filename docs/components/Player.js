@@ -82,6 +82,8 @@ const Player = ({
   const lastTimeUpdateRef = useRef(Date.now());
   const recoveryAttemptRef = useRef(0);
   const watchdogIntervalRef = useRef(null);
+  const playPromiseRef = useRef(null);
+  const [isDirectFallback, setIsDirectFallback] = useState(false);
 
   const [startAnimation, setStartAnimation] = useState(false);
   
@@ -90,8 +92,6 @@ const Player = ({
   const nextTrackRef = useRef(null);
   const [marqueeConfig, setMarqueeConfig] = useState({ duration: 0, isOverflowing: [false, false, false] });
 
-  // Smart Player
-  // Note: We still keep isSmartPlayerActive for potential future logic, but removed the UI element
   const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
 
   const { status, station, error } = playerState;
@@ -107,6 +107,11 @@ const Player = ({
     return () => clearTimeout(timer);
   }, [station?.stationuuid]);
   
+  useEffect(() => {
+      setIsDirectFallback(false);
+      recoveryAttemptRef.current = 0;
+  }, [station?.stationuuid]);
+
   useEffect(() => {
       const calculateMarquee = () => {
           const refs = [stationNameRef, currentTrackRef, nextTrackRef];
@@ -183,7 +188,9 @@ const Player = ({
     if (!audio || !station) return;
 
     const playAudio = async () => {
-        if (shouldUseProxy) {
+        const effectivelyUsingProxy = shouldUseProxy && !isDirectFallback;
+
+        if (effectivelyUsingProxy) {
             setupAudioContext();
             if (audioContextRef.current?.state === 'suspended') {
                 await audioContextRef.current.resume();
@@ -192,30 +199,38 @@ const Player = ({
         
         let streamUrl = station.url_resolved;
 
-        // Apply Proxy if needed
-        if (shouldUseProxy) {
+        if (effectivelyUsingProxy) {
             streamUrl = `${CORS_PROXY_URL}${streamUrl}`;
         }
 
         if (audio.src !== streamUrl) {
             audio.src = streamUrl;
-            if (shouldUseProxy) {
+            if (effectivelyUsingProxy) {
                 audio.crossOrigin = 'anonymous';
             } else {
                 audio.removeAttribute('crossOrigin');
             }
+            audio.load();
         }
         try {
-            await audio.play();
+            playPromiseRef.current = audio.play();
+            await playPromiseRef.current;
+            playPromiseRef.current = null;
         } catch (e) {
+            playPromiseRef.current = null;
             if (e.name === 'AbortError') {
-                console.debug('Audio play request was interrupted by a new load request (normal behavior).');
+                console.debug('Audio play request was interrupted (normal behavior).');
             } else if (e.name === 'NotAllowedError') {
-                console.warn("Autoplay blocked by browser policy. User interaction required.");
+                console.warn("Autoplay blocked by browser policy.");
                 onPlayerEvent({ type: 'AUTOPLAY_BLOCKED' });
             } else {
                 console.error("Error playing audio:", e);
-                onPlayerEvent({ type: 'STREAM_ERROR', payload: "לא ניתן לנגן את התחנה." });
+                if (shouldUseProxy && !isDirectFallback) {
+                    console.warn("Proxy failed, switching to direct stream...");
+                    setIsDirectFallback(true);
+                } else {
+                    onPlayerEvent({ type: 'STREAM_ERROR', payload: "לא ניתן לנגן את התחנה." });
+                }
             }
         }
     };
@@ -223,9 +238,15 @@ const Player = ({
     if (status === 'LOADING') {
       playAudio();
     } else if (status === 'PAUSED' || status === 'IDLE' || status === 'ERROR') {
-      audio.pause();
+      if (playPromiseRef.current) {
+          playPromiseRef.current.then(() => {
+              audio.pause();
+          }).catch(() => {});
+      } else {
+          audio.pause();
+      }
     }
-  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy, isSmartPlayerActive]);
+  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy, isSmartPlayerActive, isDirectFallback]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -249,11 +270,11 @@ const Player = ({
 
   useEffect(() => {
     const loop = () => {
-      if (analyserRef.current && isPlaying && shouldUseProxy) {
+      if (analyserRef.current && isPlaying && shouldUseProxy && !isDirectFallback) {
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
         setFrequencyData(dataArray);
-      } else if (!shouldUseProxy && isPlaying) {
+      } else if (isPlaying) {
           setFrequencyData(new Uint8Array(64));
       }
       animationFrameRef.current = requestAnimationFrame(loop);
@@ -268,7 +289,7 @@ const Player = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPlaying, setFrequencyData, shouldUseProxy]);
+  }, [isPlaying, setFrequencyData, shouldUseProxy, isDirectFallback]);
 
   useEffect(() => {
     if ('mediaSession' in navigator && station) {
@@ -292,11 +313,19 @@ const Player = ({
   }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev]);
   
   const attemptRecovery = useCallback(() => {
-      if (!audioRef.current || !station || recoveryAttemptRef.current >= 3) {
-          if (recoveryAttemptRef.current >= 3) {
-              console.error("Recovery failed after 3 attempts.");
-              onPlayerEvent({ type: 'STREAM_ERROR', payload: "החיבור נכשל סופית" });
+      if (!audioRef.current || !station) return;
+      
+      if (Date.now() - lastTimeUpdateRef.current < 2000) return;
+
+      if (recoveryAttemptRef.current >= 3) {
+          if (shouldUseProxy && !isDirectFallback) {
+              console.warn("Max recovery attempts with proxy. Switching to direct.");
+              setIsDirectFallback(true);
+              recoveryAttemptRef.current = 0;
+              return;
           }
+          console.error("Recovery failed after 3 attempts.");
+          onPlayerEvent({ type: 'STREAM_ERROR', payload: "החיבור נכשל סופית" });
           return;
       }
 
@@ -305,19 +334,27 @@ const Player = ({
       lastTimeUpdateRef.current = Date.now();
 
       const audio = audioRef.current;
-      const streamUrl = shouldUseProxy 
+      const effectivelyUsingProxy = shouldUseProxy && !isDirectFallback;
+      
+      const streamUrl = effectivelyUsingProxy 
           ? `${CORS_PROXY_URL}${station.url_resolved}` 
           : station.url_resolved;
           
-      audio.src = '';
-      audio.load();
-      audio.src = `${streamUrl}?retry=${Date.now()}`;
-      audio.load();
-      audio.play().catch(e => {
-          console.error('Recovery play() failed:', e);
-          onPlayerEvent({ type: 'STREAM_ERROR', payload: 'שגיאה בהתאוששות' });
-      });
-  }, [station, onPlayerEvent, shouldUseProxy]);
+      const reload = async () => {
+          try {
+              if (playPromiseRef.current) await playPromiseRef.current;
+              audio.src = `${streamUrl}?retry=${Date.now()}`;
+              audio.load();
+              playPromiseRef.current = audio.play();
+              await playPromiseRef.current;
+              playPromiseRef.current = null;
+          } catch(e) {
+              console.error("Recovery failed", e);
+          }
+      };
+      reload();
+
+  }, [station, onPlayerEvent, shouldUseProxy, isDirectFallback]);
 
   useEffect(() => {
       const clearWatchdog = () => {
@@ -333,10 +370,10 @@ const Player = ({
           recoveryAttemptRef.current = 0;
 
           watchdogIntervalRef.current = window.setInterval(() => {
-              if (Date.now() - lastTimeUpdateRef.current > 7000) { // 7-second stall threshold
+              if (Date.now() - lastTimeUpdateRef.current > 8000) { 
                   attemptRecovery();
               }
-          }, 3000); // Check every 3 seconds
+          }, 4000); 
       } else {
           clearWatchdog();
           recoveryAttemptRef.current = 0;
@@ -355,7 +392,7 @@ const Player = ({
   return (
     React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-30" },
       React.createElement("div", { className: "relative bg-bg-secondary/80 backdrop-blur-lg shadow-t-lg" },
-        isVisualizerEnabled && isActuallyPlaying && React.createElement(PlayerVisualizer, { frequencyData: frequencyData }),
+        isVisualizerEnabled && isActuallyPlaying && !isDirectFallback && React.createElement(PlayerVisualizer, { frequencyData: frequencyData }),
         React.createElement("div", { className: "max-w-7xl mx-auto p-4 flex items-center justify-between gap-4" },
           
           React.createElement("div", { 
@@ -448,8 +485,14 @@ const Player = ({
               attemptRecovery();
           },
           onWaiting: () => {},
-          onError: () => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."}),
-          crossOrigin: shouldUseProxy ? "anonymous" : undefined
+          onError: () => {
+              if (shouldUseProxy && !isDirectFallback) {
+                  console.warn("Audio error with proxy. Falling back to direct stream.");
+                  setIsDirectFallback(true);
+              } else {
+                  onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."});
+              }
+          }
         })
       )
     )

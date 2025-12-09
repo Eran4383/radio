@@ -108,7 +108,14 @@ const fetchGaleiTzahalScheduleInfo = async () => {
         const response = await fetch(url, { cache: 'no-cache' });
         if (!response.ok) return { program: null, presenters: null };
         
-        const data = await response.json();
+        const text = await response.text();
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch (e) {
+            return { program: null, presenters: null };
+        }
+
         // The API returns schedule for multiple days. Find today.
         const todaySchedule = data?.timeTable?.glzTimeTable?.find((day) => day.isToday);
         
@@ -169,6 +176,11 @@ const fetchGaleiTzahalCombinedInfo = async (stationName) => {
             const response = await fetch(xmlUrl, { cache: 'no-cache' });
             if (!response.ok) return { current: null, next: null };
             const xmlText = await response.text();
+            
+            if (xmlText.trim().startsWith('<!DOCTYPE html') || xmlText.trim().startsWith('<html')) {
+                return { current: null, next: null };
+            }
+
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
@@ -234,10 +246,16 @@ const fetchGaleiTzahalCombinedInfo = async (stationName) => {
         try {
             const response = await fetch(jsonUrl, { cache: 'no-cache' });
             if (!response.ok) return null;
-            const data = await response.json();
-            return data?.program?.trim() || null;
+            
+            const text = await response.text();
+            try {
+                const data = JSON.parse(text);
+                return data?.program?.trim() || null;
+            } catch (e) {
+                return null;
+            }
         } catch (error) {
-            console.warn(`Error fetching or parsing GLZ JSON for ${slug}:`, error);
+            console.warn(`Error fetching GLZ JSON for ${slug}:`, error);
             return null;
         }
     };

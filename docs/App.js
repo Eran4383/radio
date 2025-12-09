@@ -231,8 +231,9 @@ export default function App() {
   // State for removal confirmation modal
   const [pendingRemoval, setPendingRemoval] = useState(null);
 
-  // Determine if we should use proxy (if ANY visualizer is enabled)
-  const shouldUseProxy = allSettings.isNowPlayingVisualizerEnabled || allSettings.isPlayerBarVisualizerEnabled;
+  // FORCE DIRECT CONNECTION: Set usage of proxy to false to prevent stuttering/failures.
+  // This disables the visualizer but ensures audio stability.
+  const shouldUseProxy = false;
   
   // Auth state listener - runs only once on mount
   useEffect(() => {

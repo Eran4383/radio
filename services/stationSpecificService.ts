@@ -110,7 +110,16 @@ const fetchGaleiTzahalScheduleInfo = async (): Promise<{ program: string | null;
         const response = await fetch(url, { cache: 'no-cache' });
         if (!response.ok) return { program: null, presenters: null };
         
-        const data = await response.json();
+        // Strict JSON parsing
+        const text = await response.text();
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch (e) {
+            // Not valid JSON (likely HTML error from proxy)
+            return { program: null, presenters: null };
+        }
+
         // The API returns schedule for multiple days. Find today.
         const todaySchedule = data?.timeTable?.glzTimeTable?.find((day: any) => day.isToday);
         
@@ -135,7 +144,7 @@ const fetchGaleiTzahalScheduleInfo = async (): Promise<{ program: string | null;
         return { program: null, presenters: null };
 
     } catch (error) {
-        console.warn(`Error fetching or parsing GLZ Schedule for rootId ${GLZ_SCHEDULE_ROOT_ID}:`, error);
+        console.warn(`Error fetching GLZ Schedule for rootId ${GLZ_SCHEDULE_ROOT_ID}:`, error);
         return { program: null, presenters: null };
     }
 };
@@ -171,6 +180,12 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
             const response = await fetch(xmlUrl, { cache: 'no-cache' });
             if (!response.ok) return { current: null, next: null };
             const xmlText = await response.text();
+            
+            // Basic validation to prevent parsing HTML errors as XML
+            if (xmlText.trim().startsWith('<!DOCTYPE html') || xmlText.trim().startsWith('<html')) {
+                return { current: null, next: null };
+            }
+
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
@@ -236,10 +251,17 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
         try {
             const response = await fetch(jsonUrl, { cache: 'no-cache' });
             if (!response.ok) return null;
-            const data = await response.json();
-            return data?.program?.trim() || null;
+            
+            const text = await response.text();
+            try {
+                const data = JSON.parse(text);
+                return data?.program?.trim() || null;
+            } catch (e) {
+                // Ignore HTML/Error responses
+                return null;
+            }
         } catch (error) {
-            console.warn(`Error fetching or parsing GLZ JSON for ${slug}:`, error);
+            console.warn(`Error fetching GLZ JSON for ${slug}:`, error);
             return null;
         }
     };

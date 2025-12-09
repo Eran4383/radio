@@ -127,6 +127,8 @@ const Player: React.FC<PlayerProps> = ({
   const lastTimeUpdateRef = useRef<number>(Date.now());
   const recoveryAttemptRef = useRef<number>(0);
   const watchdogIntervalRef = useRef<number | null>(null);
+  const playPromiseRef = useRef<Promise<void> | null>(null);
+  const [isDirectFallback, setIsDirectFallback] = useState(false);
 
   const [startAnimation, setStartAnimation] = useState(false);
   
@@ -137,7 +139,6 @@ const Player: React.FC<PlayerProps> = ({
   const [marqueeConfig, setMarqueeConfig] = useState<{ duration: number; isOverflowing: boolean[] }>({ duration: 0, isOverflowing: [false, false, false] });
 
   // --- Smart Player State ---
-  // Note: We still keep isSmartPlayerActive for potential future logic, but removed the UI element
   const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
 
   const { status, station, error } = playerState;
@@ -154,6 +155,12 @@ const Player: React.FC<PlayerProps> = ({
     return () => clearTimeout(timer);
   }, [station?.stationuuid]);
   
+  // Reset fallback state when station changes
+  useEffect(() => {
+      setIsDirectFallback(false);
+      recoveryAttemptRef.current = 0;
+  }, [station?.stationuuid]);
+
   // Effect for marquee synchronization
   useEffect(() => {
       const calculateMarquee = () => {
@@ -233,8 +240,10 @@ const Player: React.FC<PlayerProps> = ({
     if (!audio || !station) return;
 
     const playAudio = async () => {
-        // Only set up audio context (EQ/Visualizer) if proxy is enabled (CORS)
-        if (shouldUseProxy) {
+        // If falling back to direct stream, bypass proxy and context setup
+        const effectivelyUsingProxy = shouldUseProxy && !isDirectFallback;
+
+        if (effectivelyUsingProxy) {
             setupAudioContext();
             if (audioContextRef.current?.state === 'suspended') {
                 await audioContextRef.current.resume();
@@ -244,30 +253,41 @@ const Player: React.FC<PlayerProps> = ({
         let streamUrl = station.url_resolved;
 
         // Apply Proxy if needed
-        if (shouldUseProxy) {
+        if (effectivelyUsingProxy) {
             streamUrl = `${CORS_PROXY_URL}${streamUrl}`;
         }
 
         if (audio.src !== streamUrl) {
             audio.src = streamUrl;
-            // Only request CORS if using proxy, otherwise direct connection might fail
-            if (shouldUseProxy) {
+            if (effectivelyUsingProxy) {
                 audio.crossOrigin = 'anonymous';
             } else {
                 audio.removeAttribute('crossOrigin');
             }
+            audio.load();
         }
+
         try {
-            await audio.play();
+            playPromiseRef.current = audio.play();
+            await playPromiseRef.current;
+            playPromiseRef.current = null;
         } catch (e: any) {
+            playPromiseRef.current = null;
             if (e.name === 'AbortError') {
-                console.debug('Audio play request was interrupted by a new load request (normal behavior).');
+                console.debug('Audio play request was interrupted (normal behavior).');
             } else if (e.name === 'NotAllowedError') {
-                console.warn("Autoplay blocked by browser policy. User interaction required.");
+                console.warn("Autoplay blocked by browser policy.");
                 onPlayerEvent({ type: 'AUTOPLAY_BLOCKED' });
             } else {
                 console.error("Error playing audio:", e);
-                onPlayerEvent({ type: 'STREAM_ERROR', payload: "לא ניתן לנגן את התחנה." });
+                // If we failed with proxy, try fallback
+                if (shouldUseProxy && !isDirectFallback) {
+                    console.warn("Proxy failed, switching to direct stream...");
+                    setIsDirectFallback(true);
+                    // The effect will re-run because isDirectFallback changed state
+                } else {
+                    onPlayerEvent({ type: 'STREAM_ERROR', payload: "לא ניתן לנגן את התחנה." });
+                }
             }
         }
     };
@@ -275,9 +295,16 @@ const Player: React.FC<PlayerProps> = ({
     if (status === 'LOADING') {
       playAudio();
     } else if (status === 'PAUSED' || status === 'IDLE' || status === 'ERROR') {
-      audio.pause();
+      // Safe pause
+      if (playPromiseRef.current) {
+          playPromiseRef.current.then(() => {
+              audio.pause();
+          }).catch(() => {});
+      } else {
+          audio.pause();
+      }
     }
-  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy, isSmartPlayerActive]);
+  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy, isSmartPlayerActive, isDirectFallback]);
 
 
   // Handle volume changes
@@ -305,13 +332,13 @@ const Player: React.FC<PlayerProps> = ({
   // Visualizer data loop
   useEffect(() => {
     const loop = () => {
-      // Only get data if using proxy (AudioContext is valid)
-      if (analyserRef.current && isPlaying && shouldUseProxy) {
+      // Only get data if using proxy (AudioContext is valid) AND not in fallback mode
+      if (analyserRef.current && isPlaying && shouldUseProxy && !isDirectFallback) {
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
         setFrequencyData(dataArray);
-      } else if (!shouldUseProxy && isPlaying) {
-          // Fallback: if visualizer is off/direct mode, send zero data so visualizers flatten
+      } else if (isPlaying) {
+          // Fallback: send zero data so visualizers flatten
           setFrequencyData(new Uint8Array(64));
       }
       animationFrameRef.current = requestAnimationFrame(loop);
@@ -326,7 +353,7 @@ const Player: React.FC<PlayerProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPlaying, setFrequencyData, shouldUseProxy]);
+  }, [isPlaying, setFrequencyData, shouldUseProxy, isDirectFallback]);
 
   // Update Media Session API
   useEffect(() => {
@@ -352,11 +379,21 @@ const Player: React.FC<PlayerProps> = ({
 
   // Automatic stream recovery logic
   const attemptRecovery = useCallback(() => {
-      if (!audioRef.current || !station || recoveryAttemptRef.current >= 3) {
-          if (recoveryAttemptRef.current >= 3) {
-              console.error("Recovery failed after 3 attempts.");
-              onPlayerEvent({ type: 'STREAM_ERROR', payload: "החיבור נכשל סופית" });
+      if (!audioRef.current || !station) return;
+      
+      // Debounce recovery: if we just tried, wait.
+      if (Date.now() - lastTimeUpdateRef.current < 2000) return;
+
+      if (recoveryAttemptRef.current >= 3) {
+          // If proxy failed 3 times, switch to direct
+          if (shouldUseProxy && !isDirectFallback) {
+              console.warn("Max recovery attempts with proxy. Switching to direct.");
+              setIsDirectFallback(true);
+              recoveryAttemptRef.current = 0;
+              return;
           }
+          console.error("Recovery failed after 3 attempts.");
+          onPlayerEvent({ type: 'STREAM_ERROR', payload: "החיבור נכשל סופית" });
           return;
       }
 
@@ -365,19 +402,28 @@ const Player: React.FC<PlayerProps> = ({
       lastTimeUpdateRef.current = Date.now();
 
       const audio = audioRef.current;
-      const streamUrl = shouldUseProxy 
+      const effectivelyUsingProxy = shouldUseProxy && !isDirectFallback;
+      
+      const streamUrl = effectivelyUsingProxy 
           ? `${CORS_PROXY_URL}${station.url_resolved}` 
           : station.url_resolved;
           
-      audio.src = '';
-      audio.load();
-      audio.src = `${streamUrl}?retry=${Date.now()}`; // Append retry to bust cache if needed
-      audio.load();
-      audio.play().catch(e => {
-          console.error('Recovery play() failed:', e);
-          onPlayerEvent({ type: 'STREAM_ERROR', payload: 'שגיאה בהתאוששות' });
-      });
-  }, [station, onPlayerEvent, shouldUseProxy]);
+      // Safe reload
+      const reload = async () => {
+          try {
+              if (playPromiseRef.current) await playPromiseRef.current;
+              audio.src = `${streamUrl}?retry=${Date.now()}`;
+              audio.load();
+              playPromiseRef.current = audio.play();
+              await playPromiseRef.current;
+              playPromiseRef.current = null;
+          } catch(e) {
+              console.error("Recovery failed", e);
+          }
+      };
+      reload();
+
+  }, [station, onPlayerEvent, shouldUseProxy, isDirectFallback]);
 
   // Watchdog effect to detect stalled stream
   useEffect(() => {
@@ -394,10 +440,10 @@ const Player: React.FC<PlayerProps> = ({
           recoveryAttemptRef.current = 0;
 
           watchdogIntervalRef.current = window.setInterval(() => {
-              if (Date.now() - lastTimeUpdateRef.current > 7000) { // 7-second stall threshold
+              if (Date.now() - lastTimeUpdateRef.current > 8000) { // Relaxed to 8s
                   attemptRecovery();
               }
-          }, 3000); // Check every 3 seconds
+          }, 4000); 
       } else {
           clearWatchdog();
           recoveryAttemptRef.current = 0;
@@ -416,7 +462,7 @@ const Player: React.FC<PlayerProps> = ({
   return (
     <div className="fixed bottom-0 left-0 right-0 z-30">
       <div className="relative bg-bg-secondary/80 backdrop-blur-lg shadow-t-lg">
-        {isVisualizerEnabled && isActuallyPlaying && <PlayerVisualizer frequencyData={frequencyData} />}
+        {isVisualizerEnabled && isActuallyPlaying && !isDirectFallback && <PlayerVisualizer frequencyData={frequencyData} />}
         <div className="max-w-7xl mx-auto p-4 flex items-center justify-between gap-4">
           
           <div 
@@ -510,7 +556,15 @@ const Player: React.FC<PlayerProps> = ({
                 attemptRecovery();
             }}
             onWaiting={() => {}} // We use the LOADING state now
-            onError={() => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."})}
+            onError={() => {
+                // If error happens while using proxy, try direct fallback immediately
+                if (shouldUseProxy && !isDirectFallback) {
+                    console.warn("Audio error with proxy. Falling back to direct stream.");
+                    setIsDirectFallback(true);
+                } else {
+                    onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."});
+                }
+            }}
             // crossorigin removed here, handled dynamically
           />
       </div>
