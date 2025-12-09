@@ -3,6 +3,7 @@
 
 import { CORS_PROXY_URL } from '../constants';
 import { StationTrackInfo } from '../types';
+import { fetch100fmPlaylist } from './radioService'; // Import the playlist fetcher
 
 // This maps the station names we use to the specific IDs Kan's API uses.
 const KAN_STATION_IDS: { [key: string]: string } = {
@@ -23,10 +24,17 @@ const GLZ_SLUGS: { [key: string]: string } = {
 /**
  * Checks if a station has a dedicated, high-accuracy API handler.
  * @param stationName The name of the station.
+ * @param stationUuid The UUID of the station (optional).
  * @returns True if a specific handler exists, false otherwise.
  */
-export const hasSpecificHandler = (stationName: string): boolean => {
+export const hasSpecificHandler = (stationName: string, stationUuid?: string): boolean => {
     const lowerCaseName = stationName.toLowerCase();
+    
+    // Check for 100FM stations via UUID
+    if (stationUuid && stationUuid.startsWith('100fm-')) {
+        return true;
+    }
+
     if (Object.keys(GLZ_SLUGS).some(glzName => stationName.includes(glzName))) {
         return true;
     }
@@ -346,11 +354,25 @@ const fetchEco99fmTrackInfo = async (): Promise<StationTrackInfo | null> => {
  * It will try to find a specific handler and route the request accordingly.
  * 
  * @param stationName The name of the station.
+ * @param stationUuid The UUID of the station (optional).
  * @returns A structured object with the current track/program name, or null if no specific handler is available.
  */
-export const fetchStationSpecificTrackInfo = async (stationName: string): Promise<StationTrackInfo | null> => {
+export const fetchStationSpecificTrackInfo = async (stationName: string, stationUuid?: string): Promise<StationTrackInfo | null> => {
     const lowerCaseName = stationName.toLowerCase();
     
+    // Check for 100FM stations (new handler)
+    if (stationUuid && stationUuid.startsWith('100fm-')) {
+        const playlist = await fetch100fmPlaylist(stationUuid);
+        if (playlist && playlist.length > 0) {
+            const lastTrack = playlist[playlist.length - 1];
+            return {
+                program: '100FM', // Generic program name, as 100FM streams are usually non-stop music
+                current: `${lastTrack.name} - ${lastTrack.artist}`,
+                next: null
+            };
+        }
+    }
+
     // Check for Galei Tzahal stations (גלגלצ, גלי צה"ל)
     if (Object.keys(GLZ_SLUGS).some(glzName => stationName.includes(glzName))) {
         return fetchGaleiTzahalCombinedInfo(stationName);

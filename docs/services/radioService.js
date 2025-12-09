@@ -163,9 +163,7 @@ export const fetchDefaultIsraeliStations = async () => {
   return Array.from(uniqueStations.values());
 };
 
-// Main function to get stations - prioritizes Cloud Firestore
 export const fetchStations = async () => {
-    // 1. Try to fetch from Firestore (Custom Admin List)
     try {
         const customStations = await fetchCustomStations();
         if (customStations && Array.isArray(customStations)) {
@@ -176,7 +174,6 @@ export const fetchStations = async () => {
         console.warn("Failed to load custom stations, falling back to default API.", e);
     }
 
-    // 2. Fallback to default API logic
     console.log("Loading default stations from external APIs...");
     return fetchDefaultIsraeliStations();
 };
@@ -218,7 +215,7 @@ export const fetchLiveTrackInfo = async (stationuuid) => {
     return null;
 };
 
-// --- New Function for 100fm Smart Player ---
+// --- New Function for 100fm Smart Player with Robust Parsing ---
 export const fetch100fmPlaylist = async (stationIdOrSlug) => {
     const slug = stationIdOrSlug.replace('100fm-', '');
     const url = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
@@ -235,22 +232,27 @@ export const fetch100fmPlaylist = async (stationIdOrSlug) => {
         }
 
         const text = await response.text();
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(text, "text/xml");
-        
-        const trackElements = xmlDoc.getElementsByTagName('track');
         const playlist = [];
 
-        for (let i = 0; i < trackElements.length; i++) {
-            const track = trackElements[i];
-            const artist = track.getElementsByTagName('artist')[0]?.textContent || '';
-            const name = track.getElementsByTagName('name')[0]?.textContent || '';
-            const timestamp = parseInt(track.getElementsByTagName('timestamp')[0]?.textContent || '0', 10);
-            const before = parseInt(track.getElementsByTagName('before')[0]?.textContent || '0', 10);
+        // Robust Regex Parsing (ignoring malformed XML roots)
+        const trackMatches = text.match(/<track>[\s\S]*?<\/track>/g);
 
-            if (timestamp > 0) {
-                playlist.push({ artist, name, timestamp, before });
-            }
+        if (trackMatches) {
+            trackMatches.forEach(trackStr => {
+                const artistMatch = trackStr.match(/<artist>(.*?)<\/artist>/);
+                const nameMatch = trackStr.match(/<name>(.*?)<\/name>/);
+                const timestampMatch = trackStr.match(/<timestamp>(.*?)<\/timestamp>/);
+                const beforeMatch = trackStr.match(/<before>(.*?)<\/before>/);
+
+                const artist = artistMatch ? artistMatch[1].trim() : '';
+                const name = nameMatch ? nameMatch[1].trim() : '';
+                const timestamp = timestampMatch ? parseInt(timestampMatch[1], 10) : 0;
+                const before = beforeMatch ? parseInt(beforeMatch[1], 10) : 0;
+
+                if (name && name.length > 1 && timestamp > 0) {
+                    playlist.push({ artist, name, timestamp, before });
+                }
+            });
         }
 
         return playlist.sort((a, b) => a.timestamp - b.timestamp);

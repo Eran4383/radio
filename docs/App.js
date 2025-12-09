@@ -454,7 +454,37 @@ export default function App() {
   
   useEffect(() => { if (stationsStatus === 'loaded' && playerState.status === 'IDLE') { const lastStationUuid = localStorage.getItem('radio-last-station-uuid'); if (lastStationUuid) { const station = stations.find(s => s.stationuuid === lastStationUuid); if (station) dispatch({ type: 'SELECT_STATION', payload: station }); } } }, [stationsStatus, stations, playerState.status]);
   useEffect(() => { if (playerState.station) { localStorage.setItem('radio-last-station-uuid', playerState.station.stationuuid); } }, [playerState.station]);
-  useEffect(() => { let intervalId; const fetchAndSetInfo = async () => { if (!playerState.station) return; const { name, stationuuid } = playerState.station; let finalInfo = null; if (hasSpecificHandler(name)) { const specificInfo = await fetchStationSpecificTrackInfo(name); finalInfo = specificInfo ? { ...specificInfo } : { program: null, current: null, next: null }; if (!finalInfo.program) finalInfo.program = getCurrentProgram(name); } else { const [songTitle, programName] = await Promise.all([ fetchLiveTrackInfo(stationuuid), getCurrentProgram(name) ]); const current = songTitle && songTitle.toLowerCase() !== name.toLowerCase() ? songTitle : null; finalInfo = { program: programName, current, next: null }; } setTrackInfo(finalInfo); }; if (playerState.station) { fetchAndSetInfo(); intervalId = window.setInterval(fetchAndSetInfo, 20000); } else { setTrackInfo(null); } return () => clearInterval(intervalId); }, [playerState.station]);
+  
+  // Track info interval with specific handler support
+  useEffect(() => { 
+      let intervalId; 
+      const fetchAndSetInfo = async () => { 
+          if (!playerState.station) return; 
+          const { name, stationuuid } = playerState.station; 
+          let finalInfo = null; 
+          
+          // Updated to pass stationuuid
+          if (hasSpecificHandler(name, stationuuid)) { 
+              const specificInfo = await fetchStationSpecificTrackInfo(name, stationuuid); 
+              finalInfo = specificInfo ? { ...specificInfo } : { program: null, current: null, next: null }; 
+              if (!finalInfo.program) finalInfo.program = getCurrentProgram(name); 
+          } else { 
+              const [songTitle, programName] = await Promise.all([ fetchLiveTrackInfo(stationuuid), getCurrentProgram(name) ]); 
+              const current = songTitle && songTitle.toLowerCase() !== name.toLowerCase() ? songTitle : null; 
+              finalInfo = { program: programName, current, next: null }; 
+          } 
+          setTrackInfo(finalInfo); 
+      }; 
+      
+      if (playerState.station) { 
+          fetchAndSetInfo(); 
+          intervalId = window.setInterval(fetchAndSetInfo, 20000); 
+      } else { 
+          setTrackInfo(null); 
+      } 
+      return () => clearInterval(intervalId); 
+  }, [playerState.station]);
+
   const handleReorder = (reorderedDisplayedUuids) => { 
       const allStationUuids = stations.map(s => s.stationuuid); 
       const currentOrderUuids = allSettings.customOrder.length > 0 ? allSettings.customOrder : allStationUuids; 
