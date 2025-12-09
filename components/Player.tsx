@@ -137,7 +137,7 @@ const Player: React.FC<PlayerProps> = ({
   const [marqueeConfig, setMarqueeConfig] = useState<{ duration: number; isOverflowing: boolean[] }>({ duration: 0, isOverflowing: [false, false, false] });
 
   // --- Smart Player State ---
-  // Note: We still keep isSmartPlayerActive for the label, but we disable the button hijack
+  // Note: We still keep isSmartPlayerActive for potential future logic, but removed the UI element
   const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
 
   const { status, station, error } = playerState;
@@ -457,8 +457,6 @@ const Player: React.FC<PlayerProps> = ({
                   </MarqueeText>
                 ) : status === 'LOADING' ? (
                     <span className="text-text-secondary animate-pulse">טוען...</span>
-                ) : isSmartPlayerActive ? (
-                    <span className="text-accent text-xs font-semibold animate-pulse">נגן חכם 100FM פעיל</span>
                 ) : null}
               </div>
                {status !== 'ERROR' && showNextSong && trackInfo?.next && (
