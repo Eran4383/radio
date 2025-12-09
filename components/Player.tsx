@@ -5,7 +5,6 @@ import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons';
 import { CORS_PROXY_URL } from '../constants';
 import InteractiveText from './InteractiveText';
 import MarqueeText from './MarqueeText';
-import { fetch100fmPlaylist } from '../services/radioService';
 
 // Types from App.tsx's state machine
 type PlayerStatus = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'ERROR';
@@ -47,6 +46,7 @@ interface PlayerProps {
   marqueeSpeed: number;
   onOpenActionMenu: (songTitle: string) => void;
   is100fmSmartPlayerEnabled: boolean; // New prop for feature toggle
+  smartPlaylist: SmartPlaylistItem[]; // NEW PROP
 }
 
 const PlayerVisualizer: React.FC<{ frequencyData: Uint8Array }> = ({ frequencyData }) => {
@@ -112,7 +112,8 @@ const Player: React.FC<PlayerProps> = ({
   isMarqueeNextTrackEnabled,
   marqueeSpeed,
   onOpenActionMenu,
-  is100fmSmartPlayerEnabled
+  is100fmSmartPlayerEnabled,
+  smartPlaylist
 }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -137,9 +138,7 @@ const Player: React.FC<PlayerProps> = ({
   const [marqueeConfig, setMarqueeConfig] = useState<{ duration: number; isOverflowing: boolean[] }>({ duration: 0, isOverflowing: [false, false, false] });
 
   // --- Smart Player State ---
-  const [smartPlaylist, setSmartPlaylist] = useState<SmartPlaylistItem[]>([]);
   const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
-  const playlistIntervalRef = useRef<number | null>(null);
 
   const { status, station, error } = playerState;
   const isPlaying = status === 'PLAYING';
@@ -228,31 +227,6 @@ const Player: React.FC<PlayerProps> = ({
     }
   }, []);
   
-  // Smart Playlist Fetching Effect
-  useEffect(() => {
-      if (isSmartPlayerActive && station) {
-          const fetchList = async () => {
-              const list = await fetch100fmPlaylist(station.stationuuid);
-              if (list && list.length > 0) {
-                  setSmartPlaylist(list);
-              }
-          };
-          fetchList(); // Initial fetch
-          playlistIntervalRef.current = window.setInterval(fetchList, 20000); // Poll every 20s
-      } else {
-          setSmartPlaylist([]);
-          if (playlistIntervalRef.current) {
-              clearInterval(playlistIntervalRef.current);
-              playlistIntervalRef.current = null;
-          }
-      }
-      return () => {
-          if (playlistIntervalRef.current) {
-              clearInterval(playlistIntervalRef.current);
-          }
-      };
-  }, [isSmartPlayerActive, station]);
-
   // Audio Element State Machine Driver
   useEffect(() => {
     const audio = audioRef.current;
@@ -389,7 +363,7 @@ const Player: React.FC<PlayerProps> = ({
             navigator.mediaSession.playbackState = 'paused';
         }
     }
-  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev, isSmartPlayerActive, smartPlaylist]); // Added deps
+  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev, isSmartPlayerActive, smartPlaylist]); 
 
   // Automatic stream recovery logic
   const attemptRecovery = useCallback(() => {
@@ -551,15 +525,14 @@ const Player: React.FC<PlayerProps> = ({
               onClick={onOpenNowPlaying}
               onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/48'; }}
             />
-            <div className="min-w-0" key={station.stationuuid}>
+            <div className="min-w-0 cursor-pointer" key={station.stationuuid} onClick={onOpenNowPlaying}>
                <MarqueeText
                   loopDelay={marqueeDelay}
                   duration={marqueeConfig.duration}
                   startAnimation={startAnimation}
                   isOverflowing={marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled}
                   contentRef={stationNameRef}
-                  className="font-bold text-text-primary cursor-pointer"
-                  onClick={onOpenNowPlaying}
+                  className="font-bold text-text-primary"
               >
                   <span>{`${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`}</span>
               </MarqueeText>
@@ -584,7 +557,7 @@ const Player: React.FC<PlayerProps> = ({
                 ) : null}
               </div>
                {status !== 'ERROR' && showNextSong && trackInfo?.next && (
-                  <div className="text-xs opacity-80 h-[1.125rem] flex items-center cursor-pointer" onClick={onOpenNowPlaying}>
+                  <div className="text-xs opacity-80 h-[1.125rem] flex items-center">
                     <span className="font-semibold flex-shrink-0">הבא:&nbsp;</span>
                     <MarqueeText 
                         loopDelay={marqueeDelay} 

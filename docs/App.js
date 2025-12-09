@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
-import { fetchStations, fetchLiveTrackInfo } from './services/radioService.js';
+import { fetchStations, fetchLiveTrackInfo, fetch100fmPlaylist } from './services/radioService.js';
 import { 
     signInWithGoogle, 
     signOutUser, 
@@ -217,6 +217,9 @@ export default function App() {
   const pinchDistRef = useRef(0);
   const PINCH_THRESHOLD = 40;
   const [actionMenuState, setActionMenuState] = useState({isOpen: false, songTitle: null});
+
+  // Smart Playlist State
+  const [smartPlaylist, setSmartPlaylist] = useState([]);
 
   const isFavorite = useCallback((stationUuid) => allSettings.favorites.includes(stationUuid), [allSettings.favorites]);
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
@@ -454,7 +457,64 @@ export default function App() {
   
   useEffect(() => { if (stationsStatus === 'loaded' && playerState.status === 'IDLE') { const lastStationUuid = localStorage.getItem('radio-last-station-uuid'); if (lastStationUuid) { const station = stations.find(s => s.stationuuid === lastStationUuid); if (station) dispatch({ type: 'SELECT_STATION', payload: station }); } } }, [stationsStatus, stations, playerState.status]);
   useEffect(() => { if (playerState.station) { localStorage.setItem('radio-last-station-uuid', playerState.station.stationuuid); } }, [playerState.station]);
-  useEffect(() => { let intervalId; const fetchAndSetInfo = async () => { if (!playerState.station) return; const { name, stationuuid } = playerState.station; let finalInfo = null; if (hasSpecificHandler(name)) { const specificInfo = await fetchStationSpecificTrackInfo(name); finalInfo = specificInfo ? { ...specificInfo } : { program: null, current: null, next: null }; if (!finalInfo.program) finalInfo.program = getCurrentProgram(name); } else { const [songTitle, programName] = await Promise.all([ fetchLiveTrackInfo(stationuuid), getCurrentProgram(name) ]); const current = songTitle && songTitle.toLowerCase() !== name.toLowerCase() ? songTitle : null; finalInfo = { program: programName, current, next: null }; } setTrackInfo(finalInfo); }; if (playerState.station) { fetchAndSetInfo(); intervalId = window.setInterval(fetchAndSetInfo, 20000); } else { setTrackInfo(null); } return () => clearInterval(intervalId); }, [playerState.station]);
+  
+  // Track Info Fetching
+  useEffect(() => { 
+      let intervalId; 
+      const fetchAndSetInfo = async () => { 
+          if (!playerState.station) return; 
+          const { name, stationuuid, url_resolved } = playerState.station; 
+          
+          let finalInfo = null; 
+          
+          // --- 100FM Smart Player Logic ---
+          if (allSettings.is100fmSmartPlayerEnabled && (stationuuid.startsWith('100fm-') || url_resolved.includes('streamgates.net'))) {
+              const playlist = await fetch100fmPlaylist(stationuuid);
+              setSmartPlaylist(playlist);
+              
+              if (playlist.length > 0) {
+                  const now = Math.floor(Date.now() / 1000);
+                  const currentItem = [...playlist].reverse().find(i => i.timestamp <= now + 5); 
+                  const nextItem = playlist.find(i => i.timestamp > now + 5);
+                  
+                  finalInfo = {
+                      program: name,
+                      current: currentItem ? `${currentItem.name} - ${currentItem.artist}` : null,
+                      next: nextItem ? `${nextItem.name} - ${nextItem.artist}` : null
+                  };
+              } else {
+                  finalInfo = { program: name, current: null, next: null };
+              }
+          } 
+          // --- Standard Stations Logic ---
+          else {
+              setSmartPlaylist([]); 
+              
+              if (hasSpecificHandler(name)) { 
+                  const specificInfo = await fetchStationSpecificTrackInfo(name); 
+                  finalInfo = specificInfo ? { ...specificInfo } : { program: null, current: null, next: null }; 
+                  if (!finalInfo.program) finalInfo.program = getCurrentProgram(name); 
+              } else { 
+                  const [songTitle, programName] = await Promise.all([ fetchLiveTrackInfo(stationuuid), getCurrentProgram(name) ]); 
+                  const current = songTitle && songTitle.toLowerCase() !== name.toLowerCase() ? songTitle : null; 
+                  finalInfo = { program: programName, current, next: null }; 
+              } 
+          }
+          
+          setTrackInfo(finalInfo); 
+      }; 
+      
+      if (playerState.station) { 
+          fetchAndSetInfo(); 
+          intervalId = window.setInterval(fetchAndSetInfo, 20000); 
+      } else { 
+          setTrackInfo(null); 
+          setSmartPlaylist([]);
+      } 
+      
+      return () => clearInterval(intervalId); 
+  }, [playerState.station, allSettings.is100fmSmartPlayerEnabled]);
+
   const handleReorder = (reorderedDisplayedUuids) => { 
       const allStationUuids = stations.map(s => s.stationuuid); 
       const currentOrderUuids = allSettings.customOrder.length > 0 ? allSettings.customOrder : allStationUuids; 
@@ -624,7 +684,34 @@ export default function App() {
       React.createElement(SettingsPanel, { isOpen: isSettingsOpen, onClose: () => setIsSettingsOpen(false), user: user, isAdmin: isAdmin, onOpenAdminPanel: () => setIsAdminPanelOpen(true), onLogin: signInWithGoogle, onLogout: signOutUser, currentTheme: allSettings.theme, onThemeChange: (v) => setAllSettings(s=>({...s, theme: v})), currentEqPreset: allSettings.eqPreset, onEqPresetChange: (v) => setAllSettings(s=>({...s, eqPreset: v})), isNowPlayingVisualizerEnabled: allSettings.isNowPlayingVisualizerEnabled, onNowPlayingVisualizerEnabledChange: (v) => setAllSettings(s=>({...s, isNowPlayingVisualizerEnabled: v})), isPlayerBarVisualizerEnabled: allSettings.isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange: (v) => setAllSettings(s=>({...s, isPlayerBarVisualizerEnabled: v})), isStatusIndicatorEnabled: allSettings.isStatusIndicatorEnabled, onStatusIndicatorEnabledChange: (v) => setAllSettings(s=>({...s, isStatusIndicatorEnabled: v})), isVolumeControlVisible: allSettings.isVolumeControlVisible, onVolumeControlVisibleChange: (v) => setAllSettings(s=>({...s, isVolumeControlVisible: v})), showNextSong: allSettings.showNextSong, onShowNextSongChange: (v) => setAllSettings(s=>({...s, showNextSong: v})), customEqSettings: allSettings.customEqSettings, onCustomEqChange: (v) => setAllSettings(s=>({...s, customEqSettings: v})), gridSize: allSettings.gridSize, onGridSizeChange: (v) => setAllSettings(s=>({...s, gridSize: v})), isMarqueeProgramEnabled: allSettings.isMarqueeProgramEnabled, onMarqueeProgramEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeProgramEnabled: v})), isMarqueeCurrentTrackEnabled: allSettings.isMarqueeCurrentTrackEnabled, onMarqueeCurrentTrackEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeCurrentTrackEnabled: v})), isMarqueeNextTrackEnabled: allSettings.isMarqueeNextTrackEnabled, onMarqueeNextTrackEnabledChange: (v) => setAllSettings(s=>({...s, isMarqueeNextTrackEnabled: v})), marqueeSpeed: allSettings.marqueeSpeed, onMarqueeSpeedChange: (v) => setAllSettings(s=>({...s, marqueeSpeed: v})), marqueeDelay: allSettings.marqueeDelay, onMarqueeDelayChange: (v) => setAllSettings(s=>({...s, marqueeDelay: v})), updateStatus: updateStatus, onManualUpdateCheck: handleManualUpdateCheck, keyMap: allSettings.keyMap, onKeyMapChange: (newMap) => setAllSettings(s => ({...s, keyMap: newMap})), setIsRebinding: setIsRebinding, is100fmSmartPlayerEnabled: allSettings.is100fmSmartPlayerEnabled, on100fmSmartPlayerEnabledChange: (enabled) => setAllSettings(s => ({...s, is100fmSmartPlayerEnabled: enabled})) }),
       playerState.station && React.createElement(NowPlaying, { isOpen: isNowPlayingOpen, onClose: () => !isVisualizerFullscreen && setIsNowPlayingOpen(false), station: playerState.station, isPlaying: playerState.status === 'PLAYING', onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, volume: allSettings.volume, onVolumeChange: (v) => setAllSettings(s=>({...s, volume: v})), trackInfo: trackInfo, showNextSong: allSettings.showNextSong, frequencyData: frequencyData, visualizerStyle: allSettings.visualizerStyle, isVisualizerEnabled: allSettings.isNowPlayingVisualizerEnabled, onCycleVisualizerStyle: handleCycleVisualizerStyle, isVolumeControlVisible: allSettings.isVolumeControlVisible, marqueeDelay: allSettings.marqueeDelay, isMarqueeProgramEnabled: allSettings.isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: allSettings.isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: allSettings.isMarqueeNextTrackEnabled, marqueeSpeed: allSettings.marqueeSpeed, onOpenActionMenu: openActionMenu, isVisualizerFullscreen: isVisualizerFullscreen, setIsVisualizerFullscreen: setIsVisualizerFullscreen }),
       React.createElement(ActionMenu, { isOpen: actionMenuState.isOpen, onClose: closeActionMenu, songTitle: actionMenuState.songTitle }),
-      React.createElement(Player, { playerState: playerState, onPlay: handlePlay, onPause: handlePause, onPlayPause: handlePlayPause, onNext: handleNext, onPrev: handlePrev, onPlayerEvent: (event) => dispatch(event), eqPreset: allSettings.eqPreset, customEqSettings: allSettings.customEqSettings, volume: allSettings.volume, onVolumeChange: (v) => setAllSettings(s=>({...s, volume: v})), trackInfo: trackInfo, showNextSong: allSettings.showNextSong, onOpenNowPlaying: () => setIsNowPlayingOpen(true), setFrequencyData: setFrequencyData, frequencyData: frequencyData, isVisualizerEnabled: allSettings.isPlayerBarVisualizerEnabled, shouldUseProxy: shouldUseProxy, marqueeDelay: allSettings.marqueeDelay, isMarqueeProgramEnabled: allSettings.isMarqueeProgramEnabled, isMarqueeCurrentTrackEnabled: allSettings.isMarqueeCurrentTrackEnabled, isMarqueeNextTrackEnabled: allSettings.isMarqueeNextTrackEnabled, marqueeSpeed: allSettings.marqueeSpeed, onOpenActionMenu: openActionMenu, is100fmSmartPlayerEnabled: allSettings.is100fmSmartPlayerEnabled }),
+      React.createElement(Player, { 
+        playerState: playerState, 
+        onPlay: handlePlay, 
+        onPause: handlePause, 
+        onPlayPause: handlePlayPause, 
+        onNext: handleNext, 
+        onPrev: handlePrev, 
+        onPlayerEvent: (event) => dispatch(event), 
+        eqPreset: allSettings.eqPreset, 
+        customEqSettings: allSettings.customEqSettings, 
+        volume: allSettings.volume, 
+        onVolumeChange: (v) => setAllSettings(s=>({...s, volume: v})), 
+        trackInfo: trackInfo, 
+        showNextSong: allSettings.showNextSong, 
+        onOpenNowPlaying: () => setIsNowPlayingOpen(true),
+        setFrequencyData: setFrequencyData, 
+        frequencyData: frequencyData, 
+        isVisualizerEnabled: allSettings.isPlayerBarVisualizerEnabled, 
+        shouldUseProxy: shouldUseProxy, 
+        marqueeDelay: allSettings.marqueeDelay, 
+        isMarqueeProgramEnabled: allSettings.isMarqueeProgramEnabled, 
+        isMarqueeCurrentTrackEnabled: allSettings.isMarqueeCurrentTrackEnabled, 
+        isMarqueeNextTrackEnabled: allSettings.isMarqueeNextTrackEnabled, 
+        marqueeSpeed: allSettings.marqueeSpeed, 
+        onOpenActionMenu: openActionMenu, 
+        is100fmSmartPlayerEnabled: allSettings.is100fmSmartPlayerEnabled,
+        smartPlaylist: smartPlaylist // NEW PROP
+      }),
       isUpdateAvailable && React.createElement("div", { className: "fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 bg-accent text-white py-2 px-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up" }, React.createElement("p", { className: "text-sm font-semibold" }, "עדכון חדש זמין"), React.createElement("button", { onClick: handleUpdateClick, className: "py-1 px-3 bg-white/20 hover:bg-white/40 rounded-md text-sm font-bold" }, "עדכן גירסה"))
     )
   );
