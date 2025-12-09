@@ -66,7 +66,9 @@ const Player = ({
   isMarqueeCurrentTrackEnabled,
   isMarqueeNextTrackEnabled,
   marqueeSpeed,
-  onOpenActionMenu
+  onOpenActionMenu,
+  is100fmSmartPlayerEnabled,
+  smartPlaylist
 }) => {
   const audioRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -87,6 +89,9 @@ const Player = ({
   const currentTrackRef = useRef(null);
   const nextTrackRef = useRef(null);
   const [marqueeConfig, setMarqueeConfig] = useState({ duration: 0, isOverflowing: [false, false, false] });
+
+  // Smart Player
+  const isSmartPlayerActive = is100fmSmartPlayerEnabled && (playerState.station?.stationuuid.startsWith('100fm-') || playerState.station?.url_resolved.includes('streamgates.net'));
 
   const { status, station, error } = playerState;
   const isPlaying = status === 'PLAYING';
@@ -184,9 +189,21 @@ const Player = ({
             }
         }
         
-        const streamUrl = shouldUseProxy 
-            ? `${CORS_PROXY_URL}${station.url_resolved}` 
-            : station.url_resolved;
+        let streamUrl = station.url_resolved;
+
+        if (isSmartPlayerActive) {
+            if (streamUrl.includes('streamgates.net') && !streamUrl.includes('dvr_timeshift')) {
+                const lastSlashIndex = streamUrl.lastIndexOf('/');
+                if (lastSlashIndex !== -1) {
+                    const baseUrl = streamUrl.substring(0, lastSlashIndex);
+                    streamUrl = `${baseUrl}/playlist_dvr_timeshift-36000.m3u8`;
+                }
+            }
+        }
+
+        if (shouldUseProxy) {
+            streamUrl = `${CORS_PROXY_URL}${streamUrl}`;
+        }
 
         if (audio.src !== streamUrl) {
             audio.src = streamUrl;
@@ -216,7 +233,7 @@ const Player = ({
     } else if (status === 'PAUSED' || status === 'IDLE' || status === 'ERROR') {
       audio.pause();
     }
-  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy]);
+  }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy, isSmartPlayerActive]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -271,8 +288,8 @@ const Player = ({
 
         navigator.mediaSession.setActionHandler('play', onPlay);
         navigator.mediaSession.setActionHandler('pause', onPause);
-        navigator.mediaSession.setActionHandler('nexttrack', onNext);
-        navigator.mediaSession.setActionHandler('previoustrack', onPrev);
+        navigator.mediaSession.setActionHandler('nexttrack', () => handleSmartNext());
+        navigator.mediaSession.setActionHandler('previoustrack', () => handleSmartPrev());
         
         if (status === 'PLAYING') {
             navigator.mediaSession.playbackState = 'playing';
@@ -280,7 +297,7 @@ const Player = ({
             navigator.mediaSession.playbackState = 'paused';
         }
     }
-  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev]);
+  }, [station, status, trackInfo, onPlay, onPause, onNext, onPrev, isSmartPlayerActive, smartPlaylist]);
   
   const attemptRecovery = useCallback(() => {
       if (!audioRef.current || !station || recoveryAttemptRef.current >= 3) {
@@ -336,6 +353,71 @@ const Player = ({
       return clearWatchdog;
   }, [status, attemptRecovery]);
 
+  const getCurrentUnixTime = () => Math.floor(Date.now() / 1000);
+
+  const calculateSeekTime = (targetUnixTimestamp) => {
+      const audio = audioRef.current;
+      if (!audio || !audio.seekable.length) return;
+
+      const now = getCurrentUnixTime();
+      const secondsAgo = now - targetUnixTimestamp;
+      
+      const livePosition = audio.seekable.end(0);
+      const targetPosition = Math.max(0, livePosition - secondsAgo);
+      
+      if (isFinite(targetPosition)) {
+          audio.currentTime = targetPosition;
+      }
+  };
+
+  const handleSmartPrev = () => {
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
+          onPrev();
+          return;
+      }
+      
+      const now = getCurrentUnixTime();
+      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5); 
+      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
+
+      if (originalIndex !== -1) {
+          const currentTrack = smartPlaylist[originalIndex];
+          const timeSinceStart = now - currentTrack.timestamp;
+          
+          if (timeSinceStart > 10) {
+              calculateSeekTime(currentTrack.timestamp);
+          } else if (originalIndex > 0) {
+              calculateSeekTime(smartPlaylist[originalIndex - 1].timestamp);
+          } else {
+              calculateSeekTime(currentTrack.timestamp);
+          }
+      } else {
+          onPrev();
+      }
+  };
+
+  const handleSmartNext = () => {
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
+          onNext();
+          return;
+      }
+
+      const now = getCurrentUnixTime();
+      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5);
+      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
+
+      if (originalIndex !== -1 && originalIndex < smartPlaylist.length - 1) {
+          calculateSeekTime(smartPlaylist[originalIndex + 1].timestamp);
+      } else {
+          const audio = audioRef.current;
+          if (audio && audio.seekable.length) {
+              audio.currentTime = audio.seekable.end(0);
+          } else {
+              onNext(); 
+          }
+      }
+  };
+
   if (!station) {
     return null;
   }
@@ -358,15 +440,14 @@ const Player = ({
               onClick: onOpenNowPlaying,
               onError: (e) => { (e.target).src = 'https://picsum.photos/48'; }
             }),
-            React.createElement("div", { className: "min-w-0", key: station.stationuuid },
+            React.createElement("div", { className: "min-w-0 cursor-pointer", key: station.stationuuid, onClick: onOpenNowPlaying },
                React.createElement(MarqueeText, {
                   loopDelay: marqueeDelay,
                   duration: marqueeConfig.duration,
                   startAnimation: startAnimation,
                   isOverflowing: marqueeConfig.isOverflowing[0] && isMarqueeProgramEnabled,
                   contentRef: stationNameRef,
-                  className: "font-bold text-text-primary cursor-pointer",
-                  onClick: onOpenNowPlaying
+                  className: "font-bold text-text-primary"
               },
                   React.createElement("span", null, `${station.name}${trackInfo?.program ? ` | ${trackInfo.program}` : ''}`)
               ),
@@ -386,10 +467,12 @@ const Player = ({
                   )
                 ) : status === 'LOADING' ? (
                     React.createElement("span", { className: "text-text-secondary animate-pulse" }, "טוען...")
+                ) : isSmartPlayerActive ? (
+                    React.createElement("span", { className: "text-accent text-xs font-semibold animate-pulse" }, "נגן חכם 100FM פעיל")
                 ) : null
               ),
                status !== 'ERROR' && showNextSong && trackInfo?.next && (
-                  React.createElement("div", { className: "text-xs opacity-80 h-[1.125rem] flex items-center cursor-pointer", onClick: onOpenNowPlaying },
+                  React.createElement("div", { className: "text-xs opacity-80 h-[1.125rem] flex items-center" },
                     React.createElement("span", { className: "font-semibold flex-shrink-0" }, "הבא:\u00A0"),
                     React.createElement(MarqueeText, { 
                         loopDelay: marqueeDelay, 
@@ -406,7 +489,7 @@ const Player = ({
           ),
           
           React.createElement("div", { className: "flex items-center gap-1 sm:gap-2" },
-             React.createElement("button", { onClick: onPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הקודם" },
+             React.createElement("button", { onClick: handleSmartPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הקודם" },
                 React.createElement(SkipNextIcon, { className: "w-6 h-6" })
             ),
             React.createElement("button", { 
@@ -416,7 +499,7 @@ const Player = ({
             },
               isActuallyPlaying || isLoading ? React.createElement(PauseIcon, { className: "w-7 h-7" }) : React.createElement(PlayIcon, { className: "w-7 h-7" })
             ),
-            React.createElement("button", { onClick: onNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הבא" },
+            React.createElement("button", { onClick: handleSmartNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "הבא" },
                 React.createElement(SkipPreviousIcon, { className: "w-6 h-6" })
             )
           )

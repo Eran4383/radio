@@ -20,6 +20,13 @@ export interface StationTrackInfo {
     next: string | null;
 }
 
+export interface SmartPlaylistItem {
+    artist: string;
+    name: string;
+    timestamp: number; // Unix timestamp in seconds
+    before: number;
+}
+
 export const THEMES = ['dark', 'light', 'blue', 'sunset', 'forest', 'ocean', 'rose', 'matrix'] as const;
 export type Theme = typeof THEMES[number];
 
@@ -110,13 +117,6 @@ export const KEY_ACTION_LABELS: Record<KeyAction, string> = {
     eqCustom: 'EQ: מותאם (5)',
 };
 
-export type SettingsSectionsState = {
-    theme: boolean;
-    eq: boolean;
-    interface: boolean;
-    shortcuts: boolean;
-};
-
 export type AllSettings = {
     favorites: string[];
     customOrder: string[];
@@ -140,5 +140,5 @@ export type AllSettings = {
     sortOrderAll: SortOrder;
     sortOrderFavorites: SortOrder;
     keyMap: KeyMap;
-    settingsSections: SettingsSectionsState;
+    is100fmSmartPlayerEnabled: boolean;
 };

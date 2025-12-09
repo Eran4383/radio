@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect } from 'react';
 import { fetchDefaultIsraeliStations } from '../services/radioService.js';
 import { saveCustomStations, resetStationsInFirestore, fetchAdmins, addAdmin, removeAdmin } from '../services/firebase.js';
@@ -53,7 +55,7 @@ const EditStationModal = ({ station, onSave, onCancel }) => {
     );
 };
 
-const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, currentUserEmail }) => {
+const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, currentUserEmail, favorites }) => {
     const [stations, setStations] = useState(currentStations);
     const [editingStation, setEditingStation] = useState(null);
     const [activeTab, setActiveTab] = useState('stations');
@@ -61,6 +63,7 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
     const [newAdminEmail, setNewAdminEmail] = useState('');
     const [statusMsg, setStatusMsg] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [sortType, setSortType] = useState('default');
 
     useEffect(() => {
         if (isOpen) {
@@ -125,9 +128,13 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
         };
         setStations([newStation, ...stations]);
         setEditingStation(newStation);
+        setSortType('default');
     };
     
-    const moveStation = (index, direction) => {
+    const moveStation = (uuid, direction) => {
+        const index = stations.findIndex(s => s.stationuuid === uuid);
+        if (index === -1) return;
+
         const newStations = [...stations];
         const targetIndex = index + direction;
         if (targetIndex < 0 || targetIndex >= newStations.length) return;
@@ -156,6 +163,26 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
             alert('שגיאה בהסרת מנהל');
         }
     };
+
+    const getSortedStations = () => {
+        const list = [...stations];
+        switch (sortType) {
+            case 'name_asc':
+                return list.sort((a, b) => a.name.localeCompare(b.name, 'he'));
+            case 'name_desc':
+                return list.sort((a, b) => b.name.localeCompare(a.name, 'he'));
+            case 'favorites':
+                return list.sort((a, b) => {
+                    const isAFav = favorites.includes(a.stationuuid) ? 1 : 0;
+                    const isBFav = favorites.includes(b.stationuuid) ? 1 : 0;
+                    return isBFav - isAFav; 
+                });
+            default:
+                return list;
+        }
+    };
+
+    const displayStations = getSortedStations();
 
     if (!isOpen) return null;
 
@@ -195,33 +222,47 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
             React.createElement("div", { className: "flex-grow overflow-y-auto p-4" },
                 activeTab === 'stations' ? (
                     React.createElement(React.Fragment, null,
-                        React.createElement("div", { className: "flex flex-wrap gap-2 mb-4 sticky top-0 bg-bg-primary py-2 z-10 border-b border-gray-800" },
-                             React.createElement("button", { onClick: handleSaveToCloud, disabled: isLoading, className: "bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold shadow-lg" },
-                                isLoading ? 'שומר...' : 'שמור שינויים לענן'
+                        React.createElement("div", { className: "flex flex-wrap gap-2 mb-4 sticky top-0 bg-bg-primary py-2 z-10 border-b border-gray-800 items-center" },
+                             React.createElement("button", { onClick: handleSaveToCloud, disabled: isLoading, className: "bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded font-bold shadow-lg text-sm flex-grow sm:flex-grow-0" },
+                                isLoading ? 'שומר...' : 'שמור לענן'
                             ),
-                            React.createElement("button", { onClick: handleAddStation, className: "bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded shadow-lg" },
-                                "+ הוסף תחנה"
+                            React.createElement("button", { onClick: handleAddStation, className: "bg-accent hover:bg-accent-hover text-white px-3 py-2 rounded shadow-lg text-sm flex-grow sm:flex-grow-0" },
+                                "+ הוסף"
                             ),
-                            React.createElement("button", { onClick: handleResetToDefaults, disabled: isLoading, className: "bg-red-600/80 hover:bg-red-600 text-white px-4 py-2 rounded text-xs ml-auto" },
-                                "שחזר לברירת מחדל"
+                            
+                            React.createElement("select", {
+                                value: sortType,
+                                onChange: (e) => setSortType(e.target.value),
+                                className: "bg-gray-700 text-white text-xs p-2 rounded border border-gray-600 outline-none flex-grow sm:flex-grow-0"
+                            },
+                                React.createElement("option", { value: "default" }, "סדר שמור (ברירת מחדל)"),
+                                React.createElement("option", { value: "name_asc" }, "שם (א-ת)"),
+                                React.createElement("option", { value: "name_desc" }, "שם (ת-א)"),
+                                React.createElement("option", { value: "favorites" }, "המועדפים שלי תחילה")
+                            ),
+
+                            React.createElement("button", { onClick: handleResetToDefaults, disabled: isLoading, className: "bg-red-600/80 hover:bg-red-600 text-white px-2 py-1 rounded text-[10px] ml-auto" },
+                                "איפוס"
                             )
                         ),
                         statusMsg && React.createElement("div", { className: "p-2 mb-2 bg-blue-600 text-white text-center rounded animate-pulse" }, statusMsg),
                         
                         React.createElement("div", { className: "space-y-2" },
-                            stations.map((s, idx) => (
+                            displayStations.map((s, idx) => (
                                 React.createElement("div", { key: s.stationuuid, className: "flex items-center gap-3 bg-bg-secondary p-2 rounded border border-gray-800 hover:border-accent/50 transition-colors" },
-                                    React.createElement("div", { className: "flex flex-col gap-1" },
-                                        React.createElement("button", { onClick: () => moveStation(idx, -1), disabled: idx === 0, className: "text-gray-500 hover:text-white disabled:opacity-20" }, "▲"),
-                                        React.createElement("button", { onClick: () => moveStation(idx, 1), disabled: idx === stations.length - 1, className: "text-gray-500 hover:text-white disabled:opacity-20" }, "▼")
+                                    sortType === 'default' && (
+                                        React.createElement("div", { className: "flex flex-col gap-1" },
+                                            React.createElement("button", { onClick: () => moveStation(s.stationuuid, -1), disabled: stations.indexOf(s) === 0, className: "text-gray-500 hover:text-white disabled:opacity-20 text-xs" }, "▲"),
+                                            React.createElement("button", { onClick: () => moveStation(s.stationuuid, 1), disabled: stations.indexOf(s) === stations.length - 1, className: "text-gray-500 hover:text-white disabled:opacity-20 text-xs" }, "▼")
+                                        )
                                     ),
                                     React.createElement("img", { src: s.favicon, className: "w-10 h-10 bg-black object-contain rounded", onError: e => (e.target).src='' }),
                                     React.createElement("div", { className: "flex-grow min-w-0" },
-                                        React.createElement("div", { className: "font-bold truncate" }, s.name),
-                                        React.createElement("div", { className: "text-xs text-text-secondary truncate text-left", dir: "ltr" }, s.url_resolved)
+                                        React.createElement("div", { className: "font-bold truncate text-sm" }, s.name),
+                                        React.createElement("div", { className: "text-[10px] text-text-secondary truncate text-left", dir: "ltr" }, s.url_resolved)
                                     ),
-                                    React.createElement("button", { onClick: () => setEditingStation(s), className: "p-2 text-blue-400 hover:bg-blue-400/20 rounded" }, "ערוך"),
-                                    React.createElement("button", { onClick: () => handleDelete(s.stationuuid), className: "p-2 text-red-400 hover:bg-red-400/20 rounded" }, "מחק")
+                                    React.createElement("button", { onClick: () => setEditingStation(s), className: "p-2 text-blue-400 hover:bg-blue-400/20 rounded text-xs" }, "ערוך"),
+                                    React.createElement("button", { onClick: () => handleDelete(s.stationuuid), className: "p-2 text-red-400 hover:bg-red-400/20 rounded text-xs" }, "מחק")
                                 )
                             ))
                         )

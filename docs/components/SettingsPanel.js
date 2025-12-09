@@ -3,16 +3,24 @@ import React, { useState, useEffect } from 'react';
 import { THEMES, EQ_PRESET_KEYS, EQ_PRESET_LABELS, KEY_ACTION_LABELS } from '../types.js';
 import Auth from './Auth.js';
 import { ChevronDownIcon } from './Icons.js';
+import { BUILD_INFO } from '../buildInfo.js';
 
 const releaseNotes = [
   {
     version: '1.2',
     date: '08.12.2025',
     features: [
-        "זכירת מצב התפריטים בהגדרות (פתוח/סגור) לכל משתמש.",
-        "פאנל ניהול חדש להוספת ועריכת תחנות.",
-        "מנגנון לזיהוי חכם של שמות שירים בתחנות 100FM.",
-        "שיפור יציבות הנגן ומניעת ניתוקים."
+        "חדש: נגן חכם לתחנות 100FM המאפשר חזרה בזמן ומעבר בין שירים.",
+        "שיפורים ביציבות זיהוי שירים.",
+    ],
+  },
+  {
+    version: '1.1',
+    date: '08.12.2025',
+    features: [
+        "הוספת פאנל ניהול מתקדם.",
+        "מנגנון עדכון גרסה אוטומטי.",
+        "אפשרויות מיון חדשות בתפריט הניהול.",
     ],
   },
   {
@@ -26,8 +34,6 @@ const releaseNotes = [
     ],
   },
 ];
-
-const currentVersionInfo = releaseNotes[0];
 
 const DEFAULT_KEY_MAP = {
     playPause: [' ', 'Spacebar'],
@@ -49,7 +55,7 @@ const DEFAULT_KEY_MAP = {
 const SettingsButton = ({ label, isActive, onClick }) => (
     React.createElement("button", {
         onClick: onClick,
-        className: `px-4 py-2 text-xs font-medium rounded-md transition-colors w-full capitalize ${
+        className: `px-2 py-2 text-xs font-medium rounded-md transition-colors w-full min-h-[2.5rem] flex items-center justify-center text-center whitespace-normal leading-tight ${
             isActive ? 'bg-accent text-white' : 'bg-bg-primary hover:bg-accent/20'
         }`
     },
@@ -59,8 +65,8 @@ const SettingsButton = ({ label, isActive, onClick }) => (
 
 const ToggleSwitch = ({ label, enabled, onChange, disabled = false }) => (
      React.createElement("label", { className: `w-full flex items-center justify-between p-3 rounded-lg transition-colors duration-200 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-accent/10'} bg-bg-primary` },
-        React.createElement("span", { className: "font-medium text-text-primary" }, label),
-        React.createElement("div", { className: "relative inline-flex items-center cursor-pointer" },
+        React.createElement("span", { className: "font-medium text-text-primary text-sm whitespace-normal leading-tight max-w-[70%]" }, label),
+        React.createElement("div", { className: "relative inline-flex items-center cursor-pointer flex-shrink-0" },
             React.createElement("input", { 
                 type: "checkbox", 
                 checked: enabled, 
@@ -128,11 +134,22 @@ const SettingsPanel = ({
     updateStatus, onManualUpdateCheck,
     keyMap, onKeyMapChange,
     setIsRebinding,
-    openSections, onToggleSection
+    is100fmSmartPlayerEnabled, on100fmSmartPlayerEnabledChange
  }) => {
   const [isVersionHistoryVisible, setIsVersionHistoryVisible] = useState(false);
   const [listeningFor, setListeningFor] = useState(null);
   
+  const [openSections, setOpenSections] = useState({
+      theme: true,
+      eq: true,
+      interface: true,
+      shortcuts: false
+  });
+
+  const toggleSection = (key) => {
+      setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
   useEffect(() => {
     if (!listeningFor) return;
 
@@ -219,7 +236,7 @@ const SettingsPanel = ({
                 )
             ),
 
-            React.createElement(SettingsSection, { title: "ערכת נושא", isOpen: openSections.theme, onToggle: () => onToggleSection('theme') },
+            React.createElement(SettingsSection, { title: "ערכת נושא", isOpen: openSections.theme, onToggle: () => toggleSection('theme') },
                 React.createElement("div", { className: "grid grid-cols-4 gap-2" },
                     THEMES.map(theme => (
                          React.createElement(SettingsButton, { 
@@ -232,7 +249,7 @@ const SettingsPanel = ({
                 )
             ),
 
-             React.createElement(SettingsSection, { title: "אקולייזר (EQ)", isOpen: openSections.eq, onToggle: () => onToggleSection('eq') },
+             React.createElement(SettingsSection, { title: "אקולייזר (EQ)", isOpen: openSections.eq, onToggle: () => toggleSection('eq') },
                 React.createElement("div", { className: "grid grid-cols-3 gap-2 mb-3" },
                     EQ_PRESET_KEYS.map(preset => (
                         React.createElement(SettingsButton, { 
@@ -264,7 +281,7 @@ const SettingsPanel = ({
                 )
             ),
 
-            React.createElement(SettingsSection, { title: "ממשק", isOpen: openSections.interface, onToggle: () => onToggleSection('interface') },
+            React.createElement(SettingsSection, { title: "ממשק", isOpen: openSections.interface, onToggle: () => toggleSection('interface') },
                 React.createElement("div", { className: "space-y-2" },
                     React.createElement("div", { className: "p-3 rounded-lg bg-bg-primary space-y-3" },
                        React.createElement("div", { className: "flex flex-col gap-1" },
@@ -341,6 +358,11 @@ const SettingsPanel = ({
 
                     React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-2 px-3" }, "כללי"),
                     React.createElement(ToggleSwitch, { 
+                        label: "נגן חכם (100FM)",
+                        enabled: is100fmSmartPlayerEnabled,
+                        onChange: on100fmSmartPlayerEnabledChange
+                    }),
+                    React.createElement(ToggleSwitch, { 
                         label: "תצוגה גרפית (מסך מלא)", 
                         enabled: isNowPlayingVisualizerEnabled, 
                         onChange: onNowPlayingVisualizerEnabledChange 
@@ -368,7 +390,7 @@ const SettingsPanel = ({
                 )
             ),
 
-            React.createElement(SettingsSection, { title: "קיצורי מקלדת", isOpen: openSections.shortcuts, onToggle: () => onToggleSection('shortcuts') },
+            React.createElement(SettingsSection, { title: "קיצורי מקלדת", isOpen: openSections.shortcuts, onToggle: () => toggleSection('shortcuts') },
                 React.createElement("div", { className: "space-y-2" },
                     /* General Shortcuts */
                     React.createElement("h4", { className: "text-xs font-semibold text-text-secondary pt-1 px-1" }, "כללי"),
@@ -432,13 +454,6 @@ const SettingsPanel = ({
             ),
 
             React.createElement("div", { className: "mt-auto flex-shrink-0 pt-4" },
-                user && (
-                    React.createElement("div", { className: "mb-4 p-2 bg-gray-900/50 rounded text-[10px] font-mono text-gray-400 text-center break-all select-all" },
-                        `User: ${user.email || user.uid}`,
-                        React.createElement("br"),
-                        `Role: ${isAdmin ? 'Admin' : 'User'}`
-                    )
-                ),
                 isVersionHistoryVisible && (
                     React.createElement("div", { className: "mb-4 text-xs text-text-secondary" },
                         React.createElement("h4", { className: "font-bold text-sm text-text-primary mb-2" }, "היסטוריית גרסאות"),
@@ -464,7 +479,7 @@ const SettingsPanel = ({
                         tabIndex: updateStatus === 'idle' ? 0 : -1,
                         "aria-live": "polite"
                     },
-                        React.createElement("p", null, `רדיו פרימיום v${currentVersionInfo.version} (${currentVersionInfo.date})`),
+                        React.createElement("p", null, `רדיו פרימיום v${BUILD_INFO.version} (${BUILD_INFO.buildDate})`),
                         React.createElement("div", { className: "h-4 mt-1 flex items-center justify-center" },
                             getUpdateStatusContent()
                         )
