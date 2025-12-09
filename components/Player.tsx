@@ -154,11 +154,11 @@ const Player: React.FC<PlayerProps> = ({
       if (smartPlaylist.length > 0) {
           const latestTrack = smartPlaylist[smartPlaylist.length - 1];
           const now = Math.floor(Date.now() / 1000);
-          // If the latest track says it started in 2026, but now is 2025, we have a massive offset.
-          // Or if it started 2 minutes ago, offset is 0.
           
-          // Assumption: The latest track in the list is "Now Playing" or very recent.
-          // If latestTrack.timestamp > now + 60, something is wrong with clocks.
+          // Heuristic: If the latest song started more than 60 seconds in the future
+          // (allowing for some clock drift), we assume the server time is ahead/different.
+          // Or if it's way in the past, it doesn't matter as much, but usually 100FM
+          // sends timestamps like 2026 when it's 2025.
           if (latestTrack.timestamp > now + 60) {
               const diff = latestTrack.timestamp - now;
               console.log(`[SmartPlayer] Detected future timestamp. Adjusting offset by ${diff}s`);
@@ -453,16 +453,12 @@ const Player: React.FC<PlayerProps> = ({
       
       let livePosition = 0;
       
-      // RELAXED CHECK: If seekable is missing, warn but assume we can try setting currentTime 
-      // relative to current time if infinite? No, for infinite streams we need buffer range.
-      // But HLS usually provides seekable ranges.
       if (audio.seekable.length > 0) {
           livePosition = audio.seekable.end(0);
       } else {
           console.warn("[SmartSeek] Stream report: Not seekable. URL:", audio.src);
           // Fallback: If we assume we are at live edge (e.g. initial play)
           // But without buffer info, setting currentTime might fail.
-          // Let's try to assume livePosition = audio.currentTime if we are playing
           livePosition = audio.currentTime;
       }
 
@@ -493,27 +489,28 @@ const Player: React.FC<PlayerProps> = ({
       const currentPos = audio.currentTime;
       const lag = liveEdge - currentPos;
       
-      // If lag is very small, we are live.
       // Virtual Time = Real Time - Lag.
       return getCurrentUnixTime() - lag;
   };
 
   const handleSmartPrev = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
+          console.warn("[SmartPrev] No playlist data available.");
+          return;
+      }
       
       // Calculate where we are "virtually" in history
       const virtualNow = getVirtualPlaybackTime();
       console.log(`[SmartPrev] Virtual Time: ${virtualNow}`);
 
       // Find the track that is playing at this virtual time
-      // Track matches if timestamp <= virtualNow and (nextTrack.timestamp > virtualNow OR isLast)
       const sortedPlaylist = [...smartPlaylist].sort((a, b) => a.timestamp - b.timestamp);
       let currentIndex = -1;
 
       for (let i = 0; i < sortedPlaylist.length; i++) {
           const track = sortedPlaylist[i];
           const nextTrack = sortedPlaylist[i+1];
-          // Adding 5 seconds buffer to 'virtualNow' to handle edge cases where song just ended
+          // Adding buffer to 'virtualNow' to handle edge cases
           if (track.timestamp <= virtualNow + 5 && (!nextTrack || nextTrack.timestamp > virtualNow + 5)) {
               currentIndex = i;
               break;
@@ -542,7 +539,10 @@ const Player: React.FC<PlayerProps> = ({
   };
 
   const handleSmartNext = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
+          console.warn("[SmartNext] No playlist data available.");
+          return;
+      }
 
       const virtualNow = getVirtualPlaybackTime();
       console.log(`[SmartNext] Virtual Time: ${virtualNow}`);
@@ -659,10 +659,10 @@ const Player: React.FC<PlayerProps> = ({
                 <SkipNextIcon className="w-6 h-6" />
             </button>
 
-            {/* Song Prev (Right in RTL) - REWIND */}
+            {/* Song Prev (Right in RTL) - User requested FastForwardIcon here */}
             {isSmartPlayerActive && (
                 <button onClick={handleSmartPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="שיר קודם">
-                    <RewindIcon className="w-5 h-5" /> 
+                    <FastForwardIcon className="w-5 h-5" /> 
                 </button>
             )}
 
@@ -674,10 +674,10 @@ const Player: React.FC<PlayerProps> = ({
               {isActuallyPlaying || isLoading ? <PauseIcon className="w-7 h-7" /> : <PlayIcon className="w-7 h-7" />}
             </button>
 
-            {/* Song Next (Left in RTL) - FAST FORWARD */}
+            {/* Song Next (Left in RTL) - User requested RewindIcon here */}
             {isSmartPlayerActive && (
                 <button onClick={handleSmartNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="שיר הבא">
-                    <FastForwardIcon className="w-5 h-5" />
+                    <RewindIcon className="w-5 h-5" />
                 </button>
             )}
 

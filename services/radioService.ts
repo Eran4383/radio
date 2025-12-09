@@ -249,11 +249,9 @@ export const fetchLiveTrackInfo = async (stationuuid: string): Promise<string | 
 };
 
 // --- New Function for 100fm Smart Player ---
+// Uses Regex parsing instead of DOMParser to handle broken/partial XML responses
 export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<SmartPlaylistItem[]> => {
-    // Extract slug from ID if present (e.g., '100fm-retro' -> 'retro')
     const slug = stationIdOrSlug.replace('100fm-', '');
-    
-    // Default URL for last 12 tracks
     const url = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
     const proxiedUrl = `${CORS_PROXY_URL}${url}`;
 
@@ -269,34 +267,40 @@ export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<Smart
         }
 
         const text = await response.text();
-        // LOG RAW RESPONSE TO DEBUG
-        // console.log(`[100FM RAW] ${slug}:`, text.substring(0, 200));
-
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(text, "text/xml");
-        
-        const trackElements = xmlDoc.getElementsByTagName('track');
         const playlist: SmartPlaylistItem[] = [];
 
-        for (let i = 0; i < trackElements.length; i++) {
-            const track = trackElements[i];
-            const artist = track.getElementsByTagName('artist')[0]?.textContent || '';
-            const name = track.getElementsByTagName('name')[0]?.textContent || '';
-            const timestamp = parseInt(track.getElementsByTagName('timestamp')[0]?.textContent || '0', 10);
-            const before = parseInt(track.getElementsByTagName('before')[0]?.textContent || '0', 10);
+        // Regex to match <track>...</track> blocks
+        const trackBlockRegex = /<track>(.*?)<\/track>/gs;
+        let trackMatch;
 
-            // Filter out obviously bad data (like 'P' track names)
-            if (timestamp > 0 && name.length > 1 && name !== 'P') {
+        while ((trackMatch = trackBlockRegex.exec(text)) !== null) {
+            const blockContent = trackMatch[1];
+            
+            // Extract fields using Regex
+            const artistMatch = blockContent.match(/<artist>(.*?)<\/artist>/);
+            const nameMatch = blockContent.match(/<name>(.*?)<\/name>/);
+            const timestampMatch = blockContent.match(/<timestamp>(.*?)<\/timestamp>/);
+            const beforeMatch = blockContent.match(/<before>(.*?)<\/before>/);
+
+            const artist = artistMatch ? artistMatch[1].trim() : '';
+            const name = nameMatch ? nameMatch[1].trim() : '';
+            const timestamp = timestampMatch ? parseInt(timestampMatch[1].trim(), 10) : 0;
+            const before = beforeMatch ? parseInt(beforeMatch[1].trim(), 10) : 0;
+
+            if (timestamp > 0 && name && name.length > 1 && name !== 'P') {
                 playlist.push({ artist, name, timestamp, before });
-            } else {
-                console.warn(`[100FM Filter] Skipped invalid track: ${name} / ${timestamp}`);
             }
         }
 
-        return playlist.sort((a, b) => a.timestamp - b.timestamp); // Sort by time (oldest first)
+        if (playlist.length === 0) {
+             // Fallback logging if Regex fails but text exists
+             console.warn(`[100FM] No tracks found via Regex. Raw text length: ${text.length}`);
+        }
+
+        return playlist.sort((a, b) => a.timestamp - b.timestamp);
 
     } catch (error) {
-        console.error(`Error parsing 100fm playlist for ${slug}:`, error);
+        console.error(`Error processing 100fm playlist for ${slug}:`, error);
         return [];
     }
 };

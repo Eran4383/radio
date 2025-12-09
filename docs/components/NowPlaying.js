@@ -156,6 +156,7 @@ const NowPlaying = ({
                 if (deltaX > 0) onPrev();
                 else onNext();
             } else if (isDraggingModal.current && deltaY > 120) {
+                // If dragged down significantly (more than 120px) AND we were dragging the modal, close it.
                 onClose();
             }
         }
@@ -277,7 +278,7 @@ const NowPlaying = ({
               
               isSmartPlayerActive && (
                   React.createElement("button", { onClick: onSmartPrev, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "שיר קודם" },
-                    React.createElement(RewindIcon, { className: "w-6 h-6 sm:w-8 sm:h-8" })
+                    React.createElement(FastForwardIcon, { className: "w-6 h-6 sm:w-8 sm:h-8" })
                   )
               ),
 
@@ -291,7 +292,7 @@ const NowPlaying = ({
 
               isSmartPlayerActive && (
                   React.createElement("button", { onClick: onSmartNext, className: "p-4 text-text-secondary hover:text-text-primary transition-colors duration-200", "aria-label": "שיר הבא" },
-                    React.createElement(FastForwardIcon, { className: "w-6 h-6 sm:w-8 sm:h-8" })
+                    React.createElement(RewindIcon, { className: "w-6 h-6 sm:w-8 sm:h-8" })
                   )
               ),
 

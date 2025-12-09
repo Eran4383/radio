@@ -313,10 +313,10 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
                 <SkipNextIcon className="w-8 h-8 sm:w-12 sm:h-12" />
               </button>
 
-              {/* Previous Song (Smart) - Rewind */}
+              {/* Previous Song (Smart) - User Requested FastForward here */}
               {isSmartPlayerActive && (
                   <button onClick={onSmartPrev} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="שיר קודם">
-                    <RewindIcon className="w-6 h-6 sm:w-8 sm:h-8" />
+                    <FastForwardIcon className="w-6 h-6 sm:w-8 sm:h-8" />
                   </button>
               )}
 
@@ -329,10 +329,10 @@ const NowPlaying: React.FC<NowPlayingProps> = ({
                 {isPlaying ? <PauseIcon className="w-10 h-10 sm:w-14 sm:h-14" /> : <PlayIcon className="w-10 h-10 sm:w-14 sm:h-14" />}
               </button>
 
-              {/* Next Song (Smart) - Fast Forward */}
+              {/* Next Song (Smart) - User Requested Rewind here */}
               {isSmartPlayerActive && (
                   <button onClick={onSmartNext} className="p-4 text-text-secondary hover:text-text-primary transition-colors duration-200" aria-label="שיר הבא">
-                    <FastForwardIcon className="w-6 h-6 sm:w-8 sm:h-8" />
+                    <RewindIcon className="w-6 h-6 sm:w-8 sm:h-8" />
                   </button>
               )}
 

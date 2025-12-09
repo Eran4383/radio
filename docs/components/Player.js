@@ -414,7 +414,10 @@ const Player = ({
   };
 
   const handleSmartPrev = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
+          console.warn("[SmartPrev] No playlist data available.");
+          return;
+      }
       
       const virtualNow = getVirtualPlaybackTime();
       console.log(`[SmartPrev] Virtual Time: ${virtualNow}`);
@@ -450,7 +453,10 @@ const Player = ({
   };
 
   const handleSmartNext = () => {
-      if (!isSmartPlayerActive || smartPlaylist.length === 0) return;
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
+          console.warn("[SmartNext] No playlist data available.");
+          return;
+      }
 
       const virtualNow = getVirtualPlaybackTime();
       console.log(`[SmartNext] Virtual Time: ${virtualNow}`);
@@ -566,7 +572,7 @@ const Player = ({
             
             isSmartPlayerActive && (
                 React.createElement("button", { onClick: handleSmartPrev, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "שיר קודם" },
-                    React.createElement(RewindIcon, { className: "w-5 h-5" })
+                    React.createElement(FastForwardIcon, { className: "w-5 h-5" })
                 )
             ),
 
@@ -580,7 +586,7 @@ const Player = ({
 
             isSmartPlayerActive && (
                 React.createElement("button", { onClick: handleSmartNext, className: "p-2 text-text-secondary hover:text-text-primary", "aria-label": "שיר הבא" },
-                    React.createElement(FastForwardIcon, { className: "w-5 h-5" })
+                    React.createElement(RewindIcon, { className: "w-5 h-5" })
                 )
             ),
 
