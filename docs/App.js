@@ -1,14 +1,13 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
-import { fetchStations, fetchLiveTrackInfo, fetch100fmPlaylist, setGlobalNetworkConfig } from './services/radioService.js';
+import { fetchStations, fetchLiveTrackInfo, fetch100fmPlaylist } from './services/radioService.js';
 import { 
     signInWithGoogle, 
     signOutUser, 
     onAuthStateChangedListener,
     saveUserSettings,
     getUserSettings,
-    checkAdminRole,
-    fetchNetworkConfig
+    checkAdminRole
 } from './services/firebase.js';
 import { THEMES, EQ_PRESET_KEYS, VISUALIZER_STYLES, GRID_SIZES, StationFilter } from './types.js';
 import Player from './components/Player.js';
@@ -247,22 +246,8 @@ export default function App() {
   // State for removal confirmation modal
   const [pendingRemoval, setPendingRemoval] = useState(null);
 
-  // Network Config State
-  const [networkConfigReady, setNetworkConfigReady] = useState(false);
-
   // Determine if we should use proxy (if ANY visualizer is enabled)
   const shouldUseProxy = allSettings.isNowPlayingVisualizerEnabled || allSettings.isPlayerBarVisualizerEnabled;
-
-  // Load Network Config First
-  useEffect(() => {
-      fetchNetworkConfig().then(config => {
-          if (config) {
-              console.log("Loaded network config from cloud:", config);
-              setGlobalNetworkConfig(config);
-          }
-          setNetworkConfigReady(true);
-      });
-  }, []);
   
   // Auth state listener - runs only once on mount
   useEffect(() => {
@@ -344,16 +329,14 @@ export default function App() {
   }, [allSettings, user, isCloudSyncing]);
 
   useEffect(() => {
-    if (isAuthReady && networkConfigReady && (stationsStatus === 'loaded' || stationsStatus === 'error')) {
+    if (isAuthReady && (stationsStatus === 'loaded' || stationsStatus === 'error')) {
       const loader = document.querySelector('.app-loader');
       if (loader) loader.style.display = 'none';
     }
-  }, [isAuthReady, stationsStatus, networkConfigReady]);
+  }, [isAuthReady, stationsStatus]);
 
   // Initial load logic: Cache First Strategy
   useEffect(() => {
-    if (!networkConfigReady) return; 
-
     const loadStations = async () => {
       // 1. Try to load from cache immediately
       const cachedStationsStr = localStorage.getItem('radio-stations-cache');
@@ -403,7 +386,7 @@ export default function App() {
     };
 
     loadStations();
-  }, [networkConfigReady]);
+  }, []);
 
   // Service Worker Update Handling
   useEffect(() => {
@@ -604,20 +587,16 @@ export default function App() {
   const currentCategoryIndex = CATEGORY_SORTS.findIndex(c => c.order === currentSortOrder);
   const categoryButtonLabel = currentCategoryIndex !== -1 ? CATEGORY_SORTS[currentCategoryIndex].label : "קטגוריות";
 
-  // --- Keyboard Event Listener ---
   useEffect(() => {
     const handleKeyDown = (e) => {
-        // If user is rebinding a key in SettingsPanel, do NOT trigger global shortcuts
         if (isRebinding) return;
 
-        // Ignore if typing in input/textarea or contentEditable
         const target = e.target;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
 
         const { key } = e;
         let action;
         
-        // Find which action corresponds to the pressed key
         for (const [act, keys] of Object.entries(allSettings.keyMap)) {
             if (keys.includes(key)) {
                 action = act;
@@ -626,7 +605,7 @@ export default function App() {
         }
 
         if (action) {
-            e.preventDefault(); // Prevent default browser scrolling/actions for these keys
+            e.preventDefault();
             switch (action) {
                 case 'playPause': 
                     handlePlayPause(); 

@@ -79,8 +79,6 @@ const Player = ({
   const trebleFilterRef = useRef(null);
   const animationFrameRef = useRef();
   
-  const hlsRef = useRef(null);
-
   const lastTimeUpdateRef = useRef(Date.now());
   const recoveryAttemptRef = useRef(0);
   const watchdogIntervalRef = useRef(null);
@@ -183,69 +181,33 @@ const Player = ({
     const audio = audioRef.current;
     if (!audio || !station) return;
 
-    // Determine if we need HLS support
-    const isHls = station.url_resolved.includes('.m3u8') || (station.codec === 'AAC' && isSmartPlayerActive);
-    const nativeHls = audio.canPlayType('application/vnd.apple.mpegurl');
-
     const playAudio = async () => {
-        if (hlsRef.current) {
-            hlsRef.current.destroy();
-            hlsRef.current = null;
-        }
-
-        let streamUrl = station.url_resolved;
-        let useProxyForStream = shouldUseProxy;
-
-        // Auto-detect Mixed Content (HTTP stream on HTTPS site)
-        if (window.location.protocol === 'https:' && streamUrl.startsWith('http:')) {
-            console.warn('Mixed Content detected. Forcing Proxy for stream.');
-            useProxyForStream = true;
-        }
-
-        if (useProxyForStream) {
-            streamUrl = `${CORS_PROXY_URL}${streamUrl}`;
-            setupAudioContext(); 
+        if (shouldUseProxy) {
+            setupAudioContext();
             if (audioContextRef.current?.state === 'suspended') {
                 await audioContextRef.current.resume();
             }
         }
         
-        if (isHls && !nativeHls && !useProxyForStream && window.Hls && window.Hls.isSupported()) {
-             const Hls = window.Hls;
-             const hls = new Hls();
-             hls.loadSource(streamUrl);
-             hls.attachMedia(audio);
-             hlsRef.current = hls;
-             
-             hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                 audio.play().catch(e => {
-                     console.error("HLS Play Error:", e);
-                     onPlayerEvent({ type: 'AUTOPLAY_BLOCKED' });
-                 });
-             });
-             
-             hls.on(Hls.Events.ERROR, (event, data) => {
-                 if (data.fatal) {
-                     switch(data.type) {
-                         case Hls.ErrorTypes.NETWORK_ERROR:
-                             hls.startLoad();
-                             break;
-                         case Hls.ErrorTypes.MEDIA_ERROR:
-                             hls.recoverMediaError();
-                             break;
-                         default:
-                             hls.destroy();
-                             break;
-                     }
-                 }
-             });
-             
-             return; 
+        let streamUrl = station.url_resolved;
+
+        if (isSmartPlayerActive) {
+            if (streamUrl.includes('streamgates.net') && !streamUrl.includes('dvr_timeshift')) {
+                const lastSlashIndex = streamUrl.lastIndexOf('/');
+                if (lastSlashIndex !== -1) {
+                    const baseUrl = streamUrl.substring(0, lastSlashIndex);
+                    streamUrl = `${baseUrl}/playlist_dvr_timeshift-36000.m3u8`;
+                }
+            }
+        }
+
+        if (shouldUseProxy) {
+            streamUrl = `${CORS_PROXY_URL}${streamUrl}`;
         }
 
         if (audio.src !== streamUrl) {
             audio.src = streamUrl;
-            if (useProxyForStream) {
+            if (shouldUseProxy) {
                 audio.crossOrigin = 'anonymous';
             } else {
                 audio.removeAttribute('crossOrigin');
@@ -255,10 +217,12 @@ const Player = ({
             await audio.play();
         } catch (e) {
             if (e.name === 'AbortError') {
-                console.debug('Audio play request was interrupted (normal behavior).');
+                console.debug('Audio play request was interrupted by a new load request (normal behavior).');
             } else if (e.name === 'NotAllowedError') {
+                console.warn("Autoplay blocked by browser policy. User interaction required.");
                 onPlayerEvent({ type: 'AUTOPLAY_BLOCKED' });
             } else {
+                console.error("Error playing audio:", e);
                 onPlayerEvent({ type: 'STREAM_ERROR', payload: "לא ניתן לנגן את התחנה." });
             }
         }
@@ -268,9 +232,6 @@ const Player = ({
       playAudio();
     } else if (status === 'PAUSED' || status === 'IDLE' || status === 'ERROR') {
       audio.pause();
-      if (hlsRef.current) {
-          hlsRef.current.stopLoad();
-      }
     }
   }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy, isSmartPlayerActive]);
 
@@ -341,6 +302,7 @@ const Player = ({
   const attemptRecovery = useCallback(() => {
       if (!audioRef.current || !station || recoveryAttemptRef.current >= 3) {
           if (recoveryAttemptRef.current >= 3) {
+              console.error("Recovery failed after 3 attempts.");
               onPlayerEvent({ type: 'STREAM_ERROR', payload: "החיבור נכשל סופית" });
           }
           return;
@@ -351,12 +313,18 @@ const Player = ({
       lastTimeUpdateRef.current = Date.now();
 
       const audio = audioRef.current;
-      const currentSrc = audio.src;
+      const streamUrl = shouldUseProxy 
+          ? `${CORS_PROXY_URL}${station.url_resolved}` 
+          : station.url_resolved;
+          
       audio.src = '';
       audio.load();
-      audio.src = currentSrc;
+      audio.src = `${streamUrl}?retry=${Date.now()}`;
       audio.load();
-      audio.play().catch(e => console.error("Recovery failed", e));
+      audio.play().catch(e => {
+          console.error('Recovery play() failed:', e);
+          onPlayerEvent({ type: 'STREAM_ERROR', payload: 'שגיאה בהתאוששות' });
+      });
   }, [station, onPlayerEvent, shouldUseProxy]);
 
   useEffect(() => {
@@ -373,10 +341,10 @@ const Player = ({
           recoveryAttemptRef.current = 0;
 
           watchdogIntervalRef.current = window.setInterval(() => {
-              if (Date.now() - lastTimeUpdateRef.current > 7000) { 
+              if (Date.now() - lastTimeUpdateRef.current > 7000) { // 7-second stall threshold
                   attemptRecovery();
               }
-          }, 3000); 
+          }, 3000); // Check every 3 seconds
       } else {
           clearWatchdog();
           recoveryAttemptRef.current = 0;
@@ -385,14 +353,70 @@ const Player = ({
       return clearWatchdog;
   }, [status, attemptRecovery]);
 
+  const getCurrentUnixTime = () => Math.floor(Date.now() / 1000);
+
+  const calculateSeekTime = (targetUnixTimestamp) => {
+      const audio = audioRef.current;
+      if (!audio || !audio.seekable.length) return;
+
+      const now = getCurrentUnixTime();
+      const secondsAgo = now - targetUnixTimestamp;
+      
+      const livePosition = audio.seekable.end(0);
+      const targetPosition = Math.max(0, livePosition - secondsAgo);
+      
+      if (isFinite(targetPosition)) {
+          audio.currentTime = targetPosition;
+      }
+  };
+
   const handleSmartPrev = () => {
-      onPrev();
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
+          onPrev();
+          return;
+      }
+      
+      const now = getCurrentUnixTime();
+      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5); 
+      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
+
+      if (originalIndex !== -1) {
+          const currentTrack = smartPlaylist[originalIndex];
+          const timeSinceStart = now - currentTrack.timestamp;
+          
+          if (timeSinceStart > 10) {
+              calculateSeekTime(currentTrack.timestamp);
+          } else if (originalIndex > 0) {
+              calculateSeekTime(smartPlaylist[originalIndex - 1].timestamp);
+          } else {
+              calculateSeekTime(currentTrack.timestamp);
+          }
+      } else {
+          onPrev();
+      }
   };
 
   const handleSmartNext = () => {
-      onNext();
-  };
+      if (!isSmartPlayerActive || smartPlaylist.length === 0) {
+          onNext();
+          return;
+      }
 
+      const now = getCurrentUnixTime();
+      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5);
+      const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
+
+      if (originalIndex !== -1 && originalIndex < smartPlaylist.length - 1) {
+          calculateSeekTime(smartPlaylist[originalIndex + 1].timestamp);
+      } else {
+          const audio = audioRef.current;
+          if (audio && audio.seekable.length) {
+              audio.currentTime = audio.seekable.end(0);
+          } else {
+              onNext(); 
+          }
+      }
+  };
 
   if (!station) {
     return null;
@@ -443,6 +467,8 @@ const Player = ({
                   )
                 ) : status === 'LOADING' ? (
                     React.createElement("span", { className: "text-text-secondary animate-pulse" }, "טוען...")
+                ) : isSmartPlayerActive ? (
+                    React.createElement("span", { className: "text-accent text-xs font-semibold animate-pulse" }, "נגן חכם 100FM פעיל")
                 ) : null
               ),
                status !== 'ERROR' && showNextSong && trackInfo?.next && (

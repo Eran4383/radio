@@ -1,15 +1,8 @@
 
-import { Station, SmartPlaylistItem, NetworkConfig } from '../types';
+import { Station, SmartPlaylistItem } from '../types';
 import { PRIORITY_STATIONS } from '../constants';
 import { CORS_PROXY_URL } from '../constants';
 import { fetchCustomStations } from './firebase';
-
-// Global config storage
-let networkConfig: NetworkConfig | null = null;
-
-export const setGlobalNetworkConfig = (config: NetworkConfig | null) => {
-    networkConfig = config;
-};
 
 // Function to shuffle an array for load distribution
 const shuffleArray = <T>(array: T[]): T[] => {
@@ -38,7 +31,8 @@ const fetchRadioBrowserStations = async (): Promise<Station[]> => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000); // 8-second timeout
 
-      // FIX: Direct connection without proxy by default (mobile friendly)
+      // FIX: Removed CORS_PROXY_URL to allow direct connection (Radio-Browser supports CORS natively)
+      // This fixes the issue where mobile ISPs block the proxy service.
       const url = `${serverUrl}/stations/bycountrycodeexact/IL?limit=300&hidebroken=true`;
       const response = await fetch(url, {
           signal: controller.signal
@@ -75,18 +69,11 @@ const fetchRadioBrowserStations = async (): Promise<Station[]> => {
 const fetch100fmStations = async (): Promise<Station[]> => {
   const url = 'https://digital.100fm.co.il/app/';
   try {
-    // 100FM App API supports direct access usually. Use proxy only if configured or failed.
-    let useProxy = false;
-    if (networkConfig?.forceProxyMetadata.includes('100fm-stations')) {
-        useProxy = true;
-    }
-
-    const fetchUrl = useProxy ? `${CORS_PROXY_URL}${url}` : url;
-    
+    const proxiedUrl = `${CORS_PROXY_URL}${url}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-    const response = await fetch(fetchUrl, { signal: controller.signal });
+    const response = await fetch(proxiedUrl, { signal: controller.signal });
     clearTimeout(timeoutId);
     
     if (!response.ok) {
@@ -120,6 +107,7 @@ const fetch100fmStations = async (): Promise<Station[]> => {
 };
 
 
+// Renamed to fetchDefaultIsraeliStations to indicate this is the fallback logic
 export const fetchDefaultIsraeliStations = async (): Promise<Station[]> => {
   const [radioBrowserResult, fm100Result] = await Promise.allSettled([
     fetchRadioBrowserStations(),
@@ -233,7 +221,6 @@ export const fetchLiveTrackInfo = async (stationuuid: string): Promise<string | 
             const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second timeout
 
             // FIX: Added &t=${Date.now()} to bust proxy cache
-            // Always use proxy for Radio-Browser metadata APIs (usually HTTP or limited CORS)
             const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/check?uuids=${stationuuid}&t=${Date.now()}`;
             const response = await fetch(proxiedUrl, {
                 signal: controller.signal,
@@ -270,17 +257,10 @@ export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<Smart
     
     // Default URL for last 12 tracks
     const url = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
-    
-    // Check config for Proxy override (defaults to Direct)
-    let useProxy = false;
-    if (networkConfig?.forceProxyMetadata.includes('100fm-metadata')) {
-        useProxy = true;
-    }
-
-    const fetchUrl = useProxy ? `${CORS_PROXY_URL}${url}` : url;
+    const proxiedUrl = `${CORS_PROXY_URL}${url}`;
 
     try {
-        const response = await fetch(fetchUrl, { 
+        const response = await fetch(proxiedUrl, { 
             cache: 'no-cache',
             headers: { 'Accept': 'application/xml, text/xml, */*' }
         });
@@ -291,35 +271,23 @@ export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<Smart
         }
 
         const text = await response.text();
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(text, "text/xml");
         
-        // --- Robust Regex Parsing (Fixes "Track: P" issue) ---
-        // Instead of DOMParser which fails on malformed XML, we use Regex to extract data.
+        // Parse <track> elements. Note: The API might return a root element containing tracks or just a list of tracks.
+        // XML parser handles the root structure automatically.
+        const trackElements = xmlDoc.getElementsByTagName('track');
         const playlist: SmartPlaylistItem[] = [];
-        const trackRegex = /<track>([\s\S]*?)<\/track>/g;
-        const nameRegex = /<name>(.*?)<\/name>/;
-        const artistRegex = /<artist>(.*?)<\/artist>/;
-        const timestampRegex = /<timestamp>(\d+)<\/timestamp>/;
-        const beforeRegex = /<before>(\d+)<\/before>/;
 
-        let match;
-        while ((match = trackRegex.exec(text)) !== null) {
-            const trackContent = match[1];
-            const nameMatch = nameRegex.exec(trackContent);
-            const artistMatch = artistRegex.exec(trackContent);
-            const timestampMatch = timestampRegex.exec(trackContent);
-            const beforeMatch = beforeRegex.exec(trackContent);
+        for (let i = 0; i < trackElements.length; i++) {
+            const track = trackElements[i];
+            const artist = track.getElementsByTagName('artist')[0]?.textContent || '';
+            const name = track.getElementsByTagName('name')[0]?.textContent || '';
+            const timestamp = parseInt(track.getElementsByTagName('timestamp')[0]?.textContent || '0', 10);
+            const before = parseInt(track.getElementsByTagName('before')[0]?.textContent || '0', 10);
 
-            if (nameMatch && timestampMatch) {
-                const name = nameMatch[1].trim();
-                // Filter invalid tracks
-                if (name.length < 2 || name.toLowerCase() === 'p') continue;
-
-                playlist.push({
-                    name: name,
-                    artist: artistMatch ? artistMatch[1].trim() : '',
-                    timestamp: parseInt(timestampMatch[1], 10),
-                    before: beforeMatch ? parseInt(beforeMatch[1], 10) : 0
-                });
+            if (timestamp > 0) {
+                playlist.push({ artist, name, timestamp, before });
             }
         }
 

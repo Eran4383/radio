@@ -18,7 +18,7 @@ import {
   getDocs,
   deleteDoc
 } from 'firebase/firestore';
-import { AllSettings, Station, NetworkConfig } from '../types';
+import { AllSettings, Station } from '../types';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtTn2euDrfnD5mJrY0mASVOXPaJLDOHbo",
@@ -71,7 +71,6 @@ export const getUserSettings = async (userId: string): Promise<AllSettings | nul
 const ADMINS_COLLECTION = 'admins';
 const APP_DATA_COLLECTION = 'app_data';
 const STATIONS_DOC_ID = 'stations_list';
-const NETWORK_CONFIG_ID = 'network_config';
 
 // Check if a user is an admin by checking if their email exists as a document ID in the 'admins' collection
 export const checkAdminRole = async (email: string): Promise<boolean> => {
@@ -170,36 +169,6 @@ export const resetStationsInFirestore = async () => {
         return true;
     } catch (error) {
         console.error("Error resetting stations:", error);
-        throw error;
-    }
-};
-
-// --- Network Config Management ---
-
-export const fetchNetworkConfig = async (): Promise<NetworkConfig | null> => {
-    try {
-        const docRef = doc(db, APP_DATA_COLLECTION, NETWORK_CONFIG_ID);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            return docSnap.data() as NetworkConfig;
-        }
-        return null;
-    } catch (error) {
-        // Silent fail on config fetch to allow offline usage
-        return null;
-    }
-};
-
-export const saveNetworkConfig = async (config: NetworkConfig) => {
-    try {
-        const docRef = doc(db, APP_DATA_COLLECTION, NETWORK_CONFIG_ID);
-        await setDoc(docRef, { 
-            ...config,
-            updatedAt: serverTimestamp() 
-        });
-        return true;
-    } catch (error) {
-        console.error("Error saving network config:", error);
         throw error;
     }
 };

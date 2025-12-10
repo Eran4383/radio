@@ -1,6 +1,9 @@
 
+
+
 import React, { useState, useEffect } from 'react';
-import { saveCustomStations, resetStationsInFirestore, fetchAdmins, addAdmin, removeAdmin, saveNetworkConfig } from '../services/firebase.js';
+import { fetchDefaultIsraeliStations } from '../services/radioService.js';
+import { saveCustomStations, resetStationsInFirestore, fetchAdmins, addAdmin, removeAdmin } from '../services/firebase.js';
 import { ChevronDownIcon } from './Icons.js';
 
 const EditStationModal = ({ station, onSave, onCancel }) => {
@@ -65,7 +68,6 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
     // Diagnostics State
     const [diagnosticResults, setDiagnosticResults] = useState([]);
     const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
-    const [configSaved, setConfigSaved] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
@@ -94,9 +96,10 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
         setIsLoading(true);
         try {
             await resetStationsInFirestore();
-            // In a real app we'd trigger a re-fetch in App.tsx, but here we can just close
-            alert('שוחזר. אנא רענן את האפליקציה.');
-            onClose();
+            const defaults = await fetchDefaultIsraeliStations();
+            setStations(defaults);
+            onStationsUpdate(defaults);
+            setStatusMsg('שוחזר לברירת מחדל.');
         } catch (e) {
              console.error(e);
              setStatusMsg('שגיאה בשחזור.');
@@ -168,7 +171,6 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
     const runDiagnostics = async () => {
         setIsRunningDiagnostics(true);
         setDiagnosticResults([]);
-        setConfigSaved(false);
         
         const results = [];
         
@@ -176,16 +178,17 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
             const result = {
                 uuid: station.stationuuid,
                 name: station.name,
-                streamUrl: station.url_resolved,
-                isSecure: station.url_resolved.startsWith('https'),
-                directStream: false,
+                streamStatus: 'בודק...',
                 streamType: '?',
-                metadataStatus: 'N/A'
+                metadataStatus: 'N/A',
+                latency: 0
             };
+
+            const start = Date.now();
 
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 2500); 
+                const timeoutId = setTimeout(() => controller.abort(), 3000); 
                 
                 let response = await fetch(station.url_resolved, { 
                     method: 'HEAD', 
@@ -201,35 +204,46 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
                 });
 
                 clearTimeout(timeoutId);
+                result.latency = Date.now() - start;
 
                 if (response.ok) {
-                    result.directStream = true;
+                    result.streamStatus = '✅ תקין (ישיר)';
                     const type = response.headers.get('content-type');
                     if (type?.includes('mpegurl') || station.url_resolved.includes('.m3u8')) {
-                        result.streamType = 'HLS';
+                        result.streamType = 'HLS (m3u8)';
+                    } else if (type?.includes('mpeg') || type?.includes('audio')) {
+                        result.streamType = 'MP3/AAC';
                     } else {
-                        result.streamType = 'MP3';
+                        result.streamType = 'Unknown';
                     }
+                } else {
+                    result.streamStatus = `⚠️ שגיאה ${response.status}`;
                 }
             } catch (e) {
-                // Failed direct
+                result.streamStatus = '❌ חסום (CORS)';
             }
 
             let metaUrl = '';
             if (station.stationuuid.startsWith('100fm-')) {
                  const slug = station.stationuuid.replace('100fm-', '');
                  metaUrl = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
+            } else if (station.name.includes('גלגלצ')) {
+                 metaUrl = 'https://glz.co.il/umbraco/api/player/UpdatePlayer?stationid=glglz';
+            } else if (station.name.includes('כאן')) {
+                 metaUrl = 'https://www.kan.org.il/radio/live-info-v2.aspx?stationId=954';
+            } else if (station.name.toLowerCase().includes('eco99')) {
+                 metaUrl = 'https://firestore.googleapis.com/v1/projects/eco-99-production/databases/(default)/documents/streamed_content/program';
             }
 
             if (metaUrl) {
                 try {
                     const controller = new AbortController();
-                    setTimeout(() => controller.abort(), 2500);
+                    setTimeout(() => controller.abort(), 3000);
                     const res = await fetch(metaUrl, { mode: 'cors', signal: controller.signal });
-                    if (res.ok) result.metadataStatus = 'OK';
-                    else result.metadataStatus = `Err ${res.status}`;
+                    if (res.ok) result.metadataStatus = '✅ תקין (ישיר)';
+                    else result.metadataStatus = `⚠️ שגיאה ${res.status}`;
                 } catch (e) {
-                    result.metadataStatus = 'CORS';
+                    result.metadataStatus = '❌ חסום (CORS)';
                 }
             }
 
@@ -237,39 +251,6 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
             setDiagnosticResults([...results]); 
         }
         setIsRunningDiagnostics(false);
-    };
-
-    const generateAndSaveConfig = async () => {
-        const config = {
-            forceProxyStream: [],
-            forceDirectStream: [],
-            forceProxyMetadata: [],
-            forceDirectMetadata: []
-        };
-
-        diagnosticResults.forEach(r => {
-            if (!r.isSecure) {
-                config.forceProxyStream.push(r.uuid);
-            } else if (r.directStream) {
-                config.forceDirectStream.push(r.uuid);
-            }
-
-            if (r.uuid.startsWith('100fm-')) {
-                if (r.metadataStatus === 'OK') {
-                    config.forceDirectMetadata.push(r.uuid);
-                } else {
-                    config.forceProxyMetadata.push('100fm-metadata');
-                }
-            }
-        });
-
-        try {
-            await saveNetworkConfig(config);
-            setConfigSaved(true);
-            alert('הגדרות הרשת נשמרו בהצלחה! משתמשים יקבלו את השיפורים בפתיחה הבאה.');
-        } catch (e) {
-            alert('שגיאה בשמירת הגדרות');
-        }
     };
 
     const getSortedStations = () => {
@@ -421,24 +402,14 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
                         React.createElement("div", { className: "bg-bg-secondary p-4 rounded-lg" },
                             React.createElement("h3", { className: "font-bold mb-2" }, "בדיקת תקינות מערכת (CORS & Streams)"),
                             React.createElement("p", { className: "text-xs text-text-secondary mb-4" },
-                                "כלי זה סורק את כל התחנות ובודק חסימות CORS, HTTP/HTTPS וסוגי שידור. בסיום הסריקה תוכל לשמור את ההגדרות האופטימליות לענן."
+                                "כלי זה בודק אילו תחנות ניתנות לגישה ישירה (Direct Access) ללא צורך בפרוקסי, ומזהה את סוג השידור לטיפול מתאים במחשב/מובייל."
                             ),
-                            React.createElement("div", { className: "flex gap-2" },
-                                React.createElement("button", { 
-                                    onClick: runDiagnostics, 
-                                    disabled: isRunningDiagnostics,
-                                    className: `flex-1 py-3 rounded font-bold shadow-lg ${isRunningDiagnostics ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'} text-white transition-all`
-                                },
-                                    isRunningDiagnostics ? 'מבצע סריקה...' : '🚀 הרץ בדיקה'
-                                ),
-                                diagnosticResults.length > 0 && !isRunningDiagnostics && (
-                                    React.createElement("button", { 
-                                        onClick: generateAndSaveConfig,
-                                        className: `flex-1 py-3 rounded font-bold shadow-lg ${configSaved ? 'bg-green-600' : 'bg-accent hover:bg-accent-hover'} text-white transition-all`
-                                    },
-                                        configSaved ? '✅ נשמר!' : '💾 שמור הגדרות רשת לענן'
-                                    )
-                                )
+                            React.createElement("button", { 
+                                onClick: runDiagnostics, 
+                                disabled: isRunningDiagnostics,
+                                className: `w-full py-3 rounded font-bold shadow-lg ${isRunningDiagnostics ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'} text-white transition-all`
+                            },
+                                isRunningDiagnostics ? 'מבצע סריקה...' : '🚀 הרץ בדיקה מלאה'
                             )
                         ),
 
@@ -448,24 +419,24 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
                                     React.createElement("thead", { className: "bg-gray-800 text-text-secondary" },
                                         React.createElement("tr", null,
                                             React.createElement("th", { className: "p-2" }, "תחנה"),
-                                            React.createElement("th", { className: "p-2" }, "HTTPS"),
-                                            React.createElement("th", { className: "p-2" }, "גישה ישירה"),
+                                            React.createElement("th", { className: "p-2" }, "חיבור שידור (Direct)"),
                                             React.createElement("th", { className: "p-2" }, "סוג"),
-                                            React.createElement("th", { className: "p-2" }, "Metadata")
+                                            React.createElement("th", { className: "p-2" }, "Metadata API"),
+                                            React.createElement("th", { className: "p-2" }, "תגובה (ms)")
                                         )
                                     ),
                                     React.createElement("tbody", { className: "divide-y divide-gray-700" },
                                         diagnosticResults.map((r) => (
                                             React.createElement("tr", { key: r.uuid, className: "hover:bg-gray-700/50" },
                                                 React.createElement("td", { className: "p-2 font-bold" }, r.name),
-                                                React.createElement("td", { className: "p-2" }, r.isSecure ? '✅' : '❌ HTTP'),
-                                                React.createElement("td", { className: `p-2 ${r.directStream ? 'text-green-400' : 'text-red-400'}` },
-                                                    r.directStream ? 'כן' : 'לא'
+                                                React.createElement("td", { className: `p-2 ${r.streamStatus.includes('✅') ? 'text-green-400' : 'text-red-400'}` },
+                                                    r.streamStatus
                                                 ),
                                                 React.createElement("td", { className: "p-2" }, r.streamType),
-                                                React.createElement("td", { className: `p-2 ${r.metadataStatus === 'OK' ? 'text-green-400' : r.metadataStatus === 'N/A' ? 'text-gray-500' : 'text-red-400'}` },
+                                                React.createElement("td", { className: `p-2 ${r.metadataStatus.includes('✅') ? 'text-green-400' : r.metadataStatus === 'N/A' ? 'text-gray-500' : 'text-red-400'}` },
                                                     r.metadataStatus
-                                                )
+                                                ),
+                                                React.createElement("td", { className: "p-2 text-text-secondary" }, `${r.latency}ms`)
                                             )
                                         ))
                                     )
