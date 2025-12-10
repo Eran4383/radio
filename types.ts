@@ -124,6 +124,14 @@ export interface SettingsSections {
     shortcuts: boolean;
 }
 
+export interface NetworkConfig {
+    forceProxyStream: string[]; // List of station UUIDs or URL patterns
+    forceDirectStream: string[];
+    forceProxyMetadata: string[];
+    forceDirectMetadata: string[];
+    updatedAt?: any;
+}
+
 export type AllSettings = {
     favorites: string[];
     customOrder: string[];

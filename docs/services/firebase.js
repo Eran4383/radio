@@ -68,6 +68,7 @@ export const getUserSettings = async (userId) => {
 const ADMINS_COLLECTION = 'admins';
 const APP_DATA_COLLECTION = 'app_data';
 const STATIONS_DOC_ID = 'stations_list';
+const NETWORK_CONFIG_ID = 'network_config';
 
 // Check if a user is an admin
 export const checkAdminRole = async (email) => {
@@ -165,6 +166,33 @@ export const resetStationsInFirestore = async () => {
         return true;
     } catch (error) {
         console.error("Error resetting stations:", error);
+        throw error;
+    }
+};
+
+export const fetchNetworkConfig = async () => {
+    try {
+        const docRef = doc(db, APP_DATA_COLLECTION, NETWORK_CONFIG_ID);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            return docSnap.data();
+        }
+        return null;
+    } catch (error) {
+        return null;
+    }
+};
+
+export const saveNetworkConfig = async (config) => {
+    try {
+        const docRef = doc(db, APP_DATA_COLLECTION, NETWORK_CONFIG_ID);
+        await setDoc(docRef, { 
+            ...config,
+            updatedAt: serverTimestamp() 
+        });
+        return true;
+    } catch (error) {
+        console.error("Error saving network config:", error);
         throw error;
     }
 };

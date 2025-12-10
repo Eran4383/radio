@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { Station } from '../types';
+import { Station, NetworkConfig } from '../types';
 import { fetchDefaultIsraeliStations } from '../services/radioService';
-import { saveCustomStations, resetStationsInFirestore, fetchAdmins, addAdmin, removeAdmin } from '../services/firebase';
+import { saveCustomStations, resetStationsInFirestore, fetchAdmins, addAdmin, removeAdmin, saveNetworkConfig } from '../services/firebase';
 import { ChevronDownIcon } from './Icons';
 
 interface AdminPanelProps {
@@ -19,10 +19,11 @@ type AdminSortType = 'default' | 'name_asc' | 'name_desc' | 'favorites';
 interface DiagnosticResult {
     uuid: string;
     name: string;
-    streamStatus: string;
+    streamUrl: string;
+    isSecure: boolean;
+    directStream: boolean;
     streamType: string;
     metadataStatus: string;
-    latency: number;
 }
 
 const EditStationModal: React.FC<{
@@ -91,6 +92,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
     // Diagnostics State
     const [diagnosticResults, setDiagnosticResults] = useState<DiagnosticResult[]>([]);
     const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
+    const [configSaved, setConfigSaved] = useState(false);
 
     // Sync local state with prop when opening
     useEffect(() => {
@@ -195,6 +197,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
     const runDiagnostics = async () => {
         setIsRunningDiagnostics(true);
         setDiagnosticResults([]);
+        setConfigSaved(false);
         
         const results: DiagnosticResult[] = [];
         
@@ -202,20 +205,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
             const result: DiagnosticResult = {
                 uuid: station.stationuuid,
                 name: station.name,
-                streamStatus: 'בודק...',
+                streamUrl: station.url_resolved,
+                isSecure: station.url_resolved.startsWith('https'),
+                directStream: false,
                 streamType: '?',
-                metadataStatus: 'N/A',
-                latency: 0
+                metadataStatus: 'N/A'
             };
-
-            const start = Date.now();
 
             // 1. Check Stream (Direct Connection)
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+                const timeoutId = setTimeout(() => controller.abort(), 2500); 
                 
-                // Try HEAD first, fall back to GET if 405 Method Not Allowed
+                // Try HEAD first
                 let response = await fetch(station.url_resolved, { 
                     method: 'HEAD', 
                     mode: 'cors',
@@ -226,59 +228,85 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
                         method: 'GET', 
                         mode: 'cors',
                         signal: controller.signal,
-                        headers: { 'Range': 'bytes=0-100' } // Try to get just a bit
+                        headers: { 'Range': 'bytes=0-100' }
                     });
                 });
 
                 clearTimeout(timeoutId);
-                result.latency = Date.now() - start;
 
                 if (response.ok) {
-                    result.streamStatus = '✅ תקין (ישיר)';
+                    result.directStream = true;
                     const type = response.headers.get('content-type');
                     if (type?.includes('mpegurl') || station.url_resolved.includes('.m3u8')) {
-                        result.streamType = 'HLS (m3u8)';
-                    } else if (type?.includes('mpeg') || type?.includes('audio')) {
-                        result.streamType = 'MP3/AAC';
+                        result.streamType = 'HLS';
                     } else {
-                        result.streamType = 'Unknown';
+                        result.streamType = 'MP3';
                     }
-                } else {
-                    result.streamStatus = `⚠️ שגיאה ${response.status}`;
                 }
             } catch (e) {
-                result.streamStatus = '❌ חסום (CORS)';
+                // Failed CORS direct
             }
 
-            // 2. Check Metadata API (Specific Logic)
+            // 2. Check Metadata API
             let metaUrl = '';
             if (station.stationuuid.startsWith('100fm-')) {
                  const slug = station.stationuuid.replace('100fm-', '');
                  metaUrl = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
-            } else if (station.name.includes('גלגלצ')) {
-                 metaUrl = 'https://glz.co.il/umbraco/api/player/UpdatePlayer?stationid=glglz';
-            } else if (station.name.includes('כאן')) {
-                 metaUrl = 'https://www.kan.org.il/radio/live-info-v2.aspx?stationId=954';
-            } else if (station.name.toLowerCase().includes('eco99')) {
-                 metaUrl = 'https://firestore.googleapis.com/v1/projects/eco-99-production/databases/(default)/documents/streamed_content/program';
             }
 
             if (metaUrl) {
                 try {
                     const controller = new AbortController();
-                    setTimeout(() => controller.abort(), 3000);
+                    setTimeout(() => controller.abort(), 2500);
                     const res = await fetch(metaUrl, { mode: 'cors', signal: controller.signal });
-                    if (res.ok) result.metadataStatus = '✅ תקין (ישיר)';
-                    else result.metadataStatus = `⚠️ שגיאה ${res.status}`;
+                    if (res.ok) result.metadataStatus = 'OK';
+                    else result.metadataStatus = `Err ${res.status}`;
                 } catch (e) {
-                    result.metadataStatus = '❌ חסום (CORS)';
+                    result.metadataStatus = 'CORS';
                 }
             }
 
             results.push(result);
-            setDiagnosticResults([...results]); // Update UI live
+            setDiagnosticResults([...results]);
         }
         setIsRunningDiagnostics(false);
+    };
+
+    const generateAndSaveConfig = async () => {
+        const config: NetworkConfig = {
+            forceProxyStream: [],
+            forceDirectStream: [],
+            forceProxyMetadata: [],
+            forceDirectMetadata: []
+        };
+
+        diagnosticResults.forEach(r => {
+            // Stream Logic
+            if (!r.isSecure) {
+                // If stream is HTTP on HTTPS site, MUST use proxy
+                config.forceProxyStream.push(r.uuid);
+            } else if (r.directStream) {
+                // If direct works and is secure, prefer direct
+                config.forceDirectStream.push(r.uuid);
+            }
+
+            // Metadata Logic
+            if (r.uuid.startsWith('100fm-')) {
+                if (r.metadataStatus === 'OK') {
+                    config.forceDirectMetadata.push(r.uuid);
+                } else {
+                    config.forceProxyMetadata.push('100fm-metadata'); // General flag
+                }
+            }
+        });
+
+        try {
+            await saveNetworkConfig(config);
+            setConfigSaved(true);
+            alert('הגדרות הרשת נשמרו בהצלחה! משתמשים יקבלו את השיפורים בפתיחה הבאה.');
+        } catch (e) {
+            alert('שגיאה בשמירת הגדרות');
+        }
     };
 
     // Sorting Logic for Display
@@ -434,16 +462,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
                         <div className="bg-bg-secondary p-4 rounded-lg">
                             <h3 className="font-bold mb-2">בדיקת תקינות מערכת (CORS & Streams)</h3>
                             <p className="text-xs text-text-secondary mb-4">
-                                כלי זה בודק אילו תחנות ניתנות לגישה ישירה (Direct Access) ללא צורך בפרוקסי,
-                                ומזהה את סוג השידור לטיפול מתאים במחשב/מובייל.
+                                כלי זה סורק את כל התחנות ובודק חסימות CORS, HTTP/HTTPS וסוגי שידור.
+                                בסיום הסריקה תוכל לשמור את ההגדרות האופטימליות לענן.
                             </p>
-                            <button 
-                                onClick={runDiagnostics} 
-                                disabled={isRunningDiagnostics}
-                                className={`w-full py-3 rounded font-bold shadow-lg ${isRunningDiagnostics ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'} text-white transition-all`}
-                            >
-                                {isRunningDiagnostics ? 'מבצע סריקה...' : '🚀 הרץ בדיקה מלאה'}
-                            </button>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={runDiagnostics} 
+                                    disabled={isRunningDiagnostics}
+                                    className={`flex-1 py-3 rounded font-bold shadow-lg ${isRunningDiagnostics ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'} text-white transition-all`}
+                                >
+                                    {isRunningDiagnostics ? 'מבצע סריקה...' : '🚀 הרץ בדיקה'}
+                                </button>
+                                {diagnosticResults.length > 0 && !isRunningDiagnostics && (
+                                    <button 
+                                        onClick={generateAndSaveConfig}
+                                        className={`flex-1 py-3 rounded font-bold shadow-lg ${configSaved ? 'bg-green-600' : 'bg-accent hover:bg-accent-hover'} text-white transition-all`}
+                                    >
+                                        {configSaved ? '✅ נשמר!' : '💾 שמור הגדרות רשת לענן'}
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         {diagnosticResults.length > 0 && (
@@ -452,24 +490,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
                                     <thead className="bg-gray-800 text-text-secondary">
                                         <tr>
                                             <th className="p-2">תחנה</th>
-                                            <th className="p-2">חיבור שידור (Direct)</th>
+                                            <th className="p-2">HTTPS</th>
+                                            <th className="p-2">גישה ישירה</th>
                                             <th className="p-2">סוג</th>
-                                            <th className="p-2">Metadata API</th>
-                                            <th className="p-2">תגובה (ms)</th>
+                                            <th className="p-2">Metadata</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-700">
                                         {diagnosticResults.map((r) => (
                                             <tr key={r.uuid} className="hover:bg-gray-700/50">
                                                 <td className="p-2 font-bold">{r.name}</td>
-                                                <td className={`p-2 ${r.streamStatus.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>
-                                                    {r.streamStatus}
+                                                <td className="p-2">{r.isSecure ? '✅' : '❌ HTTP'}</td>
+                                                <td className={`p-2 ${r.directStream ? 'text-green-400' : 'text-red-400'}`}>
+                                                    {r.directStream ? 'כן' : 'לא'}
                                                 </td>
                                                 <td className="p-2">{r.streamType}</td>
-                                                <td className={`p-2 ${r.metadataStatus.includes('✅') ? 'text-green-400' : r.metadataStatus === 'N/A' ? 'text-gray-500' : 'text-red-400'}`}>
+                                                <td className={`p-2 ${r.metadataStatus === 'OK' ? 'text-green-400' : r.metadataStatus === 'N/A' ? 'text-gray-500' : 'text-red-400'}`}>
                                                     {r.metadataStatus}
                                                 </td>
-                                                <td className="p-2 text-text-secondary">{r.latency}ms</td>
                                             </tr>
                                         ))}
                                     </tbody>

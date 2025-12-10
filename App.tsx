@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
-import { fetchStations, fetchLiveTrackInfo, fetch100fmPlaylist } from './services/radioService';
+import { fetchStations, fetchLiveTrackInfo, fetch100fmPlaylist, setGlobalNetworkConfig } from './services/radioService';
 import { 
     signInWithGoogle, 
     signOutUser, 
     onAuthStateChangedListener,
     saveUserSettings,
     getUserSettings,
-    checkAdminRole
+    checkAdminRole,
+    fetchNetworkConfig
 } from './services/firebase';
 import { Station, Theme, EqPreset, THEMES, EQ_PRESET_KEYS, VisualizerStyle, VISUALIZER_STYLES, CustomEqSettings, StationTrackInfo, GridSize, SortOrder, GRID_SIZES, User, AllSettings, StationFilter, KeyMap, KeyAction, SmartPlaylistItem, SettingsSections } from './types';
 import Player from './components/Player';
@@ -264,8 +265,22 @@ export default function App() {
   // State for removal confirmation modal
   const [pendingRemoval, setPendingRemoval] = useState<{uuid: string, name: string} | null>(null);
 
+  // Network Config State
+  const [networkConfigReady, setNetworkConfigReady] = useState(false);
+
   // Determine if we should use proxy (if ANY visualizer is enabled)
   const shouldUseProxy = allSettings.isNowPlayingVisualizerEnabled || allSettings.isPlayerBarVisualizerEnabled;
+
+  // Load Network Config First
+  useEffect(() => {
+      fetchNetworkConfig().then(config => {
+          if (config) {
+              console.log("Loaded network config from cloud:", config);
+              setGlobalNetworkConfig(config);
+          }
+          setNetworkConfigReady(true);
+      });
+  }, []);
 
   // Auth state listener - runs only once on mount
   useEffect(() => {
@@ -347,14 +362,16 @@ export default function App() {
   }, [allSettings, user, isCloudSyncing]);
 
   useEffect(() => {
-    if (isAuthReady && (stationsStatus === 'loaded' || stationsStatus === 'error')) {
+    if (isAuthReady && networkConfigReady && (stationsStatus === 'loaded' || stationsStatus === 'error')) {
       const loader = document.querySelector<HTMLElement>('.app-loader');
       if (loader) loader.style.display = 'none';
     }
-  }, [isAuthReady, stationsStatus]);
+  }, [isAuthReady, stationsStatus, networkConfigReady]);
 
   // Initial load logic: Cache First Strategy
   useEffect(() => {
+    if (!networkConfigReady) return; // Wait for config
+
     const loadStations = async () => {
       // 1. Try to load from cache immediately
       const cachedStationsStr = localStorage.getItem('radio-stations-cache');
@@ -403,7 +420,7 @@ export default function App() {
     };
 
     loadStations();
-  }, []);
+  }, [networkConfigReady]);
 
   // Service Worker Update Handling
   useEffect(() => {
