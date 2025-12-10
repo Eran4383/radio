@@ -1,7 +1,7 @@
 
 
 
-const CACHE_NAME = 'radio-premium-cache-1.0-06.12.2025-v7'; // Simplified update process
+const CACHE_NAME = 'radio-premium-cache-1.2-08.12.2025-v8'; // Bumped version to force AdminPanel update
 const urlsToCache = [
   './index.html',
   './manifest.json?v=23',
@@ -27,7 +27,8 @@ const urlsToCache = [
   './components/Visualizer.js',
   './components/InteractiveText.js',
   './components/MarqueeText.js',
-  './components/ActionMenu.js'
+  './components/ActionMenu.js',
+  './components/AdminPanel.js'
 ];
 
 self.addEventListener('install', event => {
@@ -90,14 +91,14 @@ self.addEventListener('fetch', event => {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
             const urlToCache = new URL(event.request.url);
-            urlToCache.search = '?v=1.0-06.12.2025-v7';
+            urlToCache.search = '?v=1.2-08.12.2025-v8';
             cache.put(urlToCache.href, responseToCache);
           });
           return networkResponse;
         })
         .catch(() => {
            const urlToMatch = new URL(event.request.url);
-           urlToMatch.search = '?v=1.0-06.12.2025-v7';
+           urlToMatch.search = '?v=1.2-08.12.2025-v8';
           return caches.match(urlToMatch.href);
         })
     );
