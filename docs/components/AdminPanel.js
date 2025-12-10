@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect } from 'react';
 import { fetchDefaultIsraeliStations } from '../services/radioService.js';
 import { saveCustomStations, resetStationsInFirestore, fetchAdmins, addAdmin, removeAdmin } from '../services/firebase.js';
@@ -305,7 +307,7 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
                     onClick: () => setActiveTab('diagnostics'),
                     className: `flex-1 py-2 rounded text-sm font-bold ${activeTab === 'diagnostics' ? 'bg-accent text-white' : 'hover:bg-gray-700'}`
                 },
-                    "דיאגנוסטיקה"
+                    "🩺 דיאגנוסטיקה"
                 )
             ),
 

@@ -338,7 +338,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
                     onClick={() => setActiveTab('diagnostics')}
                     className={`flex-1 py-2 rounded text-sm font-bold ${activeTab === 'diagnostics' ? 'bg-accent text-white' : 'hover:bg-gray-700'}`}
                 >
-                    דיאגנוסטיקה
+                    🩺 דיאגנוסטיקה
                 </button>
             </div>
 
