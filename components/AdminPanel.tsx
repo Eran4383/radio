@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect } from 'react';
 import { Station } from '../types';
 import { fetchDefaultIsraeliStations } from '../services/radioService';
@@ -17,6 +15,15 @@ interface AdminPanelProps {
 }
 
 type AdminSortType = 'default' | 'name_asc' | 'name_desc' | 'favorites';
+
+interface DiagnosticResult {
+    uuid: string;
+    name: string;
+    streamStatus: string;
+    streamType: string;
+    metadataStatus: string;
+    latency: number;
+}
 
 const EditStationModal: React.FC<{
     station: Station;
@@ -74,12 +81,16 @@ const EditStationModal: React.FC<{
 const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStations, onStationsUpdate, currentUserEmail, favorites }) => {
     const [stations, setStations] = useState<Station[]>(currentStations);
     const [editingStation, setEditingStation] = useState<Station | null>(null);
-    const [activeTab, setActiveTab] = useState<'stations' | 'admins'>('stations');
+    const [activeTab, setActiveTab] = useState<'stations' | 'admins' | 'diagnostics'>('stations');
     const [admins, setAdmins] = useState<string[]>([]);
     const [newAdminEmail, setNewAdminEmail] = useState('');
     const [statusMsg, setStatusMsg] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [sortType, setSortType] = useState<AdminSortType>('default');
+    
+    // Diagnostics State
+    const [diagnosticResults, setDiagnosticResults] = useState<DiagnosticResult[]>([]);
+    const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
 
     // Sync local state with prop when opening
     useEffect(() => {
@@ -181,6 +192,95 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
         }
     };
 
+    const runDiagnostics = async () => {
+        setIsRunningDiagnostics(true);
+        setDiagnosticResults([]);
+        
+        const results: DiagnosticResult[] = [];
+        
+        for (const station of stations) {
+            const result: DiagnosticResult = {
+                uuid: station.stationuuid,
+                name: station.name,
+                streamStatus: 'בודק...',
+                streamType: '?',
+                metadataStatus: 'N/A',
+                latency: 0
+            };
+
+            const start = Date.now();
+
+            // 1. Check Stream (Direct Connection)
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+                
+                // Try HEAD first, fall back to GET if 405 Method Not Allowed
+                let response = await fetch(station.url_resolved, { 
+                    method: 'HEAD', 
+                    mode: 'cors',
+                    signal: controller.signal
+                }).catch(async () => {
+                     // Retry with GET if HEAD fails
+                     return await fetch(station.url_resolved, { 
+                        method: 'GET', 
+                        mode: 'cors',
+                        signal: controller.signal,
+                        headers: { 'Range': 'bytes=0-100' } // Try to get just a bit
+                    });
+                });
+
+                clearTimeout(timeoutId);
+                result.latency = Date.now() - start;
+
+                if (response.ok) {
+                    result.streamStatus = '✅ תקין (ישיר)';
+                    const type = response.headers.get('content-type');
+                    if (type?.includes('mpegurl') || station.url_resolved.includes('.m3u8')) {
+                        result.streamType = 'HLS (m3u8)';
+                    } else if (type?.includes('mpeg') || type?.includes('audio')) {
+                        result.streamType = 'MP3/AAC';
+                    } else {
+                        result.streamType = 'Unknown';
+                    }
+                } else {
+                    result.streamStatus = `⚠️ שגיאה ${response.status}`;
+                }
+            } catch (e) {
+                result.streamStatus = '❌ חסום (CORS)';
+            }
+
+            // 2. Check Metadata API (Specific Logic)
+            let metaUrl = '';
+            if (station.stationuuid.startsWith('100fm-')) {
+                 const slug = station.stationuuid.replace('100fm-', '');
+                 metaUrl = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
+            } else if (station.name.includes('גלגלצ')) {
+                 metaUrl = 'https://glz.co.il/umbraco/api/player/UpdatePlayer?stationid=glglz';
+            } else if (station.name.includes('כאן')) {
+                 metaUrl = 'https://www.kan.org.il/radio/live-info-v2.aspx?stationId=954';
+            } else if (station.name.toLowerCase().includes('eco99')) {
+                 metaUrl = 'https://firestore.googleapis.com/v1/projects/eco-99-production/databases/(default)/documents/streamed_content/program';
+            }
+
+            if (metaUrl) {
+                try {
+                    const controller = new AbortController();
+                    setTimeout(() => controller.abort(), 3000);
+                    const res = await fetch(metaUrl, { mode: 'cors', signal: controller.signal });
+                    if (res.ok) result.metadataStatus = '✅ תקין (ישיר)';
+                    else result.metadataStatus = `⚠️ שגיאה ${res.status}`;
+                } catch (e) {
+                    result.metadataStatus = '❌ חסום (CORS)';
+                }
+            }
+
+            results.push(result);
+            setDiagnosticResults([...results]); // Update UI live
+        }
+        setIsRunningDiagnostics(false);
+    };
+
     // Sorting Logic for Display
     const getSortedStations = () => {
         const list = [...stations];
@@ -224,21 +324,27 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
             <div className="flex bg-bg-secondary/50 p-2 gap-2 shrink-0">
                 <button 
                     onClick={() => setActiveTab('stations')}
-                    className={`flex-1 py-2 rounded ${activeTab === 'stations' ? 'bg-accent text-white' : 'hover:bg-gray-700'}`}
+                    className={`flex-1 py-2 rounded text-sm font-bold ${activeTab === 'stations' ? 'bg-accent text-white' : 'hover:bg-gray-700'}`}
                 >
-                    ניהול תחנות ({stations.length})
+                    תחנות ({stations.length})
                 </button>
                 <button 
                     onClick={() => setActiveTab('admins')}
-                    className={`flex-1 py-2 rounded ${activeTab === 'admins' ? 'bg-accent text-white' : 'hover:bg-gray-700'}`}
+                    className={`flex-1 py-2 rounded text-sm font-bold ${activeTab === 'admins' ? 'bg-accent text-white' : 'hover:bg-gray-700'}`}
                 >
-                    ניהול מנהלים
+                    מנהלים
+                </button>
+                <button 
+                    onClick={() => setActiveTab('diagnostics')}
+                    className={`flex-1 py-2 rounded text-sm font-bold ${activeTab === 'diagnostics' ? 'bg-accent text-white' : 'hover:bg-gray-700'}`}
+                >
+                    דיאגנוסטיקה
                 </button>
             </div>
 
             {/* Content */}
             <div className="flex-grow overflow-y-auto p-4">
-                {activeTab === 'stations' ? (
+                {activeTab === 'stations' && (
                     <>
                         <div className="flex flex-wrap gap-2 mb-4 sticky top-0 bg-bg-primary py-2 z-10 border-b border-gray-800 items-center">
                              <button onClick={handleSaveToCloud} disabled={isLoading} className="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded font-bold shadow-lg text-sm flex-grow sm:flex-grow-0">
@@ -285,7 +391,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
                             ))}
                         </div>
                     </>
-                ) : (
+                )}
+                
+                {activeTab === 'admins' && (
                     <div className="space-y-6">
                         <div className="bg-bg-secondary p-4 rounded-lg">
                             <h3 className="font-bold mb-3">הוספת מנהל חדש</h3>
@@ -318,6 +426,56 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentStation
                                 ))}
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {activeTab === 'diagnostics' && (
+                    <div className="space-y-4">
+                        <div className="bg-bg-secondary p-4 rounded-lg">
+                            <h3 className="font-bold mb-2">בדיקת תקינות מערכת (CORS & Streams)</h3>
+                            <p className="text-xs text-text-secondary mb-4">
+                                כלי זה בודק אילו תחנות ניתנות לגישה ישירה (Direct Access) ללא צורך בפרוקסי,
+                                ומזהה את סוג השידור לטיפול מתאים במחשב/מובייל.
+                            </p>
+                            <button 
+                                onClick={runDiagnostics} 
+                                disabled={isRunningDiagnostics}
+                                className={`w-full py-3 rounded font-bold shadow-lg ${isRunningDiagnostics ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'} text-white transition-all`}
+                            >
+                                {isRunningDiagnostics ? 'מבצע סריקה...' : '🚀 הרץ בדיקה מלאה'}
+                            </button>
+                        </div>
+
+                        {diagnosticResults.length > 0 && (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-xs text-right bg-bg-secondary rounded-lg overflow-hidden">
+                                    <thead className="bg-gray-800 text-text-secondary">
+                                        <tr>
+                                            <th className="p-2">תחנה</th>
+                                            <th className="p-2">חיבור שידור (Direct)</th>
+                                            <th className="p-2">סוג</th>
+                                            <th className="p-2">Metadata API</th>
+                                            <th className="p-2">תגובה (ms)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-700">
+                                        {diagnosticResults.map((r) => (
+                                            <tr key={r.uuid} className="hover:bg-gray-700/50">
+                                                <td className="p-2 font-bold">{r.name}</td>
+                                                <td className={`p-2 ${r.streamStatus.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>
+                                                    {r.streamStatus}
+                                                </td>
+                                                <td className="p-2">{r.streamType}</td>
+                                                <td className={`p-2 ${r.metadataStatus.includes('✅') ? 'text-green-400' : r.metadataStatus === 'N/A' ? 'text-gray-500' : 'text-red-400'}`}>
+                                                    {r.metadataStatus}
+                                                </td>
+                                                <td className="p-2 text-text-secondary">{r.latency}ms</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

@@ -31,8 +31,10 @@ const fetchRadioBrowserStations = async (): Promise<Station[]> => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000); // 8-second timeout
 
-      const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/bycountrycodeexact/IL?limit=300&hidebroken=true`;
-      const response = await fetch(proxiedUrl, {
+      // FIX: Removed CORS_PROXY_URL to allow direct connection (Radio-Browser supports CORS natively)
+      // This fixes the issue where mobile ISPs block the proxy service.
+      const url = `${serverUrl}/stations/bycountrycodeexact/IL?limit=300&hidebroken=true`;
+      const response = await fetch(url, {
           signal: controller.signal
       });
       

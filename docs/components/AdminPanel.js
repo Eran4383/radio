@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect } from 'react';
 import { fetchDefaultIsraeliStations } from '../services/radioService.js';
 import { saveCustomStations, resetStationsInFirestore, fetchAdmins, addAdmin, removeAdmin } from '../services/firebase.js';
@@ -64,6 +62,10 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
     const [statusMsg, setStatusMsg] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [sortType, setSortType] = useState('default');
+    
+    // Diagnostics State
+    const [diagnosticResults, setDiagnosticResults] = useState([]);
+    const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
@@ -164,6 +166,91 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
         }
     };
 
+    const runDiagnostics = async () => {
+        setIsRunningDiagnostics(true);
+        setDiagnosticResults([]);
+        
+        const results = [];
+        
+        for (const station of stations) {
+            const result = {
+                uuid: station.stationuuid,
+                name: station.name,
+                streamStatus: 'בודק...',
+                streamType: '?',
+                metadataStatus: 'N/A',
+                latency: 0
+            };
+
+            const start = Date.now();
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000); 
+                
+                let response = await fetch(station.url_resolved, { 
+                    method: 'HEAD', 
+                    mode: 'cors',
+                    signal: controller.signal
+                }).catch(async () => {
+                     return await fetch(station.url_resolved, { 
+                        method: 'GET', 
+                        mode: 'cors',
+                        signal: controller.signal,
+                        headers: { 'Range': 'bytes=0-100' }
+                    });
+                });
+
+                clearTimeout(timeoutId);
+                result.latency = Date.now() - start;
+
+                if (response.ok) {
+                    result.streamStatus = '✅ תקין (ישיר)';
+                    const type = response.headers.get('content-type');
+                    if (type?.includes('mpegurl') || station.url_resolved.includes('.m3u8')) {
+                        result.streamType = 'HLS (m3u8)';
+                    } else if (type?.includes('mpeg') || type?.includes('audio')) {
+                        result.streamType = 'MP3/AAC';
+                    } else {
+                        result.streamType = 'Unknown';
+                    }
+                } else {
+                    result.streamStatus = `⚠️ שגיאה ${response.status}`;
+                }
+            } catch (e) {
+                result.streamStatus = '❌ חסום (CORS)';
+            }
+
+            let metaUrl = '';
+            if (station.stationuuid.startsWith('100fm-')) {
+                 const slug = station.stationuuid.replace('100fm-', '');
+                 metaUrl = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
+            } else if (station.name.includes('גלגלצ')) {
+                 metaUrl = 'https://glz.co.il/umbraco/api/player/UpdatePlayer?stationid=glglz';
+            } else if (station.name.includes('כאן')) {
+                 metaUrl = 'https://www.kan.org.il/radio/live-info-v2.aspx?stationId=954';
+            } else if (station.name.toLowerCase().includes('eco99')) {
+                 metaUrl = 'https://firestore.googleapis.com/v1/projects/eco-99-production/databases/(default)/documents/streamed_content/program';
+            }
+
+            if (metaUrl) {
+                try {
+                    const controller = new AbortController();
+                    setTimeout(() => controller.abort(), 3000);
+                    const res = await fetch(metaUrl, { mode: 'cors', signal: controller.signal });
+                    if (res.ok) result.metadataStatus = '✅ תקין (ישיר)';
+                    else result.metadataStatus = `⚠️ שגיאה ${res.status}`;
+                } catch (e) {
+                    result.metadataStatus = '❌ חסום (CORS)';
+                }
+            }
+
+            results.push(result);
+            setDiagnosticResults([...results]); 
+        }
+        setIsRunningDiagnostics(false);
+    };
+
     const getSortedStations = () => {
         const list = [...stations];
         switch (sortType) {
@@ -196,31 +283,34 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
                 })
             ),
             
-            /* Header */
             React.createElement("div", { className: "flex items-center justify-between p-4 bg-bg-secondary shadow-md shrink-0" },
                 React.createElement("h2", { className: "text-xl font-bold text-accent" }, "פאנל ניהול"),
                 React.createElement("button", { onClick: onClose, className: "p-2" }, React.createElement(ChevronDownIcon, { className: "w-6 h-6 rotate-180" }))
             ),
 
-            /* Tabs */
             React.createElement("div", { className: "flex bg-bg-secondary/50 p-2 gap-2 shrink-0" },
                 React.createElement("button", { 
                     onClick: () => setActiveTab('stations'),
-                    className: `flex-1 py-2 rounded ${activeTab === 'stations' ? 'bg-accent text-white' : 'hover:bg-gray-700'}`
+                    className: `flex-1 py-2 rounded text-sm font-bold ${activeTab === 'stations' ? 'bg-accent text-white' : 'hover:bg-gray-700'}`
                 },
-                    `ניהול תחנות (${stations.length})`
+                    `תחנות (${stations.length})`
                 ),
                 React.createElement("button", { 
                     onClick: () => setActiveTab('admins'),
-                    className: `flex-1 py-2 rounded ${activeTab === 'admins' ? 'bg-accent text-white' : 'hover:bg-gray-700'}`
+                    className: `flex-1 py-2 rounded text-sm font-bold ${activeTab === 'admins' ? 'bg-accent text-white' : 'hover:bg-gray-700'}`
                 },
-                    "ניהול מנהלים"
+                    "מנהלים"
+                ),
+                React.createElement("button", { 
+                    onClick: () => setActiveTab('diagnostics'),
+                    className: `flex-1 py-2 rounded text-sm font-bold ${activeTab === 'diagnostics' ? 'bg-accent text-white' : 'hover:bg-gray-700'}`
+                },
+                    "דיאגנוסטיקה"
                 )
             ),
 
-            /* Content */
             React.createElement("div", { className: "flex-grow overflow-y-auto p-4" },
-                activeTab === 'stations' ? (
+                activeTab === 'stations' && (
                     React.createElement(React.Fragment, null,
                         React.createElement("div", { className: "flex flex-wrap gap-2 mb-4 sticky top-0 bg-bg-primary py-2 z-10 border-b border-gray-800 items-center" },
                              React.createElement("button", { onClick: handleSaveToCloud, disabled: isLoading, className: "bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded font-bold shadow-lg text-sm flex-grow sm:flex-grow-0" },
@@ -267,7 +357,9 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
                             ))
                         )
                     )
-                ) : (
+                ),
+                
+                activeTab === 'admins' && (
                     React.createElement("div", { className: "space-y-6" },
                         React.createElement("div", { className: "bg-bg-secondary p-4 rounded-lg" },
                             React.createElement("h3", { className: "font-bold mb-3" }, "הוספת מנהל חדש"),
@@ -298,6 +390,55 @@ const AdminPanel = ({ isOpen, onClose, currentStations, onStationsUpdate, curren
                                         email === currentUserEmail && React.createElement("span", { className: "text-xs text-accent" }, "(אתה)")
                                     )
                                 ))
+                            )
+                        )
+                    )
+                ),
+
+                activeTab === 'diagnostics' && (
+                    React.createElement("div", { className: "space-y-4" },
+                        React.createElement("div", { className: "bg-bg-secondary p-4 rounded-lg" },
+                            React.createElement("h3", { className: "font-bold mb-2" }, "בדיקת תקינות מערכת (CORS & Streams)"),
+                            React.createElement("p", { className: "text-xs text-text-secondary mb-4" },
+                                "כלי זה בודק אילו תחנות ניתנות לגישה ישירה (Direct Access) ללא צורך בפרוקסי, ומזהה את סוג השידור לטיפול מתאים במחשב/מובייל."
+                            ),
+                            React.createElement("button", { 
+                                onClick: runDiagnostics, 
+                                disabled: isRunningDiagnostics,
+                                className: `w-full py-3 rounded font-bold shadow-lg ${isRunningDiagnostics ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'} text-white transition-all`
+                            },
+                                isRunningDiagnostics ? 'מבצע סריקה...' : '🚀 הרץ בדיקה מלאה'
+                            )
+                        ),
+
+                        diagnosticResults.length > 0 && (
+                            React.createElement("div", { className: "overflow-x-auto" },
+                                React.createElement("table", { className: "w-full text-xs text-right bg-bg-secondary rounded-lg overflow-hidden" },
+                                    React.createElement("thead", { className: "bg-gray-800 text-text-secondary" },
+                                        React.createElement("tr", null,
+                                            React.createElement("th", { className: "p-2" }, "תחנה"),
+                                            React.createElement("th", { className: "p-2" }, "חיבור שידור (Direct)"),
+                                            React.createElement("th", { className: "p-2" }, "סוג"),
+                                            React.createElement("th", { className: "p-2" }, "Metadata API"),
+                                            React.createElement("th", { className: "p-2" }, "תגובה (ms)")
+                                        )
+                                    ),
+                                    React.createElement("tbody", { className: "divide-y divide-gray-700" },
+                                        diagnosticResults.map((r) => (
+                                            React.createElement("tr", { key: r.uuid, className: "hover:bg-gray-700/50" },
+                                                React.createElement("td", { className: "p-2 font-bold" }, r.name),
+                                                React.createElement("td", { className: `p-2 ${r.streamStatus.includes('✅') ? 'text-green-400' : 'text-red-400'}` },
+                                                    r.streamStatus
+                                                ),
+                                                React.createElement("td", { className: "p-2" }, r.streamType),
+                                                React.createElement("td", { className: `p-2 ${r.metadataStatus.includes('✅') ? 'text-green-400' : r.metadataStatus === 'N/A' ? 'text-gray-500' : 'text-red-400'}` },
+                                                    r.metadataStatus
+                                                ),
+                                                React.createElement("td", { className: "p-2 text-text-secondary" }, `${r.latency}ms`)
+                                            )
+                                        ))
+                                    )
+                                )
                             )
                         )
                     )

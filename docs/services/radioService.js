@@ -29,8 +29,9 @@ const fetchRadioBrowserStations = async () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-      const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/bycountrycodeexact/IL?limit=300&hidebroken=true`;
-      const response = await fetch(proxiedUrl, {
+      // FIX: Direct connection without proxy for mobile compatibility
+      const url = `${serverUrl}/stations/bycountrycodeexact/IL?limit=300&hidebroken=true`;
+      const response = await fetch(url, {
           signal: controller.signal
       });
       
