@@ -148,5 +148,6 @@ export type AllSettings = {
     sortOrderFavorites: SortOrder;
     keyMap: KeyMap;
     is100fmSmartPlayerEnabled: boolean;
+    isScreenRotationEnabled: boolean;
     settingsSections: SettingsSections;
 };

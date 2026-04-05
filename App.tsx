@@ -112,6 +112,7 @@ const defaultSettings: AllSettings = {
         eqCustom: ['5']
     },
     is100fmSmartPlayerEnabled: true,
+    isScreenRotationEnabled: false,
     settingsSections: {
         theme: true,
         eq: true,
@@ -147,6 +148,7 @@ const loadSettingsFromLocalStorage = (): AllSettings => {
         sortOrderFavorites: safeJsonParse(localStorage.getItem('radio-sort-order-favorites'), defaultSettings.sortOrderFavorites),
         keyMap: safeJsonParse(localStorage.getItem('radio-key-map'), defaultSettings.keyMap),
         is100fmSmartPlayerEnabled: safeJsonParse(localStorage.getItem('radio-100fm-smart-player-enabled'), defaultSettings.is100fmSmartPlayerEnabled),
+        isScreenRotationEnabled: safeJsonParse(localStorage.getItem('radio-screen-rotation-enabled'), defaultSettings.isScreenRotationEnabled),
         settingsSections: safeJsonParse(localStorage.getItem('radio-settings-sections'), defaultSettings.settingsSections),
     };
 };
@@ -175,6 +177,7 @@ const saveSettingsToLocalStorage = (settings: AllSettings) => {
     localStorage.setItem('radio-sort-order-favorites', JSON.stringify(settings.sortOrderFavorites));
     localStorage.setItem('radio-key-map', JSON.stringify(settings.keyMap));
     localStorage.setItem('radio-100fm-smart-player-enabled', JSON.stringify(settings.is100fmSmartPlayerEnabled));
+    localStorage.setItem('radio-screen-rotation-enabled', JSON.stringify(settings.isScreenRotationEnabled));
     localStorage.setItem('radio-settings-sections', JSON.stringify(settings.settingsSections));
 };
 
@@ -266,6 +269,34 @@ export default function App() {
 
   // Determine if we should use proxy (if ANY visualizer is enabled)
   const shouldUseProxy = allSettings.isNowPlayingVisualizerEnabled || allSettings.isPlayerBarVisualizerEnabled;
+
+  // Handle Screen Orientation
+  useEffect(() => {
+    const handleOrientation = async () => {
+      if (!allSettings.isScreenRotationEnabled) {
+        try {
+          const orientation = screen.orientation as any;
+          if (orientation && orientation.lock) {
+            await orientation.lock('portrait');
+          }
+        } catch (error) {
+          // Orientation lock might fail if not in fullscreen or not supported
+          console.warn('Screen orientation lock failed:', error);
+        }
+      } else {
+        try {
+          const orientation = screen.orientation as any;
+          if (orientation && orientation.unlock) {
+            orientation.unlock();
+          }
+        } catch (error) {
+          console.warn('Screen orientation unlock failed:', error);
+        }
+      }
+    };
+
+    handleOrientation();
+  }, [allSettings.isScreenRotationEnabled]);
 
   // Auth state listener - runs only once on mount
   useEffect(() => {
@@ -493,6 +524,7 @@ export default function App() {
       const fetchAndSetInfo = async () => { 
           if (!playerState.station) return; 
           const { name, stationuuid, url_resolved } = playerState.station; 
+          console.log(`Fetching track info for: ${name} (${stationuuid})`);
           
           let finalInfo: StationTrackInfo | null = null; 
           
@@ -557,6 +589,11 @@ export default function App() {
       }
   };
   
+  const handlePlayerEvent = useCallback((event: PlayerAction) => dispatch(event), []);
+  const handleSetFrequencyData = useCallback((data: any) => setFrequencyData(data), []);
+  const handleVolumeChange = useCallback((v: number) => setAllSettings(s => ({...s, volume: v})), []);
+  const handleOpenNowPlaying = useCallback(() => setIsNowPlayingOpen(true), []);
+  const handleCloseNowPlaying = useCallback(() => !isVisualizerFullscreen && setIsNowPlayingOpen(false), [isVisualizerFullscreen]);
   const handleSelectStation = useCallback((station: Station) => dispatch({ type: 'SELECT_STATION', payload: station }), []);
   const handlePlayPause = useCallback(() => { if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' }); else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] }); }, [playerState.station, displayedStations]);
   const handlePlay = useCallback(async () => { if (playerState.status === 'PLAYING') return; if (playerState.station) dispatch({ type: 'TOGGLE_PAUSE' }); else if (displayedStations.length > 0) dispatch({ type: 'PLAY', payload: displayedStations[0] }); }, [playerState.status, playerState.station, displayedStations]);
@@ -748,6 +785,8 @@ export default function App() {
         onVolumeControlVisibleChange={(v) => setAllSettings(s=>({...s, isVolumeControlVisible: v}))} 
         showNextSong={allSettings.showNextSong} 
         onShowNextSongChange={(v) => setAllSettings(s=>({...s, showNextSong: v}))} 
+        isScreenRotationEnabled={allSettings.isScreenRotationEnabled}
+        onScreenRotationEnabledChange={(v) => setAllSettings(s=>({...s, isScreenRotationEnabled: v}))}
         customEqSettings={allSettings.customEqSettings} 
         onCustomEqChange={(v) => setAllSettings(s=>({...s, customEqSettings: v}))} 
         gridSize={allSettings.gridSize} 
@@ -772,7 +811,7 @@ export default function App() {
         openSections={allSettings.settingsSections}
         onToggleSection={handleToggleSettingsSection}
       />
-      {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={() => !isVisualizerFullscreen && setIsNowPlayingOpen(false)} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={allSettings.volume} onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} frequencyData={frequencyData} visualizerStyle={allSettings.visualizerStyle} isVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={allSettings.isVolumeControlVisible} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
+      {playerState.station && <NowPlaying isOpen={isNowPlayingOpen} onClose={handleCloseNowPlaying} station={playerState.station} isPlaying={playerState.status === 'PLAYING'} onPlayPause={handlePlayPause} onNext={handleNext} onPrev={handlePrev} volume={allSettings.volume} onVolumeChange={handleVolumeChange} trackInfo={trackInfo} showNextSong={allSettings.showNextSong} frequencyData={frequencyData} visualizerStyle={allSettings.visualizerStyle} isVisualizerEnabled={allSettings.isNowPlayingVisualizerEnabled} onCycleVisualizerStyle={handleCycleVisualizerStyle} isVolumeControlVisible={allSettings.isVolumeControlVisible} marqueeDelay={allSettings.marqueeDelay} isMarqueeProgramEnabled={allSettings.isMarqueeProgramEnabled} isMarqueeCurrentTrackEnabled={allSettings.isMarqueeCurrentTrackEnabled} isMarqueeNextTrackEnabled={allSettings.isMarqueeNextTrackEnabled} marqueeSpeed={allSettings.marqueeSpeed} onOpenActionMenu={openActionMenu} isVisualizerFullscreen={isVisualizerFullscreen} setIsVisualizerFullscreen={setIsVisualizerFullscreen} />}
       <ActionMenu isOpen={actionMenuState.isOpen} onClose={closeActionMenu} songTitle={actionMenuState.songTitle} />
       <Player 
         playerState={playerState} 
@@ -781,15 +820,15 @@ export default function App() {
         onPlayPause={handlePlayPause} 
         onNext={handleNext} 
         onPrev={handlePrev} 
-        onPlayerEvent={(event) => dispatch(event)} 
+        onPlayerEvent={handlePlayerEvent} 
         eqPreset={allSettings.eqPreset} 
         customEqSettings={allSettings.customEqSettings} 
         volume={allSettings.volume} 
-        onVolumeChange={(v) => setAllSettings(s=>({...s, volume: v}))} 
+        onVolumeChange={handleVolumeChange} 
         trackInfo={trackInfo} 
         showNextSong={allSettings.showNextSong} 
-        onOpenNowPlaying={() => setIsNowPlayingOpen(true)}
-        setFrequencyData={setFrequencyData} 
+        onOpenNowPlaying={handleOpenNowPlaying}
+        setFrequencyData={handleSetFrequencyData} 
         frequencyData={frequencyData} 
         isVisualizerEnabled={allSettings.isPlayerBarVisualizerEnabled} 
         shouldUseProxy={shouldUseProxy} 

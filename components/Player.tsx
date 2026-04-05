@@ -5,6 +5,7 @@ import { PlayIcon, PauseIcon, SkipNextIcon, SkipPreviousIcon } from './Icons';
 import { CORS_PROXY_URL } from '../constants';
 import InteractiveText from './InteractiveText';
 import MarqueeText from './MarqueeText';
+import Hls from 'hls.js';
 
 // Types from App.tsx's state machine
 type PlayerStatus = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'ERROR';
@@ -116,6 +117,7 @@ const Player: React.FC<PlayerProps> = ({
   smartPlaylist
 }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -227,6 +229,33 @@ const Player: React.FC<PlayerProps> = ({
     }
   }, []);
   
+  // Helper to handle play() errors consistently
+  const handlePlayError = useCallback((e: any, context: string) => {
+    const errorName = e?.name || '';
+    const errorMessage = e?.message || String(e);
+    
+    // AbortError: Play request was interrupted by a new load or pause (normal)
+    const isAbort = errorName === 'AbortError' || errorMessage.includes('interrupted');
+    
+    // NotAllowedError: Autoplay blocked by browser policy
+    const isNotAllowed = errorName === 'NotAllowedError' || 
+                         errorMessage.includes('user didn\'t interact') || 
+                         errorMessage.includes('interaction');
+
+    if (isAbort) {
+      console.debug(`${context} play() request was interrupted (normal behavior).`);
+    } else if (isNotAllowed) {
+      console.warn(`${context} play() blocked by browser policy. User interaction required.`);
+      onPlayerEvent({ type: 'AUTOPLAY_BLOCKED' });
+    } else {
+      console.error(`${context} play() failed:`, e);
+      onPlayerEvent({ 
+        type: 'STREAM_ERROR', 
+        payload: context === 'Recovery' ? 'שגיאה בהתאוששות' : "לא ניתן לנגן את התחנה." 
+      });
+    }
+  }, [onPlayerEvent]);
+
   // Audio Element State Machine Driver
   useEffect(() => {
     const audio = audioRef.current;
@@ -247,9 +276,6 @@ const Player: React.FC<PlayerProps> = ({
         if (isSmartPlayerActive) {
             // Check if it's a standard stream URL and convert to DVR
             if (streamUrl.includes('streamgates.net') && !streamUrl.includes('dvr_timeshift')) {
-                // Heuristic replacement to point to the DVR manifest
-                // Typically ends in 'playlist.m3u8' or 'master.m3u8' or just the folder.
-                // We'll try to append/replace with the known DVR filename from user logs.
                 const lastSlashIndex = streamUrl.lastIndexOf('/');
                 if (lastSlashIndex !== -1) {
                     const baseUrl = streamUrl.substring(0, lastSlashIndex);
@@ -263,26 +289,56 @@ const Player: React.FC<PlayerProps> = ({
             streamUrl = `${CORS_PROXY_URL}${streamUrl}`;
         }
 
-        if (audio.src !== streamUrl) {
-            audio.src = streamUrl;
-            // Only request CORS if using proxy, otherwise direct connection might fail
-            if (shouldUseProxy) {
-                audio.crossOrigin = 'anonymous';
-            } else {
-                audio.removeAttribute('crossOrigin');
-            }
+        const isHls = streamUrl.includes('.m3u8');
+
+        // Cleanup existing HLS instance
+        if (hlsRef.current) {
+            hlsRef.current.destroy();
+            hlsRef.current = null;
         }
-        try {
-            await audio.play();
-        } catch (e: any) {
-            if (e.name === 'AbortError') {
-                console.debug('Audio play request was interrupted by a new load request (normal behavior).');
-            } else if (e.name === 'NotAllowedError') {
-                console.warn("Autoplay blocked by browser policy. User interaction required.");
-                onPlayerEvent({ type: 'AUTOPLAY_BLOCKED' });
-            } else {
-                console.error("Error playing audio:", e);
-                onPlayerEvent({ type: 'STREAM_ERROR', payload: "לא ניתן לנגן את התחנה." });
+
+        if (isHls && Hls.isSupported()) {
+            const hls = new Hls({
+                enableWorker: true,
+                lowLatencyMode: true,
+            });
+            hlsRef.current = hls;
+            hls.loadSource(streamUrl);
+            hls.attachMedia(audio);
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                audio.play().catch(e => handlePlayError(e, 'HLS'));
+            });
+            hls.on(Hls.Events.ERROR, (event, data) => {
+                if (data.fatal) {
+                    switch (data.type) {
+                        case Hls.ErrorTypes.NETWORK_ERROR:
+                            console.error("HLS network error", data);
+                            hls.startLoad();
+                            break;
+                        case Hls.ErrorTypes.MEDIA_ERROR:
+                            console.error("HLS media error", data);
+                            hls.recoverMediaError();
+                            break;
+                        default:
+                            console.error("HLS fatal error", data);
+                            onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בטעינת הזרם." });
+                            break;
+                    }
+                }
+            });
+        } else {
+            if (audio.src !== streamUrl) {
+                audio.src = streamUrl;
+                if (shouldUseProxy) {
+                    audio.crossOrigin = 'anonymous';
+                } else {
+                    audio.removeAttribute('crossOrigin');
+                }
+            }
+            try {
+                await audio.play();
+            } catch (e: any) {
+                handlePlayError(e, 'Standard');
             }
         }
     };
@@ -292,6 +348,13 @@ const Player: React.FC<PlayerProps> = ({
     } else if (status === 'PAUSED' || status === 'IDLE' || status === 'ERROR') {
       audio.pause();
     }
+
+    return () => {
+        if (hlsRef.current) {
+            hlsRef.current.destroy();
+            hlsRef.current = null;
+        }
+    };
   }, [status, station, setupAudioContext, onPlayerEvent, shouldUseProxy, isSmartPlayerActive]);
 
 
@@ -388,10 +451,7 @@ const Player: React.FC<PlayerProps> = ({
       audio.load();
       audio.src = `${streamUrl}?retry=${Date.now()}`; // Append retry to bust cache if needed
       audio.load();
-      audio.play().catch(e => {
-          console.error('Recovery play() failed:', e);
-          onPlayerEvent({ type: 'STREAM_ERROR', payload: 'שגיאה בהתאוששות' });
-      });
+      audio.play().catch(e => handlePlayError(e, 'Recovery'));
   }, [station, onPlayerEvent, shouldUseProxy]);
 
   // Watchdog effect to detect stalled stream
@@ -452,9 +512,7 @@ const Player: React.FC<PlayerProps> = ({
       
       const now = getCurrentUnixTime();
       // Find the currently playing song (timestamp <= now)
-      // Since the list is sorted by timestamp (ascending), we want the last one that started before now.
-      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5); // +5 buffer
-      // reverse index map back to original
+      const currentTrackIndex = [...smartPlaylist].reverse().findIndex(t => t.timestamp <= now + 5); 
       const originalIndex = currentTrackIndex >= 0 ? smartPlaylist.length - 1 - currentTrackIndex : -1;
 
       if (originalIndex !== -1) {
@@ -472,7 +530,6 @@ const Player: React.FC<PlayerProps> = ({
               calculateSeekTime(currentTrack.timestamp);
           }
       } else {
-          // Fallback
           onPrev();
       }
   };
@@ -497,14 +554,14 @@ const Player: React.FC<PlayerProps> = ({
           if (audio && audio.seekable.length) {
               audio.currentTime = audio.seekable.end(0);
           } else {
-              onNext(); // Fallback to station switch if not really playing or no seekable
+              onNext(); 
           }
       }
   };
 
 
   if (!station) {
-    return null; // Don't render the player if no station is selected
+    return null; 
   }
 
   const isActuallyPlaying = status === 'PLAYING';
@@ -575,7 +632,7 @@ const Player: React.FC<PlayerProps> = ({
           
           <div className="flex items-center gap-1 sm:gap-2">
              <button onClick={handleSmartPrev} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הקודם">
-                <SkipNextIcon className="w-6 h-6" />
+                <SkipPreviousIcon className="w-6 h-6" />
             </button>
             <button 
               onClick={onPlayPause} 
@@ -585,7 +642,7 @@ const Player: React.FC<PlayerProps> = ({
               {isActuallyPlaying || isLoading ? <PauseIcon className="w-7 h-7" /> : <PlayIcon className="w-7 h-7" />}
             </button>
             <button onClick={handleSmartNext} className="p-2 text-text-secondary hover:text-text-primary" aria-label="הבא">
-                <SkipPreviousIcon className="w-6 h-6" />
+                <SkipNextIcon className="w-6 h-6" />
             </button>
           </div>
 
@@ -606,9 +663,8 @@ const Player: React.FC<PlayerProps> = ({
                 console.warn("Audio element received 'stalled' event. Triggering recovery.");
                 attemptRecovery();
             }}
-            onWaiting={() => {}} // We use the LOADING state now
+            onWaiting={() => {}} 
             onError={() => onPlayerEvent({ type: 'STREAM_ERROR', payload: "שגיאה בניגון התחנה."})}
-            // crossorigin removed here, handled dynamically
           />
       </div>
     </div>

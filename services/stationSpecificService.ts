@@ -3,6 +3,7 @@
 
 import { CORS_PROXY_URL } from '../constants';
 import { StationTrackInfo } from '../types';
+import { fetchWithFallbackProxy } from './radioService';
 
 // This maps the station names we use to the specific IDs Kan's API uses.
 const KAN_STATION_IDS: { [key: string]: string } = {
@@ -27,13 +28,13 @@ const GLZ_SLUGS: { [key: string]: string } = {
  */
 export const hasSpecificHandler = (stationName: string): boolean => {
     const lowerCaseName = stationName.toLowerCase();
-    if (Object.keys(GLZ_SLUGS).some(glzName => stationName.includes(glzName))) {
+    if (Object.keys(GLZ_SLUGS).some(glzName => lowerCaseName.includes(glzName.toLowerCase()))) {
         return true;
     }
-    if (Object.keys(KAN_STATION_IDS).some(kanName => stationName.includes(kanName))) {
+    if (Object.keys(KAN_STATION_IDS).some(kanName => lowerCaseName.includes(kanName.toLowerCase()))) {
         return true;
     }
-    if (lowerCaseName.includes('eco99fm')) {
+    if (lowerCaseName.includes('eco99fm') || lowerCaseName.includes('99fm') || (lowerCaseName.includes('eco') && lowerCaseName.includes('99')) || lowerCaseName.includes('99 fm')) {
         return true;
     }
     
@@ -48,9 +49,10 @@ export const hasSpecificHandler = (stationName: string): boolean => {
  */
 const fetchKanTrackInfo = async (stationName: string): Promise<StationTrackInfo | null> => {
     let kanStationId: string | undefined;
+    const lowerCaseName = stationName.toLowerCase();
 
     for (const kanName in KAN_STATION_IDS) {
-        if (stationName.includes(kanName)) {
+        if (lowerCaseName.includes(kanName.toLowerCase())) {
             kanStationId = KAN_STATION_IDS[kanName];
             break;
         }
@@ -61,28 +63,38 @@ const fetchKanTrackInfo = async (stationName: string): Promise<StationTrackInfo 
     }
 
     try {
-        // FIX: Added &t=${Date.now()} to bust proxy cache
-        const url = `https://www.kan.org.il/radio/live-info-v2.aspx?stationId=${kanStationId}&t=${Date.now()}`;
-        const proxiedUrl = `${CORS_PROXY_URL}${url}`;
-        
-        const response = await fetch(proxiedUrl, {
-            headers: { 'Accept': 'application/json' },
-            cache: 'no-cache'
-        });
+        const url = `https://www.kan.org.il/radio/live-info-v2.aspx?stationId=${kanStationId}`;
+        // Disable cache-bust for Kan as it might cause issues with their ASPX backend
+        const response = await fetchWithFallbackProxy(url, { disableCacheBust: true });
 
         if (!response.ok) {
             console.warn(`Kan API failed for ${stationName} with status: ${response.status}`);
             return null;
         }
 
-        const data = await response.json();
+        const text = await response.text();
+        const trimmedText = text.trim();
         
-        if (data && data.title) {
-            return {
-                program: data.title,
-                current: data.description && data.description !== data.title ? data.description : null,
-                next: null,
-            };
+        // Check if the response is actually HTML (starts with <html, <!DOCTYPE, or even just <)
+        if (trimmedText.startsWith('<html') || 
+            trimmedText.toLowerCase().startsWith('<!doctype') || 
+            (trimmedText.startsWith('<') && trimmedText.includes('<body'))) {
+            console.warn(`Kan API for ${stationName} returned HTML instead of JSON. Likely an error page.`);
+            return null;
+        }
+
+        try {
+            const data = JSON.parse(trimmedText);
+            if (data && data.title) {
+                return {
+                    program: data.title,
+                    current: data.description && data.description !== data.title ? data.description : null,
+                    next: null,
+                };
+            }
+        } catch (e) {
+            console.warn(`Kan API for ${stationName} returned non-JSON content (even if header said so):`, text.substring(0, 100));
+            return null;
         }
         
         return null;
@@ -96,13 +108,18 @@ const fetchKanTrackInfo = async (stationName: string): Promise<StationTrackInfo 
 const GLZ_SCHEDULE_ROOT_ID = '1051';
 
 const fetchGaleiTzahalScheduleInfo = async (): Promise<{ program: string | null; presenters: string | null }> => {
-    // FIX: Added &t=${Date.now()} to bust proxy cache
-    const url = `${CORS_PROXY_URL}https://glz.co.il/umbraco/api/header/GetCommonData?rootId=${GLZ_SCHEDULE_ROOT_ID}&t=${Date.now()}`;
+    const url = `https://glz.co.il/umbraco/api/header/GetCommonData?rootId=${GLZ_SCHEDULE_ROOT_ID}`;
     try {
-        const response = await fetch(url, { cache: 'no-cache' });
+        const response = await fetchWithFallbackProxy(url);
         if (!response.ok) return { program: null, presenters: null };
         
-        const data = await response.json();
+        const text = await response.text();
+        if (text.trim().toLowerCase().startsWith('<html') || text.trim().toLowerCase().startsWith('<!doctype')) {
+            console.warn(`GLZ Schedule API returned HTML instead of JSON. Likely an error page.`);
+            return { program: null, presenters: null };
+        }
+
+        const data = JSON.parse(text);
         // The API returns schedule for multiple days. Find today.
         const todaySchedule = data?.timeTable?.glzTimeTable?.find((day: any) => day.isToday);
         
@@ -143,9 +160,10 @@ const fetchGaleiTzahalScheduleInfo = async (): Promise<{ program: string | null;
  */
 const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<StationTrackInfo | null> => {
     let slug: string | undefined;
+    const lowerCaseName = stationName.toLowerCase();
 
     for (const key in GLZ_SLUGS) {
-        if (stationName.includes(key)) {
+        if (lowerCaseName.includes(key.toLowerCase())) {
             slug = GLZ_SLUGS[key];
             break;
         }
@@ -155,12 +173,11 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
         return null;
     }
 
-    // FIX: Added ?t=${Date.now()} to bust proxy cache
-    const xmlUrl = `${CORS_PROXY_URL}https://glzxml.blob.core.windows.net/dalet/${slug}-onair/onair.xml?t=${Date.now()}`;
+    const xmlUrl = `https://glzxml.blob.core.windows.net/dalet/${slug}-onair/onair.xml`;
     
     const fetchSongsFromXml = async (): Promise<{ current: string | null; next: string | null }> => {
         try {
-            const response = await fetch(xmlUrl, { cache: 'no-cache' });
+            const response = await fetchWithFallbackProxy(xmlUrl);
             if (!response.ok) return { current: null, next: null };
             const xmlText = await response.text();
             const parser = new DOMParser();
@@ -223,12 +240,16 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
     };
 
     const fetchProgramFromJson = async (): Promise<string | null> => {
-        // FIX: Added &t=${Date.now()} to bust proxy cache
-        const jsonUrl = `${CORS_PROXY_URL}https://glz.co.il/umbraco/api/player/UpdatePlayer?stationid=${slug}&t=${Date.now()}`;
+        const jsonUrl = `https://glz.co.il/umbraco/api/player/UpdatePlayer?stationid=${slug}`;
         try {
-            const response = await fetch(jsonUrl, { cache: 'no-cache' });
+            const response = await fetchWithFallbackProxy(jsonUrl);
             if (!response.ok) return null;
-            const data = await response.json();
+            const text = await response.text();
+            if (text.trim().toLowerCase().startsWith('<html') || text.trim().toLowerCase().startsWith('<!doctype')) {
+                console.warn(`GLZ JSON API for ${slug} returned HTML instead of JSON.`);
+                return null;
+            }
+            const data = JSON.parse(text);
             return data?.program?.trim() || null;
         } catch (error) {
             console.warn(`Error fetching or parsing GLZ JSON for ${slug}:`, error);
@@ -286,20 +307,40 @@ const fetchGaleiTzahalCombinedInfo = async (stationName: string): Promise<Statio
  * @returns A structured object with track/program info or null.
  */
 const fetchEco99fmTrackInfo = async (): Promise<StationTrackInfo | null> => {
-    // FIX: Added ?t=${Date.now()} to bust proxy cache
-    const url = `https://firestore.googleapis.com/v1/projects/eco-99-production/databases/(default)/documents/streamed_content/program?t=${Date.now()}`;
-    const proxiedUrl = `${CORS_PROXY_URL}${url}`;
-
+    // Firestore REST API might not like the ?t= parameter.
+    // Also, firestore.googleapis.com supports CORS, so we can try direct fetch first.
+    const url = `https://firestore.googleapis.com/v1/projects/eco-99-production/databases/(default)/documents/streamed_content/program`;
+    
     try {
-        const response = await fetch(proxiedUrl, { cache: 'no-cache' });
+        console.log('Fetching eco99fm track info...');
+        // Try direct fetch first (better for performance and avoids proxy issues)
+        let response = await fetch(url, { cache: 'no-cache' }).catch(() => null);
+        
+        // If direct fetch fails (e.g. CORS after all, though unlikely for Firestore), fallback to proxy
+        if (!response || !response.ok) {
+            console.log('Direct fetch failed or blocked, trying via fallback proxy...');
+            // Firestore REST API doesn't like arbitrary query parameters like ?t=
+            response = await fetchWithFallbackProxy(url, { disableCacheBust: true });
+        }
+
         if (!response.ok) {
             console.warn(`eco99fm API failed with status: ${response.status}`);
             return null;
         }
 
-        const data = await response.json();
+        const text = await response.text();
+        if (text.trim().toLowerCase().startsWith('<html') || text.trim().toLowerCase().startsWith('<!doctype')) {
+            console.warn(`eco99fm API returned HTML instead of JSON.`);
+            return null;
+        }
+
+        const data = JSON.parse(text);
+        console.log('eco99fm raw data:', JSON.stringify(data, null, 2));
         const fields = data?.fields;
-        if (!fields) return null;
+        if (!fields) {
+            console.warn('eco99fm data missing fields:', data);
+            return null;
+        }
 
         const programName = fields.program_name?.stringValue || null;
         const broadcasterName = fields.broadcaster_name?.stringValue || null;
@@ -352,17 +393,17 @@ export const fetchStationSpecificTrackInfo = async (stationName: string): Promis
     const lowerCaseName = stationName.toLowerCase();
     
     // Check for Galei Tzahal stations (גלגלצ, גלי צה"ל)
-    if (Object.keys(GLZ_SLUGS).some(glzName => stationName.includes(glzName))) {
+    if (Object.keys(GLZ_SLUGS).some(glzName => lowerCaseName.includes(glzName.toLowerCase()))) {
         return fetchGaleiTzahalCombinedInfo(stationName);
     }
     
     // Check for Kan stations
-    if (Object.keys(KAN_STATION_IDS).some(kanName => stationName.includes(kanName))) {
+    if (Object.keys(KAN_STATION_IDS).some(kanName => lowerCaseName.includes(kanName.toLowerCase()))) {
         return fetchKanTrackInfo(stationName);
     }
 
     // Check for eco99fm
-    if (lowerCaseName.includes('eco99fm')) {
+    if (lowerCaseName.includes('eco99fm') || lowerCaseName.includes('99fm') || (lowerCaseName.includes('eco') && lowerCaseName.includes('99')) || lowerCaseName.includes('99 fm')) {
         return fetchEco99fmTrackInfo();
     }
     

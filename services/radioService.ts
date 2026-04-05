@@ -13,6 +13,27 @@ const shuffleArray = <T>(array: T[]): T[] => {
     return array;
 };
 
+export interface ProxyOptions extends RequestInit {
+    disableCacheBust?: boolean;
+}
+
+export const fetchWithFallbackProxy = async (url: string, options: ProxyOptions = {}): Promise<Response> => {
+    const { disableCacheBust, ...fetchOptions } = options;
+    const cacheBust = disableCacheBust ? '' : `${url.includes('?') ? '&' : '?' }t=${Date.now()}`;
+    const primaryProxy = `${CORS_PROXY_URL}${url}${cacheBust}`;
+    const secondaryProxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url + cacheBust)}`;
+    
+    try {
+        const response = await fetch(primaryProxy, { ...fetchOptions, cache: 'no-cache' });
+        if (response.ok) return response;
+        console.warn(`Primary proxy failed for ${url}, status: ${response.status}. Trying secondary...`);
+    } catch (e) {
+        console.warn(`Primary proxy error for ${url}. Trying secondary...`);
+    }
+    
+    return fetch(secondaryProxy, { ...fetchOptions, cache: 'no-cache' });
+};
+
 // A larger, hardcoded list of reliable API servers.
 const API_SERVERS = [
     'https://de1.api.radio-browser.info/json',
@@ -69,11 +90,10 @@ const fetchRadioBrowserStations = async (): Promise<Station[]> => {
 const fetch100fmStations = async (): Promise<Station[]> => {
   const url = 'https://digital.100fm.co.il/app/';
   try {
-    const proxiedUrl = `${CORS_PROXY_URL}${url}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-    const response = await fetch(proxiedUrl, { signal: controller.signal });
+    const response = await fetchWithFallbackProxy(url, { signal: controller.signal });
     clearTimeout(timeoutId);
     
     if (!response.ok) {
@@ -220,11 +240,9 @@ export const fetchLiveTrackInfo = async (stationuuid: string): Promise<string | 
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second timeout
 
-            // FIX: Added &t=${Date.now()} to bust proxy cache
-            const proxiedUrl = `${CORS_PROXY_URL}${serverUrl}/stations/check?uuids=${stationuuid}&t=${Date.now()}`;
-            const response = await fetch(proxiedUrl, {
-                signal: controller.signal,
-                cache: 'no-cache'
+            const url = `${serverUrl}/stations/check?uuids=${stationuuid}`;
+            const response = await fetchWithFallbackProxy(url, {
+                signal: controller.signal
             });
 
             clearTimeout(timeoutId);
@@ -257,11 +275,9 @@ export const fetch100fmPlaylist = async (stationIdOrSlug: string): Promise<Smart
     
     // Default URL for last 12 tracks
     const url = `https://digital.100fm.co.il/api/nowplaying/${slug}/12`;
-    const proxiedUrl = `${CORS_PROXY_URL}${url}`;
 
     try {
-        const response = await fetch(proxiedUrl, { 
-            cache: 'no-cache',
+        const response = await fetchWithFallbackProxy(url, { 
             headers: { 'Accept': 'application/xml, text/xml, */*' }
         });
         

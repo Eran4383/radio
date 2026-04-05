@@ -1,9 +1,9 @@
 import React from 'react';
 import { GoogleIcon } from './Icons';
-import type firebase from 'firebase/compat/app';
+import { User } from '../types';
 
 interface AuthProps {
-  user: firebase.User | null;
+  user: User | null;
   onLogin: () => void;
   onLogout: () => void;
 }

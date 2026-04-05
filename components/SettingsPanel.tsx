@@ -29,6 +29,8 @@ interface SettingsPanelProps {
   onVolumeControlVisibleChange: (enabled: boolean) => void;
   showNextSong: boolean;
   onShowNextSongChange: (enabled: boolean) => void;
+  isScreenRotationEnabled: boolean;
+  onScreenRotationEnabledChange: (enabled: boolean) => void;
   customEqSettings: CustomEqSettings;
   onCustomEqChange: (settings: CustomEqSettings) => void;
   gridSize: GridSize;
@@ -191,6 +193,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     isPlayerBarVisualizerEnabled, onPlayerBarVisualizerEnabledChange,
     isStatusIndicatorEnabled, onStatusIndicatorEnabledChange, isVolumeControlVisible, onVolumeControlVisibleChange,
     showNextSong, onShowNextSongChange,
+    isScreenRotationEnabled, onScreenRotationEnabledChange,
     customEqSettings, onCustomEqChange,
     gridSize, onGridSizeChange,
     isMarqueeProgramEnabled, onMarqueeProgramEnabledChange,
@@ -446,6 +449,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         label="הצג שיר הבא"
                         enabled={showNextSong}
                         onChange={onShowNextSongChange}
+                    />
+                    <ToggleSwitch 
+                        label="אפשר סיבוב מסך"
+                        enabled={isScreenRotationEnabled}
+                        onChange={onScreenRotationEnabledChange}
                     />
                 </div>
             </SettingsSection>
